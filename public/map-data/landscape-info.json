@@ -1,0 +1,18 @@
+{
+  "RegionSize": 512,
+  "LeafNodeSize": 64,
+  "WorldOrigin.x": -102400.0,
+  "WorldOrigin.y": -102400.0,
+  "UnitScale.x": 100.0,
+  "UnitScale.y": 100.0,
+  "RegionTableSize.x": 8,
+  "RegionTableSize.y": 8,
+  "HeightfieldMaximum": 409600.0,
+  "HeightfieldMinimum": -409600.0,
+  "Flags": 7,
+  "BakeVersion": 1,
+  "TriangleBuildMethod": 0,
+  "RenderMethod": 0,
+  "bUseGrainHeight": false,
+  "UUID": "{d3692105-d52b-4371-9115-e9787cb91ee8}"
+}
