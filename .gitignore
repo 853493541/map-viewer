@@ -6,7 +6,7 @@ source-meshes/
 
 # Map data (generated, large binary files)
 public/map-data/textures/
-public/map-data/heightmap/*.bin
+# heightmap .bin files ARE committed (64 MB, needed for terrain)
 public/map-data/meshes/*.glb
 public/map-data/entities/*.json
 public/map-data/entity-index.json
