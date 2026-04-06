@@ -1,0 +1,69 @@
+{
+  "sunlight": {
+    "dir": [
+      0.709406,
+      0.573576,
+      -0.409576
+    ],
+    "diffuse": [
+      0.984313,
+      0.890196,
+      0.847058,
+      1.0
+    ],
+    "specular": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "diffuseIntensity": 6.0,
+    "specularIntensity": 2.0,
+    "ambientColor": [
+      0.498039,
+      0.498039,
+      0.498039,
+      1.0
+    ],
+    "skyLightColor": [
+      0.498039,
+      0.498039,
+      0.498039,
+      1.0
+    ],
+    "commonLightColor": [
+      0.498039,
+      0.498039,
+      0.498039,
+      1.0
+    ],
+    "ambientIntensity": 1.0,
+    "skyLightIntensity": 1.0,
+    "commonLightIntensity": 1.0
+  },
+  "moonlight": {
+    "dir": [
+      0.57735,
+      0.57735,
+      0.57735
+    ],
+    "diffuse": [
+      0.611764,
+      0.741176,
+      0.996078,
+      1.0
+    ],
+    "specular": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "diffuseIntensity": 0.37,
+    "specularIntensity": 1.0
+  },
+  "enableDayNightCycle": 1,
+  "waterInfo": {
+    "Version": 6
+  }
+}

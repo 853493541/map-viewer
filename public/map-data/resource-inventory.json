@@ -1,0 +1,91 @@
+{
+  "categories": {
+    "meshes": {
+      "label": "3D Meshes",
+      "icon": "🏗️",
+      "items": {
+        "scene_references": 622,
+        "converted_glb": 1734,
+        "mapped_to_scene": 601,
+        "missing_from_scene": 21,
+        "missing_srt": 21,
+        "missing_mesh": 0,
+        "official_meshes": 601
+      },
+      "source_files": {
+        "mesh": 1739,
+        "jsoninspack": 1749,
+        "mtl": 560,
+        "mesh_ini": 597,
+        "dds": 49,
+        "srt": 28
+      }
+    },
+    "terrain": {
+      "label": "Terrain",
+      "icon": "⛰️",
+      "items": {
+        "heightmaps": 64,
+        "terrain_textures_color": 64,
+        "terrain_textures_detail": 64,
+        "total_regions": 64
+      },
+      "source_files": {
+        "procedural_dds": 128,
+        "blendmap_dds": 189,
+        "blendmap_bc": 240
+      }
+    },
+    "entities": {
+      "label": "Scene Objects",
+      "icon": "📦",
+      "items": {
+        "total_placements": 4964,
+        "region_files": 25,
+        "populated_regions": 25
+      }
+    },
+    "environment": {
+      "label": "Environment",
+      "icon": "☀️",
+      "items": {
+        "environment_json": true,
+        "map_config": true,
+        "minimap": true,
+        "regioninfo": true
+      },
+      "source_files": {
+        "view_probes": 92,
+        "env_probes": 15
+      }
+    },
+    "textures": {
+      "label": "Textures",
+      "icon": "🎨",
+      "items": {
+        "mesh_texture_refs": 30,
+        "terrain_material_refs": 0,
+        "source_dds_available": 49
+      },
+      "note": "Texture files (.tga/.dds) referenced by materials are not yet extracted from game packages"
+    },
+    "water": {
+      "label": "Water",
+      "icon": "🌊",
+      "items": {
+        "water_files": 6
+      }
+    }
+  },
+  "summary": {
+    "total_converted_glb": 1734,
+    "total_scene_meshes": 622,
+    "mesh_coverage": "601/622 (96.6%)",
+    "terrain_coverage": "64/64 heightmaps, 64/64 textures",
+    "entity_placements": 4964,
+    "populated_regions": 25,
+    "environment_loaded": true,
+    "texture_refs_unresolved": 30,
+    "srt_trees_missing": 21
+  }
+}

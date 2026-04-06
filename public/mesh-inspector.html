@@ -1,0 +1,652 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>GLB Mesh Inspector</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #222; color: #eee; font-family: monospace; overflow: hidden; display: flex; }
+
+  /* Left sidebar */
+  #sidebar { width: 250px; min-width: 250px; height: 100vh; background: rgba(0,0,0,0.7); padding: 10px; display: flex; flex-direction: column; z-index: 10; }
+  #sidebar h3 { margin: 0 0 8px; }
+
+  /* Tab bar */
+  #tab-bar { display: flex; gap: 3px; margin-bottom: 6px; }
+  .tab-btn { flex: 1; padding: 5px 2px; font-size: 11px; cursor: pointer; background: #333; border: 1px solid #555; color: #aaa; border-radius: 3px; font-family: monospace; }
+  .tab-btn:hover { background: #444; }
+  .tab-btn.active { background: #0078d4; color: #fff; border-color: #0078d4; }
+  .tab-btn.t-approved.active { background: #1a7a3a; border-color: #2d4; color: #fff; }
+  .tab-btn.t-denied.active { background: #8a1a1a; border-color: #d44; color: #fff; }
+
+  /* Controls */
+  #controls { margin-bottom: 6px; font-size: 11px; }
+  #controls label { display: block; margin: 2px 0; }
+  #controls input[type=text] { width: 160px; }
+  .legend { font-size: 10px; margin: 4px 0; color: #aaa; }
+
+  /* Mesh list */
+  #meshList { flex: 1; overflow-y: auto; font-size: 11px; }
+  .mesh-btn { cursor: pointer; padding: 2px 6px; margin: 0; display: block; background: #444; border: none; color: #eee; width: 100%; text-align: left; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; font-size: 11px; }
+  .mesh-btn:hover { background: #666; }
+  .mesh-btn.active { background: #0078d4; color: #fff; }
+  .mesh-btn.official { border-left: 3px solid #f0c040; }
+  .mesh-btn.official::before { content: '\2605 '; color: #f0c040; }
+  .mesh-btn.approved { border-left: 3px solid #2d4 !important; background: rgba(30,150,60,0.25) !important; }
+  .mesh-btn.denied   { border-left: 3px solid #d44 !important; background: rgba(150,30,30,0.25) !important; }
+  .btn-row { display: flex; align-items: stretch; margin: 1px 0; }
+
+  /* Page nav */
+  #page-nav { display: flex; gap: 4px; margin-bottom: 6px; align-items: center; font-size: 11px; }
+  #page-nav button { padding: 3px 8px; cursor: pointer; background: #444; border: 1px solid #666; color: #eee; border-radius: 3px; font-family: monospace; }
+  #page-nav button:hover { background: #666; }
+  #page-nav button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Select actions */
+  #select-actions { display: flex; gap: 4px; margin-bottom: 4px; }
+  #select-actions button { flex: 1; padding: 4px; cursor: pointer; border-radius: 4px; font-family: monospace; font-size: 10px; background: #333; border: 1px solid #555; color: #aaa; }
+  #select-actions button:hover { background: #555; color: #eee; }
+
+  /* Bulk actions */
+  #bulk-actions { display: flex; gap: 4px; margin-bottom: 6px; }
+  #bulk-actions button { flex: 1; padding: 5px; cursor: pointer; border-radius: 4px; font-family: monospace; font-size: 11px; }
+  #btn-bulk-approve { background: rgba(30,160,70,0.3); border: 1px solid #2d4; color: #4e4; }
+  #btn-bulk-approve:hover { background: rgba(30,160,70,0.6); color: #fff; }
+  #btn-bulk-deny { background: rgba(160,30,30,0.3); border: 1px solid #d44; color: #e44; }
+  #btn-bulk-deny:hover { background: rgba(160,30,30,0.6); color: #fff; }
+
+  /* Preview grid */
+  #preview-area { flex: 1; display: grid; grid-template-columns: repeat(5, 1fr); grid-template-rows: repeat(2, 1fr); gap: 4px; padding: 4px; height: 100vh; }
+  .preview-cell { position: relative; background: #333344; border-radius: 4px; overflow: hidden; border: 2px solid transparent; cursor: pointer; }
+  .preview-cell.selected { border-color: #0078d4; }
+  .preview-cell.v-approved { border-color: #2d4; }
+  .preview-cell.v-denied { border-color: #d44; }
+  .preview-cell canvas { width: 100%; height: 100%; display: block; }
+  .preview-label { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.75); padding: 3px 6px; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 4px; }
+  .preview-label .name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  .preview-checkbox { width: 16px; height: 16px; cursor: pointer; flex-shrink: 0; }
+  .preview-verdict { position: absolute; top: 4px; right: 4px; display: flex; gap: 2px; }
+  .preview-verdict button { width: 26px; height: 26px; border-radius: 4px; cursor: pointer; font-size: 14px; border: 1px solid; font-family: monospace; }
+  .pv-approve { background: rgba(30,160,70,0.3); border-color: #2d4; color: #4e4; }
+  .pv-approve:hover, .pv-approve.active { background: rgba(30,160,70,0.7); color: #fff; }
+  .pv-deny { background: rgba(160,30,30,0.3); border-color: #d44; color: #e44; }
+  .pv-deny:hover, .pv-deny.active { background: rgba(160,30,30,0.7); color: #fff; }
+  .preview-copy { width: 20px; height: 18px; cursor: pointer; background: #444; border: 1px solid #666; color: #aaa; font-size: 10px; border-radius: 2px; flex-shrink: 0; }
+  .preview-info { position: absolute; top: 4px; left: 4px; font-size: 9px; color: #aaa; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="sidebar">
+  <h3>GLB Mesh Inspector</h3>
+  <div id="tab-bar">
+    <button class="tab-btn active" data-tab="undecided">Undecided&nbsp;(<span id="count-undecided">0</span>)</button>
+    <button class="tab-btn t-approved" data-tab="approved">&#10003;&nbsp;<span id="count-approved">0</span></button>
+    <button class="tab-btn t-denied"   data-tab="denied">&#10007;&nbsp;<span id="count-denied">0</span></button>
+  </div>
+  <div id="controls">
+    <label>Filter: <input id="filter" type="text" placeholder="type to filter..."></label>
+    <label><input type="checkbox" id="showTextures" checked> Textures</label>
+    <label><input type="checkbox" id="doubleSide" checked> Double-sided</label>
+    <button id="btn-open-folder" style="margin-top:4px;padding:4px 8px;cursor:pointer;background:#444;border:1px solid #666;color:#eee;border-radius:3px;font-family:monospace;font-size:11px;width:100%" title="Open meshes folder in Explorer">&#128194; Open Meshes Folder</button>
+  </div>
+  <div id="page-nav">
+    <button id="btn-prev" disabled>&laquo; Prev</button>
+    <span id="page-info">1 / 1</span>
+    <button id="btn-next">&raquo; Next</button>
+  </div>
+  <div id="select-actions">
+    <button id="btn-select-all">&#9745; Select All</button>
+    <button id="btn-deselect-all">&#9744; Deselect All</button>
+  </div>
+  <div id="bulk-actions">
+    <button id="btn-bulk-approve">&#10003; Approve selected</button>
+    <button id="btn-bulk-deny">&#10007; Deny selected</button>
+  </div>
+  <div class="legend">
+    &#9733; official &nbsp;
+    <span style="color:#2d4">&#10003;</span> approved &nbsp;
+    <span style="color:#d44">&#10007;</span> denied &nbsp;
+    &#9744; select for bulk
+  </div>
+  <div id="meshList"></div>
+</div>
+<div id="preview-area"></div>
+
+<script type="importmap">
+{ "imports": { "three": "./lib/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from './lib/GLTFLoader.js';
+
+const PAGE_SIZE = 10;
+
+// ── Data loading ──────────────────────────────────────────────────────────────
+let officialMeshes = [];
+try { officialMeshes = await (await fetch('map-data/official-meshes.json')).json(); } catch {}
+const officialSet = new Set(officialMeshes.map(n => n.toLowerCase()));
+
+let textureMap = null;
+try { textureMap = await (await fetch('map-data/texture-map.json')).json(); } catch {}
+
+let glbNames = [];
+try { glbNames = await (await fetch('/api/meshes')).json(); } catch {}
+
+// ── Verdicts ──────────────────────────────────────────────────────────────────
+let approvedSet = new Set();
+let deniedSet   = new Set();
+
+async function loadVerdicts() {
+  try {
+    const obj = await (await fetch('/api/verdicts')).json();
+    approvedSet = new Set(obj.approved ?? []);
+    deniedSet   = new Set(obj.denied   ?? []);
+  } catch {}
+}
+async function saveVerdicts() {
+  try {
+    await fetch('/api/verdicts', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approved: [...approvedSet], denied: [...deniedSet] }),
+    });
+  } catch {}
+}
+await loadVerdicts();
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let currentTab = 'undecided';
+let currentPage = 0;
+let selectedSet = new Set();  // checked meshes for bulk action
+let softHiddenSet = new Set(); // denied meshes hidden this session (not persisted)
+
+// ── Visible list ──────────────────────────────────────────────────────────────
+const filterInput = document.getElementById('filter');
+
+function getVisibleList() {
+  const f = filterInput.value.toLowerCase();
+  return glbNames.filter(g => {
+    if (f && !g.toLowerCase().includes(f)) return false;
+    if (currentTab === 'approved')  return approvedSet.has(g);
+    if (currentTab === 'denied')    return deniedSet.has(g) && !softHiddenSet.has(g);
+    return !approvedSet.has(g) && !deniedSet.has(g);
+  });
+}
+
+function updateCounts() {
+  const undecided = glbNames.filter(g => !approvedSet.has(g) && !deniedSet.has(g)).length;
+  document.getElementById('count-undecided').textContent = undecided;
+  document.getElementById('count-approved').textContent  = approvedSet.size;
+  document.getElementById('count-denied').textContent    = deniedSet.size;
+}
+
+// ── Preview cells ─────────────────────────────────────────────────────────────
+const previewArea = document.getElementById('preview-area');
+const cells = [];
+const textureLoader = new THREE.TextureLoader();
+const textureCache = new Map();
+const gltfLoader = new GLTFLoader();
+
+function loadTexCached(pngName, linear) {
+  const key = pngName + (linear ? '_lin' : '');
+  if (!textureCache.has(key)) {
+    const tex = textureLoader.load('map-data/textures/' + encodeURIComponent(pngName));
+    tex.colorSpace = linear ? THREE.LinearSRGBColorSpace : THREE.SRGBColorSpace;
+    tex.flipY = false;
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    textureCache.set(key, tex);
+  }
+  return textureCache.get(key);
+}
+
+function loadMRECached(pngName) {
+  const key = pngName + '_mre';
+  if (!textureCache.has(key)) {
+    const tex = textureLoader.load(
+      'map-data/textures/' + encodeURIComponent(pngName),
+      (t) => {
+        const canv = document.createElement('canvas');
+        const img = t.image;
+        canv.width = img.width; canv.height = img.height;
+        const ctx = canv.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const d = ctx.getImageData(0, 0, canv.width, canv.height);
+        const px = d.data;
+        for (let i = 0; i < px.length; i += 4) {
+          const r = px[i]; px[i] = px[i + 2]; px[i + 2] = r;
+        }
+        ctx.putImageData(d, 0, 0);
+        t.image = canv; t.needsUpdate = true;
+      }
+    );
+    tex.colorSpace = THREE.LinearSRGBColorSpace;
+    tex.flipY = false;
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    textureCache.set(key, tex);
+  }
+  return textureCache.get(key);
+}
+
+// Create PAGE_SIZE preview cells, each with its own renderer/scene/camera
+for (let i = 0; i < PAGE_SIZE; i++) {
+  const cell = document.createElement('div');
+  cell.className = 'preview-cell';
+  const cvs = document.createElement('canvas');
+  cell.appendChild(cvs);
+
+  const infoDiv = document.createElement('div');
+  infoDiv.className = 'preview-info';
+  cell.appendChild(infoDiv);
+
+  // Verdict buttons
+  const verdictDiv = document.createElement('div');
+  verdictDiv.className = 'preview-verdict';
+  const approveBtn = document.createElement('button');
+  approveBtn.className = 'pv-approve';
+  approveBtn.innerHTML = '&#10003;';
+  approveBtn.title = 'Approve';
+  const denyBtn = document.createElement('button');
+  denyBtn.className = 'pv-deny';
+  denyBtn.innerHTML = '&#10007;';
+  denyBtn.title = 'Deny';
+  verdictDiv.appendChild(approveBtn);
+  verdictDiv.appendChild(denyBtn);
+  cell.appendChild(verdictDiv);
+
+  // Bottom label
+  const label = document.createElement('div');
+  label.className = 'preview-label';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.className = 'preview-checkbox';
+  cb.title = 'Select for bulk action';
+  const nameSpan = document.createElement('span');
+  nameSpan.className = 'name';
+  const copyBtn = document.createElement('button');
+  copyBtn.className = 'preview-copy';
+  copyBtn.textContent = '\u2398';
+  copyBtn.title = 'Copy name';
+  label.appendChild(cb);
+  label.appendChild(nameSpan);
+  label.appendChild(copyBtn);
+  cell.appendChild(label);
+
+  previewArea.appendChild(cell);
+
+  // Three.js setup per cell
+  const rend = new THREE.WebGLRenderer({ canvas: cvs, antialias: true });
+  rend.setClearColor(0x333344);
+  rend.toneMapping = THREE.ACESFilmicToneMapping;
+  rend.toneMappingExposure = 1.0;
+  rend.outputColorSpace = THREE.SRGBColorSpace;
+
+  const scene3 = new THREE.Scene();
+  scene3.add(new THREE.AmbientLight(0xffffff, 0.5));
+  const dl = new THREE.DirectionalLight(0xffffff, 1.0);
+  dl.position.set(100, 200, 150);
+  scene3.add(dl);
+  scene3.add(new THREE.HemisphereLight(0x88aacc, 0x8B7355, 0.4));
+
+  const cam = new THREE.PerspectiveCamera(50, 1, 0.1, 100000);
+
+  // Orbit state
+  let oTheta = 0.3, oPhi = 0.8, oRad = 500;
+  let oTgt = new THREE.Vector3();
+  let dragging = false, dpx = 0, dpy = 0;
+
+  function updCam() {
+    cam.position.set(
+      oTgt.x + oRad * Math.sin(oPhi) * Math.cos(oTheta),
+      oTgt.y + oRad * Math.cos(oPhi),
+      oTgt.z + oRad * Math.sin(oPhi) * Math.sin(oTheta)
+    );
+    cam.lookAt(oTgt);
+  }
+
+  cvs.addEventListener('mousedown', (e) => { dragging = true; dpx = e.clientX; dpy = e.clientY; });
+  cvs.addEventListener('mouseup', () => dragging = false);
+  cvs.addEventListener('mouseleave', () => dragging = false);
+  cvs.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    oTheta += (e.clientX - dpx) * 0.01;
+    oPhi = Math.max(0.1, Math.min(Math.PI - 0.1, oPhi - (e.clientY - dpy) * 0.01));
+    dpx = e.clientX; dpy = e.clientY;
+    updCam();
+  });
+  cvs.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    oRad *= e.deltaY > 0 ? 1.15 : 0.87;
+    oRad = Math.max(1, Math.min(50000, oRad));
+    updCam();
+  }, { passive: false });
+
+  cells.push({
+    cell, cvs, renderer: rend, scene: scene3, camera: cam, infoDiv,
+    approveBtn, denyBtn, checkbox: cb, nameSpan, copyBtn, label,
+    meshGroup: null, glbFile: null,
+    setOrbit(t, p, r, tgt) { oTheta = t; oPhi = p; oRad = r; oTgt.copy(tgt); updCam(); },
+  });
+}
+
+// ── Load mesh into a cell ─────────────────────────────────────────────────────
+function loadMeshIntoCell(cellIdx, glbFile) {
+  const c = cells[cellIdx];
+  c.glbFile = glbFile;
+  c.nameSpan.textContent = glbFile.replace(/\.glb$/i, '');
+  c.nameSpan.title = glbFile;
+  c.cell.style.display = '';
+
+  // Update verdict button states
+  c.approveBtn.classList.toggle('active', approvedSet.has(glbFile));
+  c.denyBtn.classList.toggle('active', deniedSet.has(glbFile));
+  c.cell.classList.toggle('v-approved', approvedSet.has(glbFile));
+  c.cell.classList.toggle('v-denied', deniedSet.has(glbFile));
+
+  // Selection state
+  const isSel = selectedSet.has(glbFile);
+  c.checkbox.checked = isSel;
+  c.cell.classList.toggle('selected', isSel);
+
+  // Remove old mesh
+  if (c.meshGroup) { c.scene.remove(c.meshGroup); c.meshGroup = null; }
+
+  gltfLoader.load('map-data/meshes/' + glbFile, (gltf) => {
+    const group = gltf.scene;
+    let totalVerts = 0, totalFaces = 0, meshCount = 0;
+
+    const showTex = document.getElementById('showTextures').checked;
+    const dblSide = document.getElementById('doubleSide').checked;
+
+    group.traverse((child) => {
+      if (!child.isMesh) return;
+      const childIdx = meshCount++;
+      const g = child.geometry;
+      totalVerts += g.getAttribute('position').count;
+      totalFaces += g.index ? g.index.count / 3 : g.getAttribute('position').count / 3;
+
+      const hasColors = g.hasAttribute('color');
+      const texInfo = showTex && textureMap && textureMap[glbFile];
+      const subTex = (texInfo && texInfo.subsets && childIdx < texInfo.subsets.length)
+        ? texInfo.subsets[childIdx] : texInfo;
+
+      if (subTex && subTex.albedo) {
+        const opts = {
+          color: 0xffffff, roughness: 1.0, metalness: 1.0,
+          side: dblSide ? THREE.DoubleSide : THREE.FrontSide,
+          map: loadTexCached(subTex.albedo, false),
+        };
+        if (subTex.mre)    { opts.roughnessMap = opts.metalnessMap = loadMRECached(subTex.mre); }
+        if (subTex.normal) { opts.normalMap = loadTexCached(subTex.normal, true); }
+        child.material = new THREE.MeshStandardMaterial(opts);
+      } else {
+        child.material = new THREE.MeshPhongMaterial({
+          color: hasColors ? 0xffffff : 0xccbbaa, vertexColors: hasColors, shininess: 8,
+          side: dblSide ? THREE.DoubleSide : THREE.FrontSide,
+        });
+      }
+    });
+
+    const box = new THREE.Box3().setFromObject(group);
+    const center = new THREE.Vector3(), size = new THREE.Vector3();
+    box.getCenter(center); box.getSize(size);
+
+    c.scene.add(group);
+    c.meshGroup = group;
+    c.setOrbit(0.3, 0.8, Math.max(size.x, size.y, size.z) * 1.5, center);
+
+    c.infoDiv.textContent = `V:${totalVerts} F:${Math.round(totalFaces)} S:${meshCount}`;
+  }, undefined, () => {
+    c.infoDiv.textContent = 'Load failed';
+  });
+}
+
+// ── Page rendering ────────────────────────────────────────────────────────────
+function loadPage() {
+  const visible = getVisibleList();
+  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
+  currentPage = Math.max(0, Math.min(currentPage, pageCount - 1));
+  const start = currentPage * PAGE_SIZE;
+  const pageItems = visible.slice(start, start + PAGE_SIZE);
+
+  document.getElementById('page-info').textContent = `${currentPage + 1} / ${pageCount}`;
+  document.getElementById('btn-prev').disabled = currentPage === 0;
+  document.getElementById('btn-next').disabled = currentPage >= pageCount - 1;
+
+  const pa = document.getElementById('preview-area');
+  pa.style.gridTemplateColumns = 'repeat(5, 1fr)';
+  pa.style.gridTemplateRows = 'repeat(2, 1fr)';
+
+  for (let i = 0; i < PAGE_SIZE; i++) {
+    if (i < pageItems.length) {
+      loadMeshIntoCell(i, pageItems[i]);
+      const c = cells[i];
+      c.nameSpan.style.color = '';
+      c.approveBtn.style.display = '';
+      c.denyBtn.style.display = '';
+      c.checkbox.style.display = '';
+    } else {
+      const c = cells[i];
+      c.cell.style.display = 'none';
+      if (c.meshGroup) { c.scene.remove(c.meshGroup); c.meshGroup = null; }
+      c.glbFile = null;
+    }
+  }
+
+  updateCounts();
+  renderSidebarList();
+}
+
+// ── Sidebar list ──────────────────────────────────────────────────────────────
+const listDiv = document.getElementById('meshList');
+
+function renderSidebarList() {
+  listDiv.innerHTML = '';
+  const visible = getVisibleList();
+  const start = currentPage * PAGE_SIZE;
+  const end = Math.min(start + PAGE_SIZE, visible.length);
+
+  for (let i = 0; i < visible.length; i++) {
+    const glbFile = visible[i];
+    const row = document.createElement('div');
+    row.className = 'btn-row';
+
+    const btn = document.createElement('button');
+    btn.className = 'mesh-btn';
+    btn.dataset.glb = glbFile;
+    if (officialSet.has(glbFile.toLowerCase())) btn.classList.add('official');
+    if (approvedSet.has(glbFile))      btn.classList.add('approved');
+    else if (deniedSet.has(glbFile))   btn.classList.add('denied');
+    if (i >= start && i < end)         btn.classList.add('active');
+    btn.textContent = glbFile;
+    btn.title = glbFile;
+    btn.addEventListener('click', () => {
+      const pageIdx = Math.floor(i / PAGE_SIZE);
+      if (pageIdx !== currentPage) {
+        currentPage = pageIdx;
+        loadPage();
+      }
+    });
+    row.appendChild(btn);
+
+    const copyBtn = document.createElement('button');
+    const stemName = glbFile.replace(/\.glb$/i, '');
+    copyBtn.textContent = '\u2398';
+    copyBtn.title = 'Copy: ' + stemName;
+    copyBtn.style.cssText = 'flex-shrink:0;width:20px;padding:0;font-size:11px;background:#333;border:1px solid #555;color:#aaa;cursor:pointer;border-radius:2px';
+    copyBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      navigator.clipboard.writeText(stemName).catch(() => {});
+      copyBtn.textContent = '\u2713'; copyBtn.style.color = '#4e4';
+      setTimeout(() => { copyBtn.textContent = '\u2398'; copyBtn.style.color = '#aaa'; }, 800);
+    });
+    row.appendChild(copyBtn);
+    listDiv.appendChild(row);
+
+    if (i === 999) {
+      const more = document.createElement('div');
+      more.style.cssText = 'padding:4px;color:#888;font-size:10px';
+      more.textContent = `...${visible.length - 1000} more (use filter)`;
+      listDiv.appendChild(more);
+      break;
+    }
+  }
+}
+
+// ── Verdict helpers ───────────────────────────────────────────────────────────
+function refreshCellVerdict(cellIdx) {
+  const c = cells[cellIdx];
+  if (!c.glbFile) return;
+  c.approveBtn.classList.toggle('active', approvedSet.has(c.glbFile));
+  c.denyBtn.classList.toggle('active', deniedSet.has(c.glbFile));
+  c.cell.classList.toggle('v-approved', approvedSet.has(c.glbFile));
+  c.cell.classList.toggle('v-denied', deniedSet.has(c.glbFile));
+}
+
+async function setCellVerdict(cellIdx, verdict) {
+  const c = cells[cellIdx];
+  if (!c.glbFile) return;
+  const glb = c.glbFile;
+
+  // In the denied tab, pressing deny again just soft-hides it from the current
+  // session view — it stays in deniedSet and reappears on tab switch or refresh.
+  if (currentTab === 'denied' && verdict === 'denied') {
+    softHiddenSet.add(glb);
+    selectedSet.delete(glb);
+    updateCounts();
+    loadPage();
+    return;
+  }
+
+  const prev = approvedSet.has(glb) ? 'approved' : deniedSet.has(glb) ? 'denied' : null;
+  approvedSet.delete(glb);
+  deniedSet.delete(glb);
+  if (verdict !== prev) {
+    if (verdict === 'approved') approvedSet.add(glb);
+    else                        deniedSet.add(glb);
+  }
+  await saveVerdicts();
+  refreshCellVerdict(cellIdx);
+  updateCounts();
+  renderSidebarList();
+}
+
+// Wire up per-cell events
+for (let i = 0; i < PAGE_SIZE; i++) {
+  const c = cells[i];
+  c.approveBtn.addEventListener('click', () => setCellVerdict(i, 'approved'));
+  c.denyBtn.addEventListener('click', () => setCellVerdict(i, 'denied'));
+
+  // Click anywhere on the cell (not on a button/checkbox) to toggle selection
+  c.cell.addEventListener('click', (e) => {
+    if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+    if (!c.glbFile) return;
+    if (selectedSet.has(c.glbFile)) {
+      selectedSet.delete(c.glbFile);
+      c.checkbox.checked = false;
+      c.cell.classList.remove('selected');
+    } else {
+      selectedSet.add(c.glbFile);
+      c.checkbox.checked = true;
+      c.cell.classList.add('selected');
+    }
+  });
+
+  c.checkbox.addEventListener('change', () => {
+    if (c.glbFile) {
+      if (c.checkbox.checked) { selectedSet.add(c.glbFile); c.cell.classList.add('selected'); }
+      else { selectedSet.delete(c.glbFile); c.cell.classList.remove('selected'); }
+    }
+  });
+  c.copyBtn.addEventListener('click', () => {
+    if (!c.glbFile) return;
+    const stem = c.glbFile.replace(/\.glb$/i, '');
+    navigator.clipboard.writeText(stem).catch(() => {});
+    c.copyBtn.textContent = '\u2713'; c.copyBtn.style.color = '#4e4';
+    setTimeout(() => { c.copyBtn.textContent = '\u2398'; c.copyBtn.style.color = '#aaa'; }, 800);
+  });
+}
+
+// ── Select All / Deselect All ─────────────────────────────────────────────────
+document.getElementById('btn-select-all').addEventListener('click', () => {
+  for (const c of cells) {
+    if (c.glbFile) { selectedSet.add(c.glbFile); c.checkbox.checked = true; c.cell.classList.add('selected'); }
+  }
+});
+document.getElementById('btn-deselect-all').addEventListener('click', () => {
+  selectedSet.clear();
+  for (const c of cells) { c.checkbox.checked = false; c.cell.classList.remove('selected'); }
+});
+
+// ── Bulk actions ──────────────────────────────────────────────────────────────
+document.getElementById('btn-bulk-approve').addEventListener('click', async () => {
+  for (const g of selectedSet) { approvedSet.add(g); deniedSet.delete(g); softHiddenSet.delete(g); }
+  selectedSet.clear();
+  await saveVerdicts();
+  loadPage();
+});
+document.getElementById('btn-bulk-deny').addEventListener('click', async () => {
+  for (const g of selectedSet) { deniedSet.add(g); approvedSet.delete(g); }
+  selectedSet.clear();
+  await saveVerdicts();
+  loadPage();
+});
+
+// ── Page nav ──────────────────────────────────────────────────────────────────
+document.getElementById('btn-prev').addEventListener('click', () => { currentPage--; loadPage(); });
+document.getElementById('btn-next').addEventListener('click', () => { currentPage++; loadPage(); });
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    // Leaving the denied tab clears soft-hides so the full list returns
+    if (currentTab === 'denied' && btn.dataset.tab !== 'denied') softHiddenSet.clear();
+    currentTab = btn.dataset.tab;
+    currentPage = 0;
+    selectedSet.clear();
+    loadPage();
+  });
+});
+
+// ── Open Folder ───────────────────────────────────────────────────────────────
+document.getElementById('btn-open-folder').addEventListener('click', async () => {
+  try { await fetch('/api/open-meshes-folder'); } catch {}
+});
+
+// ── Filter ────────────────────────────────────────────────────────────────────
+filterInput.addEventListener('input', () => { currentPage = 0; loadPage(); });
+
+// ── Texture/DoubleSide toggle ─────────────────────────────────────────────────
+for (const id of ['showTextures', 'doubleSide']) {
+  document.getElementById(id).addEventListener('change', () => loadPage());
+}
+
+// ── Render loop ───────────────────────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+  for (const c of cells) {
+    if (!c.glbFile || c.cell.style.display === 'none') continue;
+    const rect = c.cvs.getBoundingClientRect();
+    const w = Math.floor(rect.width * devicePixelRatio);
+    const h = Math.floor(rect.height * devicePixelRatio);
+    if (w < 1 || h < 1) continue;
+    if (c.cvs.width !== w || c.cvs.height !== h) {
+      c.renderer.setSize(w, h, false);
+      c.cvs.style.width = rect.width + 'px';
+      c.cvs.style.height = rect.height + 'px';
+      c.camera.aspect = w / h;
+      c.camera.updateProjectionMatrix();
+    }
+    c.renderer.render(c.scene, c.camera);
+  }
+}
+animate();
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+loadPage();
+
+</script>
+</body>
+</html>

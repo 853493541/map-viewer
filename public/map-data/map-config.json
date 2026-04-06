@@ -1,0 +1,18 @@
+{
+  "name": "\u9f99\u95e8\u5bfb\u5b9d",
+  "landscape": {
+    "regionSize": 512,
+    "leafNodeSize": 64,
+    "worldOriginX": -102400.0,
+    "worldOriginY": -102400.0,
+    "unitScaleX": 100.0,
+    "unitScaleY": 100.0,
+    "regionGridX": 8,
+    "regionGridY": 8,
+    "heightMax": 409600.0,
+    "heightMin": -409600.0,
+    "heightmapResolution": 513
+  },
+  "totalSceneObjects": 4964,
+  "meshCount": 622
+}

@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Source mesh files (binary game assets, large)
+source-meshes/
+
+# Map data (generated, large binary files)
+public/map-data/textures/
+public/map-data/heightmap/*.bin
+public/map-data/meshes/*.glb
+public/map-data/entities/*.json
+public/map-data/entity-index.json
+public/map-data/mesh-map.json
+public/map-data/mesh-list.json
+public/map-data/landscape-info.json
+public/map-data/minimap.png
+public/map-data/regioninfo.png
+
+# Three.js local copies (downloaded, not committed)
+public/lib/
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+Thumbs.db
+.DS_Store
+
+# IDE
+.vscode/

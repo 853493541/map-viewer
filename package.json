@@ -1,0 +1,17 @@
+{
+  "name": "jx3-web-map-viewer",
+  "version": "1.0.0",
+  "description": "JX3 Map Viewer - Reverse-engineered KSword3D scene renderer for web",
+  "type": "module",
+  "scripts": {
+    "convert": "node tools/convert-map.js",
+    "convert:mesh": "node tools/convert-mesh.js",
+    "dev": "node server.js",
+    "dev:py": "python tools/serve.py",
+    "build": "node tools/build-map-data.js"
+  },
+  "dependencies": {
+    "three": "^0.170.0"
+  },
+  "devDependencies": {}
+}

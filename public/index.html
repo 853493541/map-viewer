@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JX3 Map Manager</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; color: #eee; }
+    #canvas { width: 100vw; height: 100vh; display: block; }
+
+    #ui-overlay {
+      position: fixed; top: 10px; left: 10px;
+      background: rgba(0,0,0,0.75); padding: 10px 14px; border-radius: 6px;
+      font-size: 12px; max-width: 300px; pointer-events: none; z-index: 10;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    #ui-overlay .row { margin: 2px 0; color: #cfc; }
+
+    #loading {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: #111; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; z-index: 200;
+    }
+    #loading h1 { font-size: 22px; margin-bottom: 8px; color: #dca; }
+    #loading .bar { width: 400px; height: 6px; background: #333; border-radius: 3px; margin-top: 12px; }
+    #loading .fill { height: 100%; background: #6a4; border-radius: 3px; transition: width 0.2s; width: 0%; }
+    #loading-status { color: #aaa; font-size: 13px; margin-top: 8px; }
+
+    #controls-help {
+      position: fixed; bottom: 10px; left: 10px; color: #aaa;
+      background: rgba(0,0,0,0.7); padding: 8px 12px; border-radius: 4px;
+      font-size: 11px; z-index: 10; pointer-events: none;
+    }
+
+    /* Minimap */
+    #minimap-container {
+      position: fixed; bottom: 10px; right: 10px; z-index: 20;
+      border: 2px solid rgba(255,255,255,0.3); border-radius: 6px;
+      overflow: hidden; background: #111; cursor: crosshair;
+    }
+    #minimap { display: block; image-rendering: pixelated; }
+    #minimap-marker {
+      position: absolute; width: 10px; height: 10px;
+      background: #f33; border: 2px solid #fff; border-radius: 50%;
+      transform: translate(-50%, -50%); pointer-events: none; z-index: 1;
+    }
+    #minimap-fov {
+      position: absolute; pointer-events: none; z-index: 1;
+      width: 0; height: 0;
+      border-left: 20px solid transparent;
+      border-right: 20px solid transparent;
+      border-bottom: 30px solid rgba(255,255,0,0.25);
+      transform-origin: bottom center;
+    }
+
+    /* Mesh panel */
+    #mesh-panel {
+      position: fixed; top: 10px; right: 10px; width: 360px;
+      max-height: calc(100vh - 80px);
+      background: rgba(15,15,20,0.94); border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px; z-index: 30; display: none;
+      font-size: 12px; flex-direction: column;
+    }
+    #mesh-panel.visible { display: flex; }
+    #mesh-panel .panel-header {
+      padding: 8px 12px; font-weight: bold; color: #dca;
+      display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;
+    }
+    #mesh-panel .panel-header button {
+      background: none; border: 1px solid rgba(255,255,255,0.2);
+      color: #aaa; padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 11px;
+    }
+    #mesh-panel .panel-header button:hover { background: rgba(255,255,255,0.1); }
+    #mesh-panel .tabs {
+      display: flex; border-bottom: 1px solid rgba(255,255,255,0.1); flex-shrink: 0;
+    }
+    #mesh-panel .tab {
+      flex: 1; padding: 8px; text-align: center; cursor: pointer;
+      background: rgba(255,255,255,0.03); color: #aaa;
+      border: none; font-size: 12px; font-family: inherit;
+    }
+    #mesh-panel .tab.active { background: rgba(255,255,255,0.08); color: #fff; border-bottom: 2px solid #6a4; }
+    #mesh-panel .search-box {
+      padding: 6px 10px; flex-shrink: 0;
+    }
+    #mesh-panel .search-box input {
+      width: 100%; padding: 5px 8px; background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.15); border-radius: 3px;
+      color: #eee; font-size: 12px; font-family: inherit;
+    }
+    #mesh-panel .tab-content { display: none; overflow-y: auto; flex: 1; min-height: 0; }
+    #mesh-panel .tab-content.active { display: block; }
+    #mesh-panel #tab-keyword { overflow-y: hidden; display: none; flex-direction: column; }
+    #mesh-panel #tab-keyword.active { display: flex; }
+    #mesh-panel .mesh-item {
+      padding: 5px 10px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.04);
+      display: flex; flex-direction: column; gap: 2px;
+    }
+    #mesh-panel .mesh-item .item-row { display: flex; justify-content: space-between; align-items: center; }
+    #mesh-panel .mesh-item .path { color: #666; font-size: 9px; word-break: break-all; line-height: 1.3; }
+    #mesh-panel .mesh-item:hover { background: rgba(255,255,255,0.06); }
+    #mesh-panel .mesh-item.official { border-left: 3px solid #f0c040; background: rgba(240,192,64,0.06); }
+    #mesh-panel .mesh-item .name { color: #adf; word-break: break-all; flex: 1; font-size: 11px; }
+    #mesh-panel .mesh-item .info { color: #888; margin-left: 8px; font-size: 10px; white-space: nowrap; }
+    #mesh-panel .mesh-item.missing .name { color: #f99; }
+    #mesh-panel .copy-btns { margin-left: 6px; display: inline-flex; gap: 4px; }
+    #mesh-panel .copy-btn {
+      background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.2); color: #ddd; cursor: pointer;
+      padding: 4px 10px; border-radius: 4px; font-size: 12px; line-height: 1.4; min-width: 32px;
+    }
+    #mesh-panel .copy-btn:hover { background: rgba(255,255,255,0.3); color: #fff; border-color: rgba(255,255,255,0.4); }
+
+    /* Keyword groups */
+    #mesh-panel .kw-group { border-bottom: 1px solid rgba(255,255,255,0.1); }
+    #mesh-panel .kw-header {
+      padding: 7px 10px; cursor: pointer; display: flex; align-items: center; gap: 6px;
+      background: rgba(255,180,60,0.08); color: #f0c040;
+    }
+    #mesh-panel .kw-header:hover { background: rgba(255,180,60,0.15); }
+    #mesh-panel .kw-header .kw-word { font-size: 13px; font-weight: bold; flex: 1; }
+    #mesh-panel .kw-header .kw-meta { font-size: 10px; color: #aaa; white-space: nowrap; }
+    #mesh-panel .kw-header .kw-copy {
+      background: rgba(240,192,64,0.25); border: 1px solid rgba(240,192,64,0.5); color: #f0c040;
+      padding: 3px 10px; border-radius: 4px; font-size: 12px; cursor: pointer; white-space: nowrap;
+    }
+    #mesh-panel .kw-header .kw-copy:hover { background: rgba(240,192,64,0.45); color: #fff; }
+    #mesh-panel .kw-children { display: none; }
+
+    /* Resource overview styles */
+    .res-category { border-bottom: 1px solid rgba(255,255,255,0.08); padding: 10px 12px; }
+    .res-category-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .res-category-header .icon { font-size: 16px; }
+    .res-category-header .label { font-size: 13px; font-weight: bold; color: #dca; }
+    .res-row { display: flex; justify-content: space-between; padding: 2px 0 2px 24px; font-size: 11px; }
+    .res-row .key { color: #aaa; }
+    .res-row .val { font-weight: bold; }
+    .res-row .val.good { color: #8c8; }
+    .res-row .val.warn { color: #fc6; }
+    .res-row .val.bad { color: #f88; }
+    .res-row .val.info { color: #8bf; }
+    .res-bar { height: 4px; background: #333; border-radius: 2px; margin: 4px 24px 2px; overflow: hidden; }
+    .res-bar .fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
+    .res-note { padding: 2px 24px; font-size: 9px; color: #666; font-style: italic; }
+
+    .toast {
+      position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.88); color: #6f6; padding: 8px 18px;
+      border-radius: 4px; font-size: 12px; z-index: 300; pointer-events: none;
+      white-space: nowrap;
+      animation: toastfade 2s forwards;
+    }
+    @keyframes toastfade { 0%{opacity:1} 70%{opacity:1} 100%{opacity:0} }
+
+    /* Verdicts tab */
+    #mesh-panel .verdict-item {
+      padding: 4px 10px; display: flex; align-items: center; gap: 6px;
+      border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 11px; cursor: pointer;
+    }
+    #mesh-panel .verdict-item:hover { background: rgba(255,255,255,0.06); }
+    #mesh-panel .verdict-item.denied { opacity: 0.5; }
+    #mesh-panel .verdict-item.denied .v-name { text-decoration: line-through; color: #f88; }
+    #mesh-panel .verdict-item .v-check { width: 16px; height: 16px; accent-color: #6a4; cursor: pointer; }
+    #mesh-panel .verdict-item .v-name { flex: 1; word-break: break-all; color: #adf; }
+    #mesh-panel .verdict-item .v-count { color: #888; font-size: 10px; white-space: nowrap; }
+    #mesh-panel .verdict-controls {
+      padding: 6px 10px; display: flex; gap: 6px; border-bottom: 1px solid rgba(255,255,255,0.1);
+      flex-shrink: 0; flex-wrap: wrap; align-items: center;
+    }
+    #mesh-panel .verdict-controls button {
+      background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2);
+      color: #ccc; padding: 3px 10px; border-radius: 3px; cursor: pointer; font-size: 11px;
+    }
+    #mesh-panel .verdict-controls button:hover { background: rgba(255,255,255,0.15); }
+    #mesh-panel .verdict-controls .count-label { color: #888; font-size: 10px; margin-left: auto; }
+
+    /* Transform controls panel */
+    #transform-panel {
+      position: fixed; bottom: 50px; left: 50%; transform: translateX(-50%);
+      background: rgba(15,15,20,0.94); border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 8px; padding: 10px 16px; z-index: 40; display: none;
+      font-size: 12px; min-width: 420px;
+    }
+    #transform-panel.visible { display: flex; flex-direction: column; gap: 8px; }
+    #transform-panel .xf-header {
+      display: flex; justify-content: space-between; align-items: center; color: #dca; font-weight: bold;
+    }
+    #transform-panel .xf-row { display: flex; align-items: center; gap: 8px; }
+    #transform-panel .xf-label { width: 20px; font-weight: bold; text-align: center; }
+    #transform-panel .xf-label.x { color: #f66; }
+    #transform-panel .xf-label.y { color: #6f6; }
+    #transform-panel .xf-label.z { color: #66f; }
+    #transform-panel .xf-val { color: #eee; width: 80px; text-align: right; font-family: monospace; }
+    #transform-panel .xf-btn {
+      background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+      color: #ddd; padding: 3px 8px; border-radius: 3px; cursor: pointer; font-size: 12px;
+      min-width: 28px; text-align: center;
+    }
+    #transform-panel .xf-btn:hover { background: rgba(255,255,255,0.25); }
+    #transform-panel .xf-btn.delete { color: #f66; border-color: rgba(255,80,80,0.4); }
+    #transform-panel .xf-btn.delete:hover { background: rgba(255,80,80,0.2); }
+    #transform-panel .xf-step {
+      display: flex; align-items: center; gap: 4px; color: #888; font-size: 10px;
+    }
+    #transform-panel .xf-step input {
+      width: 60px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+      color: #eee; padding: 2px 4px; border-radius: 3px; font-size: 11px; text-align: right;
+    }
+
+    /* Selection highlight */
+    .mesh-item.selected { background: rgba(100,200,100,0.15) !important; border-left: 3px solid #6f6 !important; }
+
+    /* Region tab */
+    #tab-region .region-form { padding: 10px 12px; }
+    #tab-region .region-form label { display: block; color: #aaa; font-size: 11px; margin-bottom: 4px; }
+    #tab-region .region-form input[type="number"] {
+      width: 100%; padding: 4px 6px; background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15); border-radius: 3px;
+      color: #eee; font-size: 12px; margin-bottom: 8px;
+    }
+    #tab-region .region-form .coord-row { display: flex; gap: 8px; }
+    #tab-region .region-form .coord-row > div { flex: 1; }
+    #tab-region .region-btn {
+      width: 100%; padding: 6px; margin-top: 4px; background: rgba(100,200,100,0.2);
+      border: 1px solid rgba(100,200,100,0.4); color: #cfc; cursor: pointer;
+      border-radius: 4px; font-size: 12px;
+    }
+    #tab-region .region-btn:hover { background: rgba(100,200,100,0.35); }
+    #tab-region .region-btn.danger { background: rgba(255,100,100,0.2); border-color: rgba(255,100,100,0.4); color: #fcc; }
+    #tab-region .region-btn.danger:hover { background: rgba(255,100,100,0.35); }
+    #tab-region .region-info { padding: 6px 12px; font-size: 11px; color: #888; }
+    #tab-region .region-stats { padding: 6px 12px; font-size: 11px; color: #adf; border-top: 1px solid rgba(255,255,255,0.08); }
+
+    /* Region selection box on minimap */
+    #minimap-region-box {
+      position: absolute; border: 2px solid #0f0; background: rgba(0,255,0,0.1);
+      pointer-events: none; z-index: 2; display: none;
+    }
+
+    /* Resource Manager */
+    #resource-manager {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      z-index: 300; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; font-family: 'Segoe UI', sans-serif;
+    }
+    #resource-manager h1 {
+      font-size: 28px; color: #dca; margin-bottom: 6px; letter-spacing: 2px;
+    }
+    #resource-manager .subtitle {
+      color: #888; font-size: 13px; margin-bottom: 30px;
+    }
+    #resource-manager .map-grid {
+      display: flex; flex-wrap: wrap; gap: 16px; justify-content: center;
+      max-width: 900px; padding: 0 20px;
+    }
+    #resource-manager .map-card {
+      width: 260px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px; padding: 16px; cursor: pointer; transition: all 0.2s;
+      position: relative;
+    }
+    #resource-manager .map-card .map-delete {
+      position: absolute; top: 8px; right: 8px;
+      background: rgba(255,60,60,0.25); border: 1px solid rgba(255,80,80,0.5);
+      color: #f88; width: 24px; height: 24px; border-radius: 50%;
+      cursor: pointer; font-size: 13px; display: flex; align-items: center;
+      justify-content: center; line-height: 1; z-index: 2;
+    }
+    #resource-manager .map-card .map-delete:hover { background: rgba(255,60,60,0.6); color: #fff; }
+    #resource-manager .map-card:hover {
+      background: rgba(255,255,255,0.12); border-color: rgba(100,200,100,0.5);
+      transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+    #resource-manager .map-card .map-thumb {
+      width: 100%; height: 140px; background: #222; border-radius: 6px;
+      margin-bottom: 10px; overflow: hidden; display: flex; align-items: center; justify-content: center;
+    }
+    #resource-manager .map-card .map-thumb img {
+      width: 100%; height: 100%; object-fit: cover;
+    }
+    #resource-manager .map-card .map-name {
+      font-size: 16px; font-weight: bold; color: #eee; margin-bottom: 4px;
+    }
+    #resource-manager .map-card .map-meta {
+      font-size: 11px; color: #888;
+    }
+    #resource-manager .map-card .map-badge {
+      display: inline-block; font-size: 9px; padding: 2px 6px; border-radius: 3px;
+      margin-top: 6px; color: #fff;
+    }
+    #resource-manager .map-card .map-badge.original { background: #4a4; }
+    #resource-manager .map-card .map-badge.custom { background: #a64; }
+    #resource-manager .custom-maps-section {
+      margin-top: 24px; width: 100%; max-width: 580px; text-align: center;
+    }
+    #resource-manager .custom-maps-section h3 {
+      color: #aaa; font-size: 13px; margin-bottom: 10px; font-weight: normal;
+    }
+
+    /* Exit button (editor -> manager) */
+    #exit-to-manager {
+      position: fixed; top: 10px; left: 320px; z-index: 50;
+      background: rgba(200,60,60,0.2); border: 1px solid rgba(200,60,60,0.4);
+      color: #faa; padding: 5px 12px; border-radius: 4px; cursor: pointer;
+      font-size: 12px; font-family: inherit; display: none;
+    }
+    #exit-to-manager:hover { background: rgba(200,60,60,0.4); }
+
+    /* Lock indicator */
+    #lock-indicator {
+      position: fixed; top: 10px; left: 460px; z-index: 50;
+      background: rgba(255,180,60,0.15); border: 1px solid rgba(255,180,60,0.3);
+      color: #fc6; padding: 5px 12px; border-radius: 4px;
+      font-size: 11px; display: none;
+    }
+
+    /* Drag-select box */
+    #drag-select-box {
+      position: fixed; border: 2px dashed rgba(100,200,255,0.7);
+      background: rgba(100,200,255,0.1); pointer-events: none;
+      z-index: 45; display: none;
+    }
+
+    /* Top mode bar */
+    #mode-bar {
+      position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
+      background: rgba(15,15,20,0.92); border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px; padding: 3px 4px; z-index: 50; display: none;
+      font-size: 12px;
+    }
+    #mode-bar.visible { display: flex; gap: 2px; }
+    #mode-bar .mode-btn {
+      background: rgba(255,255,255,0.06); border: 1px solid transparent;
+      color: #aaa; padding: 5px 14px; border-radius: 4px; cursor: pointer;
+      font-size: 12px; font-family: inherit; white-space: nowrap;
+    }
+    #mode-bar .mode-btn:hover { background: rgba(255,255,255,0.12); color: #ddd; }
+    #mode-bar .mode-btn.active {
+      background: rgba(100,200,100,0.25); border-color: rgba(100,200,100,0.5);
+      color: #cfc; font-weight: bold;
+    }
+
+    /* Region action bar (shown after drawing) */
+    #region-action-bar {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,15,5,0.97); border: 2px solid rgba(0,255,100,0.7);
+      border-radius: 12px; padding: 16px 24px; z-index: 120; display: none;
+      font-size: 13px; text-align: center; min-width: 520px;
+      box-shadow: 0 0 40px rgba(0,255,100,0.25), 0 4px 20px rgba(0,0,0,0.5);
+    }
+    #region-action-bar.visible { display: block; }
+    #region-action-bar .rab-title { color: #0f8; font-weight: bold; font-size: 15px; margin-bottom: 6px; }
+    #region-action-bar .rab-info { color: #6a8; font-size: 11px; margin-bottom: 14px; }
+    #region-action-bar .rab-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+    #region-action-bar .rab-btn {
+      padding: 9px 20px; border-radius: 7px; cursor: pointer; font-size: 13px;
+      font-family: inherit; border: 1px solid; font-weight: 600;
+    }
+    #region-action-bar .rab-btn.apply { background: rgba(0,200,100,0.35); border-color: rgba(0,255,100,0.7); color: #0f8; }
+    #region-action-bar .rab-btn.apply:hover { background: rgba(0,200,100,0.6); }
+    #region-action-bar .rab-btn.save { background: rgba(100,150,255,0.3); border-color: rgba(100,180,255,0.6); color: #acf; }
+    #region-action-bar .rab-btn.save:hover { background: rgba(100,150,255,0.55); }
+    #region-action-bar .rab-btn.edit { background: rgba(255,200,60,0.2); border-color: rgba(255,200,60,0.55); color: #fd0; }
+    #region-action-bar .rab-btn.edit:hover { background: rgba(255,200,60,0.4); }
+    #region-action-bar .rab-btn.cancel { background: rgba(255,60,60,0.15); border-color: rgba(255,80,80,0.5); color: #f88; }
+    #region-action-bar .rab-btn.cancel:hover { background: rgba(255,60,60,0.35); }
+
+    /* Draw mode hint */
+    #draw-hint {
+      position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,20,8,0.96); border: 1px solid rgba(0,255,100,0.6);
+      border-radius: 6px; padding: 8px 22px; z-index: 120; display: none;
+      color: #0f8; font-size: 12px; text-align: center; pointer-events: none;
+      box-shadow: 0 0 20px rgba(0,255,100,0.15);
+    }
+    #draw-hint.visible { display: block; }
+
+    /* Region dialog (R key overlay) */
+    #region-dialog {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: rgba(15,15,25,0.96); border: 1px solid rgba(100,200,100,0.3);
+      border-radius: 10px; padding: 20px 28px; z-index: 100; display: none;
+      min-width: 400px; max-width: 500px; font-size: 13px;
+    }
+    #region-dialog.visible { display: block; }
+    #region-dialog h2 { color: #dca; font-size: 16px; margin-bottom: 12px; }
+    #region-dialog label { display: block; color: #aaa; font-size: 11px; margin-bottom: 3px; }
+    #region-dialog input[type="number"], #region-dialog input[type="text"] {
+      width: 100%; padding: 5px 8px; background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15); border-radius: 4px;
+      color: #eee; font-size: 12px; margin-bottom: 8px;
+    }
+    #region-dialog .rd-row { display: flex; gap: 10px; }
+    #region-dialog .rd-row > div { flex: 1; }
+    #region-dialog .rd-btn {
+      width: 100%; padding: 8px; margin-top: 6px; border-radius: 5px;
+      border: 1px solid rgba(100,200,100,0.4); background: rgba(100,200,100,0.15);
+      color: #cfc; cursor: pointer; font-size: 12px; font-family: inherit;
+    }
+    #region-dialog .rd-btn:hover { background: rgba(100,200,100,0.3); }
+    #region-dialog .rd-btn.primary { background: rgba(100,200,100,0.3); font-weight: bold; }
+    #region-dialog .rd-btn.danger { background: rgba(255,100,100,0.15); border-color: rgba(255,100,100,0.4); color: #fcc; }
+    #region-dialog .rd-close {
+      position: absolute; top: 10px; right: 14px; background: none; border: none;
+      color: #888; font-size: 18px; cursor: pointer;
+    }
+    #region-dialog .rd-close:hover { color: #fff; }
+    #region-dialog .rd-stats { color: #888; font-size: 11px; margin-top: 8px; padding-top: 8px;
+      border-top: 1px solid rgba(255,255,255,0.08); }
+
+    /* Save dialog */
+    #save-dialog {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: rgba(15,15,25,0.96); border: 1px solid rgba(100,200,100,0.3);
+      border-radius: 10px; padding: 20px 28px; z-index: 110; display: none;
+      min-width: 380px; font-size: 13px;
+    }
+    #save-dialog.visible { display: block; }
+    #save-dialog h2 { color: #dca; font-size: 16px; margin-bottom: 12px; }
+    #save-dialog label { display: block; color: #aaa; font-size: 11px; margin-bottom: 3px; }
+    #save-dialog input[type="text"] {
+      width: 100%; padding: 6px 10px; background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15); border-radius: 4px;
+      color: #eee; font-size: 13px; margin-bottom: 12px;
+    }
+    #save-dialog .sd-btn {
+      padding: 8px 20px; border-radius: 5px; cursor: pointer; font-size: 12px;
+      font-family: inherit; margin-right: 8px;
+    }
+    #save-dialog .sd-btn.primary {
+      background: rgba(100,200,100,0.3); border: 1px solid rgba(100,200,100,0.5); color: #cfc;
+    }
+    #save-dialog .sd-btn.cancel {
+      background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2); color: #aaa;
+    }
+
+    /* Multi-select info bar */
+    #multi-select-bar {
+      position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+      background: rgba(15,15,20,0.94); border: 1px solid rgba(100,200,255,0.3);
+      border-radius: 8px; padding: 8px 16px; z-index: 40; display: none;
+      font-size: 12px; min-width: 300px; text-align: center;
+    }
+    #multi-select-bar.visible { display: flex; flex-direction: column; gap: 6px; }
+    #multi-select-bar .msb-info { color: #8bf; }
+    #multi-select-bar .msb-actions { display: flex; gap: 6px; justify-content: center; }
+    #multi-select-bar .msb-btn {
+      background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+      color: #ddd; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 11px;
+    }
+    #multi-select-bar .msb-btn:hover { background: rgba(255,255,255,0.2); }
+    #multi-select-bar .msb-btn.danger { color: #f88; border-color: rgba(255,80,80,0.4); }
+  </style>
+</head>
+<body>
+  <!-- Resource Manager (landing page) -->
+  <div id="resource-manager">
+    <h1>JX3 Map Manager</h1>
+    <div class="subtitle">Select a map to open in the editor</div>
+    <div class="map-grid" id="map-grid">
+      <!-- Populated by JS -->
+    </div>
+    <div class="custom-maps-section" id="custom-maps-section" style="display:none">
+      <h3>— Custom Maps —</h3>
+      <div class="map-grid" id="custom-map-grid"></div>
+    </div>
+  </div>
+
+  <canvas id="canvas"></canvas>
+
+  <div id="loading" style="display:none">
+    <h1 id="loading-title">JX3 Map Editor</h1>
+    <div id="loading-status">Initializing...</div>
+    <div class="bar"><div class="fill" id="loading-bar"></div></div>
+  </div>
+
+  <!-- Exit to manager button -->
+  <button id="exit-to-manager" title="Return to map manager">← Exit Map</button>
+
+  <!-- Lock indicator -->
+  <div id="lock-indicator" title="This map is read-only">🔒 Original (read-only)</div>
+
+  <!-- Save changes button (shown only for custom maps) -->
+  <button id="save-changes-btn" style="display:none;position:fixed;top:8px;right:160px;z-index:60;background:rgba(60,180,90,0.25);border:1px solid rgba(80,220,100,0.5);color:#8f8;padding:5px 12px;border-radius:4px;font-size:12px;cursor:pointer" title="Export current scene state (Ctrl+S)">💾 Save Changes</button>
+
+  <!-- Drag-select box overlay -->
+  <div id="drag-select-box"></div>
+
+  <!-- Mode bar (Camera / Select) -->
+  <div id="mode-bar">
+    <button class="mode-btn active" id="mode-camera" title="Camera mode — left-click to look around (C)">📷 Camera</button>
+    <button class="mode-btn" id="mode-select" title="Select mode — left-click to select/drag-select objects (V)">🔧 Select</button>
+  </div>
+
+  <div id="ui-overlay" style="display:none">
+    <div class="row" id="info-pos">
+      <span style="color:#f66">X:</span> <span id="info-cam-x">-</span>
+      <span style="color:#6f6;margin-left:6px">Y:</span> <span id="info-cam-y">-</span>
+      <span style="color:#66f;margin-left:6px">Z:</span> <span id="info-cam-z">-</span>
+    </div>
+    <div class="row" id="info-region">Region: -</div>
+    <div class="row" id="info-fps">FPS: -</div>
+    <div class="row" id="info-terrain">Terrain: -</div>
+    <div class="row" id="info-objects">Objects: -</div>
+    <div class="row" id="info-speed">Speed: -</div>
+    <div class="row" id="info-debug" style="color:#aaf">Debug: -</div>
+    <div class="row" style="margin-top:4px; pointer-events:auto">
+      <label style="color:#aaa;font-size:11px">Draw dist:
+        <input type="range" id="draw-distance" min="2000" max="200000" value="80000" step="2000" style="width:120px;vertical-align:middle">
+        <span id="draw-distance-val" style="color:#cfc">80k</span>
+      </label>
+    </div>
+    <div class="row" style="pointer-events:auto">
+      <label style="color:#aaa;font-size:11px">Obj cap:
+        <input type="range" id="object-cap" min="10" max="5000" value="2500" step="50" style="width:120px;vertical-align:middle">
+        <span id="object-cap-val" style="color:#cfc">2500</span>
+      </label>
+    </div>
+  </div>
+
+  <div id="controls-help" style="display:none">
+    WASD: Move | Space/Ctrl: Up/Down | Mouse: Look | Scroll: Speed | G: Gravity | M: Mesh Panel | R: Region | C: Camera Mode | V: Select Mode | Esc: Deselect
+  </div>
+
+  <div id="minimap-container" style="display:none">
+    <canvas id="minimap" width="256" height="256" style="width:200px;height:200px"></canvas>
+    <div id="minimap-marker"></div>
+    <div id="minimap-fov"></div>
+    <div id="minimap-region-box"></div>
+    <div id="minimap-toggle" style="position:absolute;top:2px;right:2px;z-index:2;font-size:9px;color:#aaa;cursor:pointer;background:rgba(0,0,0,0.5);padding:1px 4px;border-radius:2px" title="Toggle minimap view">🔄</div>
+  </div>
+
+  <div id="mesh-panel">
+    <div class="panel-header">
+      <span>Resource Panel</span>
+      <div style="display:flex;gap:4px">
+        <button id="mesh-sort-toggle" title="Toggle sort mode">📊 By Count</button>
+        <button id="mesh-panel-close">✕</button>
+      </div>
+    </div>
+    <div class="tabs">
+      <button class="tab active" data-tab="overview">Overview</button>
+      <button class="tab" data-tab="verdicts">Verdicts</button>
+      <button class="tab" data-tab="loaded">Loaded (<span id="loaded-count">0</span>)</button>
+      <button class="tab" data-tab="missing">Missing (<span id="missing-count">0</span>)</button>
+      <button class="tab" data-tab="tex-missing">Tex Missing (<span id="tex-missing-count">0</span>)</button>
+      <button class="tab" data-tab="keyword">Keywords</button>
+      <button class="tab" data-tab="region">Region</button>
+    </div>
+    <div class="search-box">
+      <input type="text" id="mesh-search" placeholder="Search meshes...">
+      <div style="display:flex;gap:8px;margin-top:5px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:10px;color:#666;white-space:nowrap">Missing filter:</span>
+        <label style="font-size:11px;color:#aaa;cursor:pointer;display:flex;align-items:center;gap:4px">
+          <input type="radio" name="fmt-filter" id="fmt-mesh" value="mesh" checked> .mesh
+        </label>
+        <label style="font-size:11px;color:#aaa;cursor:pointer;display:flex;align-items:center;gap:4px">
+          <input type="radio" name="fmt-filter" id="fmt-other" value="other"> .srt/other
+        </label>
+        <label style="font-size:11px;color:#aaa;cursor:pointer;display:flex;align-items:center;gap:4px">
+          <input type="radio" name="fmt-filter" id="fmt-all" value="all"> all
+        </label>
+      </div>
+    </div>
+    <div class="tab-content active" id="tab-overview"></div>
+    <div class="tab-content" id="tab-verdicts"></div>
+    <div class="tab-content" id="tab-loaded"></div>
+    <div class="tab-content" id="tab-missing"></div>
+    <div class="tab-content" id="tab-tex-missing"></div>
+    <div class="tab-content" id="tab-keyword"></div>
+    <div class="tab-content" id="tab-region"></div>
+  </div>
+
+  <div id="transform-panel">
+    <div class="xf-header">
+      <span id="xf-title">Selected: —</span>
+      <div style="display:flex;gap:4px">
+        <button class="xf-btn" id="xf-copy" title="Duplicate this entity">📋 Copy</button>
+        <button class="xf-btn delete" id="xf-delete" title="Delete selected entity">🗑 Delete</button>
+        <button class="xf-btn" id="xf-close" title="Deselect">✕</button>
+      </div>
+    </div>
+    <div class="xf-row">
+      <span class="xf-label x">X</span>
+      <button class="xf-btn" data-axis="x" data-dir="-1">◄</button>
+      <span class="xf-val" id="xf-x">0</span>
+      <button class="xf-btn" data-axis="x" data-dir="1">►</button>
+    </div>
+    <div class="xf-row">
+      <span class="xf-label y">Y</span>
+      <button class="xf-btn" data-axis="y" data-dir="-1">▼</button>
+      <span class="xf-val" id="xf-y">0</span>
+      <button class="xf-btn" data-axis="y" data-dir="1">▲</button>
+    </div>
+    <div class="xf-row">
+      <span class="xf-label z">Z</span>
+      <button class="xf-btn" data-axis="z" data-dir="-1">◄</button>
+      <span class="xf-val" id="xf-z">0</span>
+      <button class="xf-btn" data-axis="z" data-dir="1">►</button>
+    </div>
+    <div class="xf-step">
+      <span>Step:</span>
+      <input type="number" id="xf-step" value="100" min="1" max="10000" step="10">
+      <span>units</span>
+    </div>
+    <div class="xf-row" style="justify-content:center;gap:12px">
+      <button class="xf-btn" data-rot="-90" title="Rotate -90° (Q)">↺ -90°</button>
+      <span class="xf-label" style="color:#fa0;width:auto">Rot</span>
+      <button class="xf-btn" data-rot="90" title="Rotate +90° (E)">↻ +90°</button>
+    </div>
+  </div>
+
+  <!-- Region dialog (R key) -->
+  <div id="region-dialog">
+    <button class="rd-close" id="rd-close">✕</button>
+    <h2>Region / Arena Tool</h2>
+    <div style="color:#888;font-size:11px;margin-bottom:10px">Define a rectangular arena region. Press R to toggle.</div>
+    <div class="rd-row">
+      <div><label>Min X</label><input type="number" id="rd-min-x" step="1000"></div>
+      <div><label>Max X</label><input type="number" id="rd-max-x" step="1000"></div>
+    </div>
+    <div class="rd-row">
+      <div><label>Min Z</label><input type="number" id="rd-min-z" step="1000"></div>
+      <div><label>Max Z</label><input type="number" id="rd-max-z" step="1000"></div>
+    </div>
+    <button class="rd-btn" id="rd-use-camera">📍 Center on Camera (±10k)</button>
+    <button class="rd-btn" id="rd-draw-on-map" style="border-color:rgba(0,255,100,0.5);color:#0f6">✏️ Draw Box on Map (click+drag)</button>
+    <button class="rd-btn" id="rd-pen-mode" style="border-color:rgba(0,200,255,0.5);color:#0cf">🖊 Pen Mode (click to add polygon points)</button>
+    <button class="rd-btn" id="rd-preview">👁 Preview on Minimap</button>
+    <button class="rd-btn primary" id="rd-apply">✂ Apply Region Filter</button>
+    <button class="rd-btn danger" id="rd-clear">↩ Show Full Map</button>
+    <button class="rd-btn" id="rd-save-arena" style="margin-top:10px;border-color:rgba(100,150,255,0.4);color:#adf">💾 Save Arena as New Map (Ctrl+S)</button>
+    <div style="display:flex;gap:6px;margin-top:6px">
+      <button class="rd-btn" id="rd-full-export" style="flex:1;border-color:rgba(255,200,0,0.4);color:#fda">📦 Full Export</button>
+      <button class="rd-btn" id="rd-full-import" style="flex:1;border-color:rgba(0,200,255,0.4);color:#aef">📥 Import Map</button>
+    </div>
+    <div class="rd-stats" id="rd-stats">No region filter active</div>
+  </div>
+
+  <!-- Save dialog (Ctrl+S) -->
+  <div id="save-dialog">
+    <h2>Save Map</h2>
+    <div id="save-overwrite-section" style="display:none;margin-bottom:12px">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:#cfc;font-size:12px;margin-bottom:6px">
+        <input type="radio" name="save-mode" id="save-mode-overwrite" value="overwrite" checked> Overwrite "<span id="save-overwrite-name"></span>"
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:#adf;font-size:12px">
+        <input type="radio" name="save-mode" id="save-mode-new" value="new"> Save as new map
+      </label>
+    </div>
+    <label>Map name:</label>
+    <input type="text" id="save-map-name" placeholder="my-arena-01">
+    <div style="color:#888;font-size:10px;margin-bottom:12px">
+      Entities within the active region will be saved as a new custom map JSON.
+    </div>
+    <button class="sd-btn primary" id="save-confirm">Save</button>
+    <button class="sd-btn cancel" id="save-cancel">Cancel</button>
+  </div>
+
+  <!-- Region action bar (shown after drawing) -->
+  <div id="region-action-bar">
+    <div class="rab-title">✅ Region Ready — What next?</div>
+    <div class="rab-info" id="rab-info">Drag the white corner handles to resize the box</div>
+    <div class="rab-actions">
+      <button class="rab-btn apply" id="rab-apply">✂ Apply Filter</button>
+      <button class="rab-btn save" id="rab-save">💾 Save as Map</button>
+      <button class="rab-btn edit" id="rab-edit">⚙ Edit Bounds</button>
+      <button class="rab-btn cancel" id="rab-cancel">✕ Cancel</button>
+    </div>
+  </div>
+
+  <!-- Draw mode hint -->
+  <div id="draw-hint"></div>
+
+  <!-- Multi-select bar -->
+  <div id="multi-select-bar">
+    <div class="msb-info" id="msb-info">0 selected</div>
+    <div class="msb-actions">
+      <button class="msb-btn" id="msb-copy" title="Duplicate selected in place (Ctrl+C)">📋 Duplicate</button>
+      <button class="msb-btn danger" id="msb-delete" title="Delete selected (Del)">🗑 Delete</button>
+      <button class="msb-btn" id="msb-deselect">✕ Deselect All</button>
+    </div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./lib/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
