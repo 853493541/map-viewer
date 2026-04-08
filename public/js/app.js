@@ -3059,82 +3059,110 @@ class MapEditor {
     }
   }
 
-  // ─── Full Export (terrain + entities + GLBs list) ────
-  exportFullMap() {
-    const r = this.entitySystem.regionFilter;
-    const entities = this.entitySystem.getCurrentEntities().filter(e => {
-      if (!r) return true;
-      const p = e.worldPos;
-      return p.x >= r.minX && p.x <= r.maxX && p.z >= r.minZ && p.z <= r.maxZ;
-    });
+  _collectCurrentSceneEntities(region = null) {
+    if (!this.entitySystem) return [];
 
-    // Unique GLB file list
-    const glbSet = new Set();
-    for (const e of entities) glbSet.add(e.mesh);
-    const glbList = [...glbSet].sort();
+    const out = [];
+    const mat4 = new THREE.Matrix4();
 
-    // Collect terrain heightmap data for region tiles
-    const terrainTiles = {};
-    if (this.terrainSystem) {
-      const ts = this.terrainSystem;
-      for (const [key, hd] of ts.heightmaps) {
-        // key = "rx_ry"
-        const [rx, ry] = key.split('_').map(Number);
-        const regionOriginX = ts.config.worldOriginX + rx * ts.regionWorldSize;
-        const regionOriginZ = ts.config.worldOriginY + ry * ts.regionWorldSize;
-        const regionEndX = regionOriginX + ts.regionWorldSize;
-        const regionEndZ = regionOriginZ + ts.regionWorldSize;
+    for (const entry of this.entitySystem.instancedMeshes) {
+      const glbName = entry.glbName || '';
+      if (!glbName) continue;
 
-        // Check if this tile overlaps with the region
-        if (r && (regionEndX < r.minX || regionOriginX > r.maxX ||
-                  regionEndZ < r.minZ || regionOriginZ > r.maxZ)) continue;
+      const subs = entry.subMeshes || [entry.mesh];
+      const primary = subs[0];
+      if (!primary) continue;
 
-        // Base64 encode the Float32Array for compact transport
-        const bytes = new Uint8Array(hd.buffer, hd.byteOffset, hd.byteLength);
-        let binary = '';
-        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-        terrainTiles[key] = btoa(binary);
+      for (let i = 0; i < primary.count; i++) {
+        primary.getMatrixAt(i, mat4);
+        const e = mat4.elements;
+
+        // Skip deleted/zero-scale slots.
+        const sx = e[0] * e[0] + e[1] * e[1] + e[2] * e[2];
+        if (sx < 0.001) continue;
+
+        const worldPos = { x: e[12], y: e[13], z: e[14] };
+        if (region) {
+          if (worldPos.x < region.minX || worldPos.x > region.maxX ||
+              worldPos.z < region.minZ || worldPos.z > region.maxZ) {
+            continue;
+          }
+          if (region.polygon && !this._pointInPolygon(worldPos.x, worldPos.z, region.polygon)) {
+            continue;
+          }
+        }
+
+        out.push({
+          mesh: glbName,
+          matrix: Array.from(e),
+          worldPos,
+        });
       }
     }
 
-    // Terrain config for reconstruction
-    const terrainConfig = this.terrainSystem ? {
-      worldOriginX: this.terrainSystem.config.worldOriginX,
-      worldOriginY: this.terrainSystem.config.worldOriginY,
-      regionSize: this.terrainSystem.config.regionSize,
-      unitScaleX: this.terrainSystem.config.unitScaleX,
-      heightmapResolution: this.terrainSystem.config.heightmapResolution,
-      regionGridX: this.terrainSystem.config.regionGridX,
-      regionGridY: this.terrainSystem.config.regionGridY,
-      heightScale: this.terrainSystem.config.heightScale,
-    } : null;
+    return out;
+  }
 
-    const exportData = {
-      version: 2,
-      name: this._currentCustomMap?.name || 'export',
-      sourceMap: this.currentMapPath || 'map-data',
-      created: Date.now(),
-      region: r || null,
-      regionCorners: this._regionCorners || null,
-      entityCount: entities.length,
-      glbList,
-      glbBasePath: this.entitySystem.dataPath,
-      entities,
-      terrainConfig,
-      terrainTiles,
-    };
+  // ─── Full Export (terrain + entities + GLBs list) ────
+  async exportFullMap() {
+    if (!this.entitySystem) {
+      this.showToast('Entity system not ready');
+      return;
+    }
 
-    const json = JSON.stringify(exportData);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${exportData.name}-full-export.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const region = this.entitySystem.regionFilter || null;
+    const entities = this._collectCurrentSceneEntities(region);
+    if (entities.length === 0) {
+      this.showToast('No entities to export');
+      return;
+    }
 
-    const sizeMB = (json.length / 1048576).toFixed(1);
-    this.showToast(`Full export: ${entities.length} entities, ${Object.keys(terrainTiles).length} terrain tiles, ${glbList.length} GLBs (${sizeMB} MB)`);
+    const btn = document.getElementById('rd-full-export');
+    const prevText = btn?.textContent;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '⏳ Building full export on Desktop...';
+    }
+
+    try {
+      const exportName = this._currentCustomMap?.name || `full-map-${Date.now()}`;
+      const payload = {
+        name: exportName,
+        sourceMapPath: this.currentMapPath || 'map-data',
+        region,
+        regionCorners: this._regionCorners || null,
+        entities,
+      };
+
+      const res = await fetch('/api/export-full', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || `Export failed (${res.status})`);
+      }
+
+      const st = data.stats || {};
+      const msg = `FULL export done: ${st.entities || entities.length} entities, ${st.meshesCopied || 0}/${st.meshesRequested || 0} GLBs, ${st.heightmapsCopied || 0} heightmaps`;
+      this.showToast(msg);
+
+      // Open full viewer directly to the new package.
+      if (data.viewerUrl) {
+        const win = window.open(data.viewerUrl, '_blank');
+        if (!win) this.showToast('Export done. Open /full-viewer.html to load the package');
+      }
+    } catch (err) {
+      console.error('Full export failed:', err);
+      this.showToast(`Full export failed: ${err.message || err}`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = prevText || '📦 Full Export';
+      }
+    }
   }
 
   // ─── Import Full Export ────────────────────────────

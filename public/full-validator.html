@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JX3 Full Export Validator</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      background: #0b0f14;
+      color: #d8e0e8;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      padding: 14px;
+    }
+
+    .panel {
+      background: rgba(13, 17, 24, 0.9);
+      border: 1px solid rgba(145, 170, 200, 0.24);
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    select,
+    button {
+      height: 32px;
+      border-radius: 7px;
+      border: 1px solid rgba(140, 165, 190, 0.35);
+      background: rgba(23, 31, 42, 0.95);
+      color: #d7dee6;
+      padding: 0 10px;
+      font-size: 12px;
+    }
+
+    select { min-width: 420px; }
+    button { cursor: pointer; }
+    button:hover {
+      border-color: rgba(173, 210, 246, 0.65);
+      background: rgba(35, 48, 65, 0.95);
+    }
+
+    #status {
+      color: #9eb2c7;
+      font-size: 12px;
+      margin-left: 4px;
+      white-space: nowrap;
+    }
+
+    #summary {
+      line-height: 1.6;
+      font-size: 13px;
+    }
+
+    .ok { color: #80d58f; }
+    .warn { color: #f0c27c; }
+    .bad { color: #f18f8f; }
+
+    .report-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+      gap: 12px;
+    }
+
+    .section-title {
+      margin: 0 0 8px;
+      font-size: 14px;
+      color: #d6c6a4;
+    }
+
+    .kv {
+      display: grid;
+      grid-template-columns: 150px 1fr;
+      gap: 6px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .list {
+      margin: 0;
+      padding-left: 18px;
+      max-height: 240px;
+      overflow: auto;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #b9c6d4;
+    }
+
+    .empty {
+      font-size: 12px;
+      color: #8fa2b7;
+      font-style: italic;
+    }
+
+    .headline {
+      margin: 0 0 8px;
+      font-size: 18px;
+      color: #d9c7a8;
+    }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h1 class="headline">JX3 Full Export Validator</h1>
+    <div class="toolbar">
+      <select id="package-select"></select>
+      <button id="refresh-packages" type="button">Refresh</button>
+      <button id="validate-package" type="button">Validate</button>
+      <button id="open-viewer" type="button">Open Full Viewer</button>
+      <button id="download-report" type="button" disabled>Download Report JSON</button>
+      <span id="status">Ready</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div id="summary">No report yet.</div>
+  </div>
+
+  <div id="report" class="report-grid"></div>
+
+  <script type="module" src="js/full-validator.js"></script>
+</body>
+</html>
