@@ -2,6 +2,25 @@
 
 This guide explains how to export a regional map with collision and how another app can load it in a compatible way.
 
+## Quick Narrative: How to Use This Guide
+
+Use this guide in four short passes:
+
+1. Export pass:
+  start with Export Modes and produce a package using `Export Region + Collision`.
+2. Validation pass:
+  check `manifest.json`, `collision.json`, and `mesh-collision-index.json` summary before integrating.
+3. Integration pass:
+  follow How to Use Exported Files in Another App and wire file loading in that order.
+4. Engine pass:
+  implement the Full Reader Engine Blueprint modules, then use the Boot Sequence and Frame Loop as your runtime template.
+
+If your goal is to reproduce the same behavior first, copy the pipeline exactly:
+
+- map-level collision for global fallback
+- per-mesh sidecars for precise runtime collision
+- sidecar index as the completeness gate
+
 ## What You Get
 
 A collision-enabled export package contains:
