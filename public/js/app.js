@@ -2379,6 +2379,13 @@ class MapEditor {
       });
     }
 
+    const exportRegionalWithCollisionBtn = document.getElementById('rd-regional-export-collision');
+    if (exportRegionalWithCollisionBtn) {
+      exportRegionalWithCollisionBtn.addEventListener('click', () => {
+        this.exportFullMap({ attachMeshCollision: true, requireRegion: true });
+      });
+    }
+
     // Full import
     document.getElementById('rd-full-import').addEventListener('click', () => {
       this.importFullMap();
@@ -3130,14 +3137,28 @@ class MapEditor {
     }
 
     const attachMeshCollision = !!options.attachMeshCollision;
-    const endpoint = attachMeshCollision ? '/api/export-full-with-collision' : '/api/export-full';
-    const buttonId = attachMeshCollision ? 'rd-full-export-collision' : 'rd-full-export';
-    const fallbackButtonLabel = attachMeshCollision ? '🧱 Export With Collision' : '📦 Full Export';
-    const busyLabel = attachMeshCollision
-      ? '⏳ Building export + attaching GLB collision...'
-      : '⏳ Building full export on Desktop...';
+    const requireRegion = !!options.requireRegion;
+    const endpoint = requireRegion && attachMeshCollision
+      ? '/api/export-regional-with-collision'
+      : (attachMeshCollision ? '/api/export-full-with-collision' : '/api/export-full');
+    const buttonId = requireRegion
+      ? 'rd-regional-export-collision'
+      : (attachMeshCollision ? 'rd-full-export-collision' : 'rd-full-export');
+    const fallbackButtonLabel = requireRegion
+      ? '🗺 Export Region + Collision'
+      : (attachMeshCollision ? '🧱 Export With Collision' : '📦 Full Export');
+    const busyLabel = requireRegion
+      ? '⏳ Building regional export + attaching mesh collision...'
+      : (attachMeshCollision
+        ? '⏳ Building export + attaching GLB collision...'
+        : '⏳ Building full export on Desktop...');
 
-    const region = this.entitySystem.regionFilter || null;
+    const region = this.entitySystem.regionFilter || this._pendingRegion || null;
+    if (requireRegion && !region) {
+      this.showToast('No region selected. Apply/preview a region first, then export.');
+      return;
+    }
+
     const entities = this._collectCurrentSceneEntities(region);
     if (entities.length === 0) {
       this.showToast('No entities to export');
@@ -3152,7 +3173,8 @@ class MapEditor {
     }
 
     try {
-      const exportName = this._currentCustomMap?.name || `full-map-${Date.now()}`;
+      const exportName = this._currentCustomMap?.name
+        || `${requireRegion ? 'regional-map' : 'full-map'}-${Date.now()}`;
       const payload = {
         name: exportName,
         sourceMapPath: this.currentMapPath || 'map-data',
@@ -3178,10 +3200,17 @@ class MapEditor {
         ? `, ${st.collisionObjects || 0} collision boxes + ${st.collisionShells || 0} shells (${st.collisionShellTriangles || 0} tris)`
         : ', collision generation skipped';
 
+      const sidecarsExpected = st.meshCollisionExpected || 0;
+      const sidecarsAttached = st.meshCollisionAttached || 0;
+      const sidecarsMissing = Number.isFinite(st.meshCollisionMissing)
+        ? st.meshCollisionMissing
+        : Math.max(0, sidecarsExpected - sidecarsAttached);
       const attachedSummary = attachMeshCollision
-        ? `, ${st.meshCollisionAttached || 0} GLBs with attached collision`
+        ? `, sidecars ${sidecarsAttached}/${sidecarsExpected} (missing ${sidecarsMissing})`
         : '';
-      const exportLabel = attachMeshCollision ? 'FULL export + collision done' : 'FULL export done';
+      const exportLabel = requireRegion
+        ? 'REGIONAL export + collision done'
+        : (attachMeshCollision ? 'FULL export + collision done' : 'FULL export done');
       const msg = `${exportLabel}: ${st.entities || entities.length} entities, ${st.meshesCopied || 0}/${st.meshesRequested || 0} GLBs, ${st.heightmapsCopied || 0} heightmaps${collisionSummary}${attachedSummary}`;
       this.showToast(msg);
 

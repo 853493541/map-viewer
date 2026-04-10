@@ -133,7 +133,10 @@ function toSimpleTriangles(rawTriangles) {
   return out;
 }
 
-function buildLocalMeshCollisionAttachment(meshName, localParts, localShellTriangles) {
+function buildLocalMeshCollisionAttachment(meshName, localParts, localShellTriangles, options = {}) {
+  const status = String(options?.status || 'ok');
+  const error = options?.error ? String(options.error) : null;
+
   const parts = Array.isArray(localParts)
     ? localParts.map((part, i) => ({
       id: `part_${i}`,
@@ -147,6 +150,8 @@ function buildLocalMeshCollisionAttachment(meshName, localParts, localShellTrian
     : [];
 
   const shell = buildLocalShellPayload(localShellTriangles);
+  const shellTriangleCount = shell?.triangleCount || 0;
+  const hasCollision = parts.length > 0 || shellTriangleCount > 0;
 
   return {
     version: 1,
@@ -160,6 +165,14 @@ function buildLocalMeshCollisionAttachment(meshName, localParts, localShellTrian
       shellThickness: round3(SHELL_THICKNESS),
       shellTriangleFormat: 'packed-triangle-xyz9',
       attachment: 'per-glb-sidecar-json',
+    },
+    status,
+    error,
+    hasCollision,
+    collisionStats: {
+      parts: parts.length,
+      shells: shell ? 1 : 0,
+      shellTriangles: shellTriangleCount,
     },
     parts,
     shells: shell ? [shell] : [],
@@ -942,13 +955,58 @@ export async function generateCollisionDataForExport({
   let meshesFailed = 0;
   let meshSidecarsWritten = 0;
   let meshSidecarsFailed = 0;
+  const meshSidecarsExpected = attachToMeshes ? meshGroups.size : 0;
+  const meshSidecarIndexFile = attachToMeshes ? 'mesh-collision-index.json' : '';
+  const meshSidecarIndex = [];
 
   for (const meshName of meshGroups.keys()) {
     const resolved = resolveMeshFile(meshesDir, meshLookup, meshName);
     if (!resolved) {
       meshesFailed++;
+
+      if (attachToMeshes) {
+        const sidecarFile = buildMeshCollisionSidecarFileName(meshName, meshSidecarSuffix);
+        const sidecarPath = join(meshesDir, sidecarFile);
+        try {
+          const sidecar = buildLocalMeshCollisionAttachment(
+            meshName,
+            [],
+            [],
+            {
+              status: 'missing-mesh-file',
+              error: 'Mesh file not found during collision extraction',
+            },
+          );
+          writeJsonUtf8(sidecarPath, sidecar);
+          meshSidecarsWritten++;
+          meshSidecarIndex.push({
+            mesh: meshName,
+            sidecar: `meshes/${sidecarFile}`,
+            status: 'missing-mesh-file',
+            hasCollision: false,
+            parts: 0,
+            shellTriangles: 0,
+            error: 'Mesh file not found during collision extraction',
+          });
+        } catch (sidecarErr) {
+          meshSidecarsFailed++;
+          meshSidecarIndex.push({
+            mesh: meshName,
+            sidecar: `meshes/${sidecarFile}`,
+            status: 'sidecar-write-failed',
+            hasCollision: false,
+            parts: 0,
+            shellTriangles: 0,
+            error: sidecarErr?.message || String(sidecarErr),
+          });
+        }
+      }
+
       continue;
     }
+
+    const sidecarFile = buildMeshCollisionSidecarFileName(resolved.meshName, meshSidecarSuffix);
+    const sidecarPath = join(meshesDir, sidecarFile);
 
     try {
       const gltf = await loadGLB(resolved.meshPath);
@@ -956,18 +1014,40 @@ export async function generateCollisionDataForExport({
       const shellTriangles = getGLBShellTriangles(gltf, resolved.meshName);
       const exactTriangles = attachToMeshes ? toSimpleTriangles(extractMeshTriangles(gltf)) : [];
       const sidecarTriangles = exactTriangles.length > 0 ? exactTriangles : shellTriangles;
+      const hasCollision = parts.length > 0 || sidecarTriangles.length > 0;
 
-      if (attachToMeshes && (parts.length > 0 || sidecarTriangles.length > 0)) {
+      if (attachToMeshes) {
         try {
-          const sidecar = buildLocalMeshCollisionAttachment(resolved.meshName, parts, sidecarTriangles);
-          const sidecarPath = join(
-            meshesDir,
-            buildMeshCollisionSidecarFileName(resolved.meshName, meshSidecarSuffix),
+          const sidecar = buildLocalMeshCollisionAttachment(
+            resolved.meshName,
+            parts,
+            sidecarTriangles,
+            {
+              status: hasCollision ? 'ok' : 'empty-collision',
+            },
           );
           writeJsonUtf8(sidecarPath, sidecar);
           meshSidecarsWritten++;
-        } catch {
+          meshSidecarIndex.push({
+            mesh: resolved.meshName,
+            sidecar: `meshes/${sidecarFile}`,
+            status: hasCollision ? 'ok' : 'empty-collision',
+            hasCollision,
+            parts: parts.length,
+            shellTriangles: sidecarTriangles.length,
+            error: null,
+          });
+        } catch (sidecarErr) {
           meshSidecarsFailed++;
+          meshSidecarIndex.push({
+            mesh: resolved.meshName,
+            sidecar: `meshes/${sidecarFile}`,
+            status: 'sidecar-write-failed',
+            hasCollision: false,
+            parts: parts.length,
+            shellTriangles: sidecarTriangles.length,
+            error: sidecarErr?.message || String(sidecarErr),
+          });
         }
       }
 
@@ -980,9 +1060,72 @@ export async function generateCollisionDataForExport({
       } else {
         meshesFailed++;
       }
-    } catch {
+    } catch (meshErr) {
       meshesFailed++;
+
+      if (attachToMeshes) {
+        try {
+          const sidecar = buildLocalMeshCollisionAttachment(
+            resolved.meshName,
+            [],
+            [],
+            {
+              status: 'mesh-load-failed',
+              error: meshErr?.message || String(meshErr),
+            },
+          );
+          writeJsonUtf8(sidecarPath, sidecar);
+          meshSidecarsWritten++;
+          meshSidecarIndex.push({
+            mesh: resolved.meshName,
+            sidecar: `meshes/${sidecarFile}`,
+            status: 'mesh-load-failed',
+            hasCollision: false,
+            parts: 0,
+            shellTriangles: 0,
+            error: meshErr?.message || String(meshErr),
+          });
+        } catch (sidecarErr) {
+          meshSidecarsFailed++;
+          meshSidecarIndex.push({
+            mesh: resolved.meshName,
+            sidecar: `meshes/${sidecarFile}`,
+            status: 'sidecar-write-failed',
+            hasCollision: false,
+            parts: 0,
+            shellTriangles: 0,
+            error: sidecarErr?.message || String(sidecarErr),
+          });
+        }
+      }
     }
+  }
+
+  let meshSidecarsMissing = 0;
+  let meshSidecarIndexPath = '';
+  if (attachToMeshes) {
+    meshSidecarIndexPath = join(mapDataRoot, meshSidecarIndexFile);
+
+    const missingStatuses = new Set([
+      'missing-mesh-file',
+      'mesh-load-failed',
+      'sidecar-write-failed',
+    ]);
+    meshSidecarsMissing = meshSidecarIndex.filter((row) => missingStatuses.has(row.status)).length;
+
+    writeJsonUtf8(meshSidecarIndexPath, {
+      version: 1,
+      generatedAt: Date.now(),
+      packageName,
+      sidecarSuffix: meshSidecarSuffix,
+      summary: {
+        expected: meshSidecarsExpected,
+        written: meshSidecarsWritten,
+        failedWrites: meshSidecarsFailed,
+        missing: meshSidecarsMissing,
+      },
+      entries: meshSidecarIndex,
+    });
   }
 
   const objects = [];
@@ -1115,6 +1258,7 @@ export async function generateCollisionDataForExport({
       shellTriangleFormat: 'packed-triangle-xyz9',
       meshAttachment: attachToMeshes ? 'per-glb-sidecar-json' : 'none',
       meshSidecarSuffix: attachToMeshes ? meshSidecarSuffix : '',
+      meshSidecarIndexFile: attachToMeshes ? meshSidecarIndexFile : '',
     },
     objects,
     shells,
@@ -1129,8 +1273,12 @@ export async function generateCollisionDataForExport({
     meshesTotal: meshGroups.size,
     meshesLoaded,
     meshesFailed,
+    meshSidecarsExpected,
     meshSidecarsWritten,
     meshSidecarsFailed,
+    meshSidecarsMissing,
+    meshSidecarIndexPath,
+    meshSidecarIndexFile,
     skippedEntities,
     scaleFactor,
     offsetX,

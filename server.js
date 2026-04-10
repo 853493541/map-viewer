@@ -2,9 +2,11 @@
  * Static + export API server for the map viewer.
  *
  * Adds:
- * 1) POST /api/export-full  -> build self-contained full export on Desktop
- * 2) GET  /api/full-exports -> list exported packages
- * 3) GET  /full-exports/*   -> serve exported package files
+ * 1) POST /api/export-full -> build self-contained full export on Desktop
+ * 2) POST /api/export-full-with-collision -> full export + per-mesh sidecars
+ * 3) POST /api/export-regional-with-collision -> region-required export + per-mesh sidecars
+ * 4) GET  /api/full-exports -> list exported packages
+ * 5) GET  /full-exports/* -> serve exported package files
  */
 
 import { createServer } from 'http';
@@ -108,6 +110,69 @@ function getOverlappingTiles(region, cfg) {
   return tiles;
 }
 
+function pointInPolygon2D(x, z, polygon) {
+  if (!Array.isArray(polygon) || polygon.length < 3) return true;
+
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const pi = polygon[i] || {};
+    const pj = polygon[j] || {};
+    const xi = Number(pi.x);
+    const zi = Number(pi.z);
+    const xj = Number(pj.x);
+    const zj = Number(pj.z);
+    if (!Number.isFinite(xi) || !Number.isFinite(zi) || !Number.isFinite(xj) || !Number.isFinite(zj)) {
+      continue;
+    }
+
+    const intersects = ((zi > z) !== (zj > z))
+      && (x < ((xj - xi) * (z - zi)) / ((zj - zi) || 1e-9) + xi);
+    if (intersects) inside = !inside;
+  }
+
+  return inside;
+}
+
+function extractEntityWorldPos(ent) {
+  if (
+    ent?.worldPos
+    && Number.isFinite(ent.worldPos.x)
+    && Number.isFinite(ent.worldPos.y)
+    && Number.isFinite(ent.worldPos.z)
+  ) {
+    return {
+      x: Number(ent.worldPos.x),
+      y: Number(ent.worldPos.y),
+      z: Number(ent.worldPos.z),
+    };
+  }
+
+  if (Array.isArray(ent?.matrix) && ent.matrix.length === 16) {
+    return {
+      x: Number(ent.matrix[12]) || 0,
+      y: Number(ent.matrix[13]) || 0,
+      z: Number(ent.matrix[14]) || 0,
+    };
+  }
+
+  return { x: 0, y: 0, z: 0 };
+}
+
+function isEntityInsideRegion(ent, region) {
+  if (!region) return true;
+
+  const pos = extractEntityWorldPos(ent);
+  if (pos.x < region.minX || pos.x > region.maxX || pos.z < region.minZ || pos.z > region.maxZ) {
+    return false;
+  }
+
+  if (Array.isArray(region.polygon) && region.polygon.length >= 3) {
+    return pointInPolygon2D(pos.x, pos.z, region.polygon);
+  }
+
+  return true;
+}
+
 function toSourceEntityMatrixFromThreeElements(e) {
   // Inverse of entities.js LH->RH matrix conversion.
   return [
@@ -205,7 +270,22 @@ async function buildFullExportPackage(payload) {
   const meshDirLookup = buildFlatFileLookup(join(sourceRoot, 'meshes'));
   const textureDirLookup = buildFlatFileLookup(join(sourceRoot, 'textures'));
 
-  const region = payload?.region && typeof payload.region === 'object' ? payload.region : null;
+  const regionRaw = payload?.region && typeof payload.region === 'object' ? payload.region : null;
+  const region = (
+    regionRaw
+    && Number.isFinite(regionRaw.minX)
+    && Number.isFinite(regionRaw.maxX)
+    && Number.isFinite(regionRaw.minZ)
+    && Number.isFinite(regionRaw.maxZ)
+  )
+    ? {
+      minX: Number(regionRaw.minX),
+      maxX: Number(regionRaw.maxX),
+      minZ: Number(regionRaw.minZ),
+      maxZ: Number(regionRaw.maxZ),
+      polygon: Array.isArray(regionRaw.polygon) ? regionRaw.polygon : undefined,
+    }
+    : null;
   const regionCorners = Array.isArray(payload?.regionCorners) ? payload.regionCorners : null;
   const attachMeshCollision = !!payload?.attachMeshCollision;
 
@@ -216,20 +296,22 @@ async function buildFullExportPackage(payload) {
 
   const entityOut = [];
   const usedGlb = new Set();
+  let entitiesFilteredOut = 0;
 
   for (const ent of entitiesIn) {
     if (!Array.isArray(ent?.matrix) || ent.matrix.length !== 16) continue;
+
+    if (region && !isEntityInsideRegion(ent, region)) {
+      entitiesFilteredOut++;
+      continue;
+    }
 
     const srcMat = toSourceEntityMatrixFromThreeElements(ent.matrix);
     let glbName = String(ent?.mesh || '').trim();
     if (!glbName) continue;
     if (!glbName.toLowerCase().endsWith('.glb')) glbName += '.glb';
 
-    const worldPos = {
-      x: Number(ent.matrix[12]) || 0,
-      y: Number(ent.matrix[13]) || 0,
-      z: Number(ent.matrix[14]) || 0,
-    };
+    const worldPos = extractEntityWorldPos(ent);
 
     entityOut.push({
       mesh: glbName,
@@ -369,8 +451,11 @@ async function buildFullExportPackage(payload) {
     objects: 0,
     shells: 0,
     shellTriangles: 0,
+    meshSidecarsExpected: 0,
     meshSidecarsWritten: 0,
     meshSidecarsFailed: 0,
+    meshSidecarsMissing: 0,
+    meshSidecarIndexFile: '',
     meshesLoaded: 0,
     meshesFailed: 0,
     skippedEntities: entityOut.length,
@@ -393,8 +478,11 @@ async function buildFullExportPackage(payload) {
       objects: generated.objects,
       shells: generated.shells || 0,
       shellTriangles: generated.shellTriangles || 0,
+      meshSidecarsExpected: generated.meshSidecarsExpected || 0,
       meshSidecarsWritten: generated.meshSidecarsWritten || 0,
       meshSidecarsFailed: generated.meshSidecarsFailed || 0,
+      meshSidecarsMissing: generated.meshSidecarsMissing || 0,
+      meshSidecarIndexFile: generated.meshSidecarIndexFile || '',
       meshesLoaded: generated.meshesLoaded,
       meshesFailed: generated.meshesFailed,
       skippedEntities: generated.skippedEntities,
@@ -415,7 +503,9 @@ async function buildFullExportPackage(payload) {
     region,
     regionCorners,
     stats: {
+      entitiesInput: entitiesIn.length,
       entities: entityOut.length,
+      entitiesFilteredOut,
       meshesRequested: usedGlb.size,
       meshesCopied: copiedGlbCount,
       texturesRequested: usedTextures.size,
@@ -427,8 +517,11 @@ async function buildFullExportPackage(payload) {
       collisionObjects: collision.objects,
       collisionShells: collision.shells,
       collisionShellTriangles: collision.shellTriangles,
+      meshCollisionExpected: collision.meshSidecarsExpected,
       meshCollisionAttached: collision.meshSidecarsWritten,
       meshCollisionAttachFailures: collision.meshSidecarsFailed,
+      meshCollisionMissing: collision.meshSidecarsMissing,
+      meshCollisionComplete: collision.meshSidecarsMissing === 0,
       collisionMeshesLoaded: collision.meshesLoaded,
       collisionMeshesFailed: collision.meshesFailed,
       collisionSkippedEntities: collision.skippedEntities,
@@ -796,6 +889,38 @@ const server = createServer(async (req, res) => {
   if (method === 'POST' && urlPath === '/api/export-full-with-collision') {
     try {
       const payload = await readBodyJson(req);
+      payload.attachMeshCollision = true;
+      const result = await buildFullExportPackage(payload);
+      sendJson(res, 200, {
+        ok: true,
+        packageName: result.packageName,
+        desktopRoot: DESKTOP_EXPORT_ROOT,
+        packagePath: result.packageRoot,
+        viewerUrl: `/full-viewer.html?pkg=${encodeURIComponent(result.packageName)}`,
+        stats: result.stats,
+      });
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  // API: build regional export package on Desktop and attach per-GLB collision sidecars.
+  if (method === 'POST' && urlPath === '/api/export-regional-with-collision') {
+    try {
+      const payload = await readBodyJson(req);
+      const region = payload?.region;
+      const hasRegion = (
+        region
+        && Number.isFinite(region.minX)
+        && Number.isFinite(region.maxX)
+        && Number.isFinite(region.minZ)
+        && Number.isFinite(region.maxZ)
+      );
+      if (!hasRegion) {
+        throw new Error('Region is required for /api/export-regional-with-collision');
+      }
+
       payload.attachMeshCollision = true;
       const result = await buildFullExportPackage(payload);
       sendJson(res, 200, {
