@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JX3 Full Viewer</title>
+  <title>JX3 Export Reader Walk Test</title>
   <style>
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
     body {
-      background: #0b0f14;
-      color: #d7dee6;
+      background: #0a1117;
+      color: #d5deea;
       font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
     }
 
@@ -30,71 +30,75 @@
       gap: 8px;
       align-items: center;
       padding: 10px 12px;
-      background: rgba(8, 10, 14, 0.9);
-      border: 1px solid rgba(150, 180, 210, 0.25);
+      background: rgba(8, 12, 18, 0.9);
+      border: 1px solid rgba(130, 170, 220, 0.3);
       border-radius: 8px;
       backdrop-filter: blur(4px);
     }
 
     #toolbar select,
-    #toolbar button {
+    #toolbar button,
+    #toolbar label {
       height: 30px;
       border-radius: 6px;
-      border: 1px solid rgba(140, 165, 190, 0.35);
-      background: rgba(23, 31, 42, 0.95);
-      color: #d7dee6;
-      padding: 0 10px;
+      border: 1px solid rgba(130, 170, 220, 0.35);
+      background: rgba(20, 30, 42, 0.95);
+      color: #d5deea;
       font-size: 12px;
     }
 
-    #toolbar select {
-      min-width: 340px;
-    }
+    #toolbar select { min-width: 320px; padding: 0 10px; }
+    #toolbar button { padding: 0 10px; cursor: pointer; }
+    #toolbar button:hover { border-color: rgba(180, 215, 250, 0.7); }
 
-    #toolbar button {
-      cursor: pointer;
-    }
-
-    #toolbar button:hover {
-      border-color: rgba(173, 210, 246, 0.65);
-      background: rgba(35, 48, 65, 0.95);
+    #toolbar label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 8px;
+      border-color: rgba(130, 170, 220, 0.25);
+      background: rgba(15, 20, 28, 0.95);
     }
 
     #status {
-      color: #9fb3c8;
+      color: #9cb0c8;
       font-size: 12px;
       white-space: nowrap;
+      max-width: 520px;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     #info {
       position: fixed;
       left: 10px;
       bottom: 10px;
-      z-index: 45;
+      z-index: 40;
       padding: 10px 12px;
-      min-width: 320px;
-      background: rgba(8, 10, 14, 0.85);
-      border: 1px solid rgba(150, 180, 210, 0.25);
+      min-width: 360px;
+      background: rgba(8, 12, 18, 0.86);
+      border: 1px solid rgba(130, 170, 220, 0.25);
       border-radius: 8px;
       font-size: 12px;
       line-height: 1.5;
-      color: #c7d0d9;
+      color: #c7d2de;
       pointer-events: none;
+      white-space: pre-line;
     }
 
     #help {
       position: fixed;
       right: 10px;
       bottom: 10px;
-      z-index: 45;
+      z-index: 40;
       max-width: 360px;
       padding: 8px 10px;
-      background: rgba(8, 10, 14, 0.85);
-      border: 1px solid rgba(150, 180, 210, 0.2);
+      background: rgba(8, 12, 18, 0.86);
+      border: 1px solid rgba(130, 170, 220, 0.22);
       border-radius: 8px;
       font-size: 11px;
       line-height: 1.5;
-      color: #aab8c5;
+      color: #aab8c8;
       pointer-events: none;
     }
 
@@ -105,20 +109,20 @@
       align-items: center;
       justify-content: center;
       flex-direction: column;
-      background: rgba(0, 0, 0, 0.75);
+      background: rgba(0, 0, 0, 0.74);
       z-index: 100;
     }
 
     #loading h1 {
       margin: 0;
       font-size: 24px;
-      color: #d9c6a2;
+      color: #d5c08e;
       letter-spacing: 1px;
     }
 
     #loading p {
       margin: 8px 0 0;
-      color: #b0bac7;
+      color: #b6c2d1;
       font-size: 13px;
     }
 
@@ -135,8 +139,8 @@
     #loading .fill {
       height: 100%;
       width: 0%;
-      background: linear-gradient(90deg, #6aa06f, #a3c087);
-      transition: width 0.2s;
+      background: linear-gradient(90deg, #5f9f84, #9fc77a);
+      transition: width 0.15s;
     }
   </style>
 </head>
@@ -147,26 +151,23 @@
     <select id="package-select"></select>
     <button id="refresh-packages" type="button">Refresh</button>
     <button id="load-package" type="button">Load</button>
-    <button id="open-walk-reader" type="button">Walk Reader</button>
     <button id="open-resources" type="button">Resources</button>
     <button id="open-validator" type="button">Validate</button>
+    <label><input id="show-collision" type="checkbox"> Show collision shells</label>
     <span id="status">Ready</span>
   </div>
 
-  <div id="info">
-    <div id="info-package">Package: -</div>
-    <div id="info-cam">Cam: 0, 0, 0</div>
-    <div id="info-fps">FPS: -</div>
-    <div id="info-objects">Objects: -</div>
-    <div id="info-region">Region: -</div>
-  </div>
+  <div id="info">Package: -</div>
 
   <div id="help">
-    Click canvas to lock mouse. WASD move, Space/Ctrl up/down, Shift sprint, wheel speed, G gravity toggle.
+    Export-only reader. Third-person character control.<br>
+    Hold left mouse and drag to rotate camera. Mouse wheel adjusts camera distance.<br>
+    W/A/S/D move, Shift sprint, hold Space to keep rising, G gravity, 1/2/3 speed.<br>
+    Collision source: exported per-mesh sidecars + terrain height.
   </div>
 
   <div id="loading">
-    <h1>Loading Full Export</h1>
+    <h1>Loading Export Package</h1>
     <p id="loading-text">Preparing...</p>
     <div class="bar"><div class="fill" id="loading-fill"></div></div>
   </div>
@@ -178,6 +179,6 @@
     }
   }
   </script>
-  <script type="module" src="js/full-viewer.js"></script>
+  <script type="module" src="js/export-reader.js"></script>
 </body>
 </html>

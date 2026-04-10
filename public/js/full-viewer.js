@@ -52,6 +52,7 @@ class FullMapViewer {
   async init() {
     document.getElementById('refresh-packages').addEventListener('click', () => this.refreshPackages());
     document.getElementById('load-package').addEventListener('click', () => this.loadSelectedPackage());
+    document.getElementById('open-walk-reader').addEventListener('click', () => this.openWalkReaderForCurrentPackage());
     document.getElementById('open-resources').addEventListener('click', () => this.openResourcesForCurrentPackage());
     document.getElementById('open-validator').addEventListener('click', () => this.openValidatorForCurrentPackage());
 
@@ -167,6 +168,14 @@ class FullMapViewer {
     const url = `/mesh-inspector.html?pkg=${encodeURIComponent(pkg)}`;
     const win = window.open(url, '_blank');
     if (!win) this.setStatus('Popup blocked. Open /mesh-inspector.html manually.');
+  }
+
+  openWalkReaderForCurrentPackage() {
+    const pkg = this.packageSelect.value;
+    if (!pkg) return;
+    const url = `/export-reader.html?pkg=${encodeURIComponent(pkg)}`;
+    const win = window.open(url, '_blank');
+    if (!win) this.setStatus('Popup blocked. Open /export-reader.html manually.');
   }
 
   _disposeObjectTree(obj) {
