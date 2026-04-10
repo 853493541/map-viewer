@@ -6,9 +6,11 @@ import * as THREE from 'three';
 import { GLTFLoader } from '../lib/GLTFLoader.js';
 
 export class EntitySystem {
-  constructor(scene, dataPath = 'map-data') {
+  constructor(scene, dataPath = 'map-data', options = {}) {
     this.scene = scene;
     this.dataPath = dataPath;
+    this.entityIndexFile = options.entityIndexFile || 'entity-index.json';
+    this.matrixFormat = options.matrixFormat || 'source-lh-row-major';
     this.entityGroup = new THREE.Group();
     this.entityGroup.name = 'entities';
     scene.add(this.entityGroup);
@@ -54,7 +56,7 @@ export class EntitySystem {
 
     let entityFiles;
     try {
-      entityFiles = await (await fetch(`${this.dataPath}/entity-index.json`)).json();
+      entityFiles = await (await fetch(`${this.dataPath}/${encodeURIComponent(this.entityIndexFile)}`)).json();
     } catch {
       entityFiles = [];
       for (let ry = 0; ry < 8; ry++)
@@ -94,8 +96,12 @@ export class EntitySystem {
           const entities = await res.json();
           for (const entity of entities) {
             const m = entity.matrix;
+            if (!Array.isArray(m) || m.length !== 16) continue;
+
             // Convert LH position to RH: negate Z
-            const pos = { x: m[12], y: m[13], z: -m[14] };
+            const pos = this.matrixFormat === 'three-matrix4-column-major'
+              ? { x: m[12], y: m[13], z: m[14] }
+              : { x: m[12], y: m[13], z: -m[14] };
 
             // Skip entities outside the region filter (pre-load culling for custom maps)
             if (this.regionFilter) {
@@ -158,18 +164,24 @@ export class EntitySystem {
             this.invalidTransformCount++;
             continue;
           }
-          // Convert LH (DirectX) row-major transform to RH (glTF/Three.js)
-          // Apply reflection S = diag(1,1,-1,1): M_rh = S * M_lh * S
-          // Row-major layout: [r0c0,r0c1,r0c2,r0c3, r1c0,..., r3c0,r3c1,r3c2,r3c3]
           const mat4 = new THREE.Matrix4();
-          mat4.set(
-             m[0],  m[4], -m[8],   m[12],
-             m[1],  m[5], -m[9],   m[13],
-            -m[2], -m[6],  m[10], -m[14],
-             m[3],  m[7], -m[11],  m[15]
-          );
+          if (this.matrixFormat === 'three-matrix4-column-major') {
+            mat4.fromArray(m);
+          } else {
+            // Convert LH (DirectX) row-major transform to RH (glTF/Three.js)
+            // Apply reflection S = diag(1,1,-1,1): M_rh = S * M_lh * S
+            // Row-major layout: [r0c0,r0c1,r0c2,r0c3, r1c0,..., r3c0,r3c1,r3c2,r3c3]
+            mat4.set(
+               m[0],  m[4], -m[8],   m[12],
+               m[1],  m[5], -m[9],   m[13],
+              -m[2], -m[6],  m[10], -m[14],
+               m[3],  m[7], -m[11],  m[15]
+            );
+          }
           validTransforms.push(mat4);
-          const pos = { x: m[12], y: m[13], z: -m[14] };
+          const pos = this.matrixFormat === 'three-matrix4-column-major'
+            ? { x: m[12], y: m[13], z: m[14] }
+            : { x: m[12], y: m[13], z: -m[14] };
           validPositions.push(pos);
         }
 
@@ -575,10 +587,14 @@ export class EntitySystem {
         const sx = mat4.elements[0] ** 2 + mat4.elements[1] ** 2 + mat4.elements[2] ** 2;
         if (sx < 0.001) continue;
         const x = mat4.elements[12], y = mat4.elements[13], z = mat4.elements[14];
-        // Convert RH→LH: negate Z back for export
-        const lhMat = [...mat4.elements];
-        lhMat[14] = -lhMat[14];
-        result.push({ mesh: entry.glbName, matrix: lhMat, worldPos: { x, y, z } });
+        if (this.matrixFormat === 'three-matrix4-column-major') {
+          result.push({ mesh: entry.glbName, matrix: [...mat4.elements], worldPos: { x, y, z } });
+        } else {
+          // Convert RH→LH: negate Z back for export
+          const lhMat = [...mat4.elements];
+          lhMat[14] = -lhMat[14];
+          result.push({ mesh: entry.glbName, matrix: lhMat, worldPos: { x, y, z } });
+        }
       }
     }
     return result;

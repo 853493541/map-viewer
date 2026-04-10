@@ -33,6 +33,42 @@ function sourceEntityMatrixToWorldMatrix(sourceMatrix) {
   return out;
 }
 
+function worldMatrixToSourceEntityMatrix(worldMatrix) {
+  const e = worldMatrix.elements;
+  return [
+    e[0],
+    e[1],
+    -e[2],
+    e[3],
+    e[4],
+    e[5],
+    -e[6],
+    e[7],
+    -e[8],
+    -e[9],
+    e[10],
+    -e[11],
+    e[12],
+    e[13],
+    -e[14],
+    e[15],
+  ];
+}
+
+function entityMatrixToWorldMatrix(matrix, matrixFormat) {
+  if (matrixFormat === 'three-matrix4-column-major') {
+    return new THREE.Matrix4().fromArray(matrix);
+  }
+  return sourceEntityMatrixToWorldMatrix(matrix);
+}
+
+function worldMatrixToEntityMatrix(worldMatrix, matrixFormat) {
+  if (matrixFormat === 'three-matrix4-column-major') {
+    return [...worldMatrix.elements];
+  }
+  return worldMatrixToSourceEntityMatrix(worldMatrix);
+}
+
 class ExportSidecarCollisionSystem {
   constructor(terrainSystem, scene) {
     this.terrainSystem = terrainSystem;
@@ -41,10 +77,12 @@ class ExportSidecarCollisionSystem {
     this.shellGeometry = null;
     this.shellBVH = null;
     this.shellLines = null;
+    this.partBoxesLines = null;
 
     this.objectsCount = 0;
     this.shellCount = 0;
     this.shellTriangleCount = 0;
+    this.partBoxesCount = 0;
     this.sidecarsExpected = 0;
     this.sidecarsLoaded = 0;
     this.sidecarsMissing = 0;
@@ -60,6 +98,7 @@ class ExportSidecarCollisionSystem {
     this._triA = new THREE.Vector3();
     this._triB = new THREE.Vector3();
     this._triC = new THREE.Vector3();
+    this._boxCorners = Array.from({ length: 8 }, () => new THREE.Vector3());
   }
 
   dispose() {
@@ -77,10 +116,20 @@ class ExportSidecarCollisionSystem {
       this.shellGeometry = null;
     }
 
+    if (this.partBoxesLines) {
+      this.scene.remove(this.partBoxesLines);
+      this.partBoxesLines.geometry?.dispose();
+      if (this.partBoxesLines.material && typeof this.partBoxesLines.material.dispose === 'function') {
+        this.partBoxesLines.material.dispose();
+      }
+      this.partBoxesLines = null;
+    }
+
     this.shellBVH = null;
     this.objectsCount = 0;
     this.shellCount = 0;
     this.shellTriangleCount = 0;
+    this.partBoxesCount = 0;
     this.sidecarsExpected = 0;
     this.sidecarsLoaded = 0;
     this.sidecarsMissing = 0;
@@ -98,6 +147,8 @@ class ExportSidecarCollisionSystem {
   _extractTrianglesFromSidecar(sidecarJson) {
     const out = [];
     const shells = Array.isArray(sidecarJson?.shells) ? sidecarJson.shells : [];
+    const rawParts = Array.isArray(sidecarJson?.parts) ? sidecarJson.parts : [];
+    const partBoxes = [];
     let shellCount = 0;
 
     for (const shell of shells) {
@@ -121,17 +172,74 @@ class ExportSidecarCollisionSystem {
       }
     }
 
+    for (const part of rawParts) {
+      const cx = Number(part?.localCx);
+      const cz = Number(part?.localCz);
+      const w = Number(part?.localW);
+      const d = Number(part?.localD);
+      const baseY = Number(part?.localBaseY);
+      const topY = Number(part?.localTopY);
+      if (![cx, cz, w, d, baseY, topY].every(Number.isFinite)) continue;
+      if (w <= 0 || d <= 0 || topY < baseY) continue;
+
+      partBoxes.push({
+        cx,
+        cz,
+        w,
+        d,
+        baseY,
+        topY,
+      });
+    }
+
     return {
       trianglesFlat: out,
       shells: shellCount,
-      parts: Array.isArray(sidecarJson?.parts) ? sidecarJson.parts.length : 0,
+      parts: partBoxes.length,
+      partBoxes,
     };
+  }
+
+  _appendPartBoxEdges(flatOut, partBox, worldMatrix) {
+    const halfW = partBox.w * 0.5;
+    const halfD = partBox.d * 0.5;
+
+    const minX = partBox.cx - halfW;
+    const maxX = partBox.cx + halfW;
+    const minZ = partBox.cz - halfD;
+    const maxZ = partBox.cz + halfD;
+    const minY = partBox.baseY;
+    const maxY = partBox.topY;
+
+    const c = this._boxCorners;
+    c[0].set(minX, minY, minZ).applyMatrix4(worldMatrix);
+    c[1].set(maxX, minY, minZ).applyMatrix4(worldMatrix);
+    c[2].set(maxX, minY, maxZ).applyMatrix4(worldMatrix);
+    c[3].set(minX, minY, maxZ).applyMatrix4(worldMatrix);
+    c[4].set(minX, maxY, minZ).applyMatrix4(worldMatrix);
+    c[5].set(maxX, maxY, minZ).applyMatrix4(worldMatrix);
+    c[6].set(maxX, maxY, maxZ).applyMatrix4(worldMatrix);
+    c[7].set(minX, maxY, maxZ).applyMatrix4(worldMatrix);
+
+    const edges = [
+      [0, 1], [1, 2], [2, 3], [3, 0],
+      [4, 5], [5, 6], [6, 7], [7, 4],
+      [0, 4], [1, 5], [2, 6], [3, 7],
+    ];
+
+    for (const [a, b] of edges) {
+      flatOut.push(
+        c[a].x, c[a].y, c[a].z,
+        c[b].x, c[b].y, c[b].z,
+      );
+    }
   }
 
   async loadFromExportData(dataPath, entitySystem, onProgress = null) {
     this.dispose();
 
     const entities = Array.isArray(entitySystem?.allEntities) ? entitySystem.allEntities : [];
+    const matrixFormat = entitySystem?.matrixFormat || 'source-lh-row-major';
     if (entities.length === 0) return;
 
     const entityByMesh = new Map();
@@ -165,7 +273,7 @@ class ExportSidecarCollisionSystem {
       }
     }
 
-    const sidecarByMeshKey = new Map();
+    const sidecarDataByMeshKey = new Map();
     let meshLoadDone = 0;
 
     for (const meshKey of meshKeys) {
@@ -187,8 +295,8 @@ class ExportSidecarCollisionSystem {
         this.shellCount += parsed.shells;
         this.sidecarsLoaded++;
 
-        if (parsed.trianglesFlat.length > 0) {
-          sidecarByMeshKey.set(meshKey, parsed.trianglesFlat);
+        if (parsed.trianglesFlat.length > 0 || parsed.partBoxes.length > 0) {
+          sidecarDataByMeshKey.set(meshKey, parsed);
         }
       } catch {
         this.sidecarsMissing++;
@@ -196,6 +304,7 @@ class ExportSidecarCollisionSystem {
     }
 
     const worldFlat = [];
+    const partBoxLineFlat = [];
     let entityDone = 0;
     const entityTotal = entities.length;
 
@@ -212,21 +321,33 @@ class ExportSidecarCollisionSystem {
 
       const meshName = normalizeMeshName(entity?.mesh);
       const meshKey = meshName.toLowerCase();
-      const localTriangles = sidecarByMeshKey.get(meshKey);
-      if (!localTriangles || localTriangles.length === 0) continue;
+      const sidecarData = sidecarDataByMeshKey.get(meshKey);
+      if (!sidecarData) continue;
 
-      const worldMatrix = sourceEntityMatrixToWorldMatrix(entity.matrix);
+      const localTriangles = sidecarData.trianglesFlat;
+      const localPartBoxes = sidecarData.partBoxes;
 
-      for (let i = 0; i < localTriangles.length; i += 9) {
-        this._triA.set(localTriangles[i], localTriangles[i + 1], localTriangles[i + 2]).applyMatrix4(worldMatrix);
-        this._triB.set(localTriangles[i + 3], localTriangles[i + 4], localTriangles[i + 5]).applyMatrix4(worldMatrix);
-        this._triC.set(localTriangles[i + 6], localTriangles[i + 7], localTriangles[i + 8]).applyMatrix4(worldMatrix);
+      const worldMatrix = entityMatrixToWorldMatrix(entity.matrix, matrixFormat);
 
-        worldFlat.push(
-          this._triA.x, this._triA.y, this._triA.z,
-          this._triB.x, this._triB.y, this._triB.z,
-          this._triC.x, this._triC.y, this._triC.z,
-        );
+      if (localTriangles.length > 0) {
+        for (let i = 0; i < localTriangles.length; i += 9) {
+          this._triA.set(localTriangles[i], localTriangles[i + 1], localTriangles[i + 2]).applyMatrix4(worldMatrix);
+          this._triB.set(localTriangles[i + 3], localTriangles[i + 4], localTriangles[i + 5]).applyMatrix4(worldMatrix);
+          this._triC.set(localTriangles[i + 6], localTriangles[i + 7], localTriangles[i + 8]).applyMatrix4(worldMatrix);
+
+          worldFlat.push(
+            this._triA.x, this._triA.y, this._triA.z,
+            this._triB.x, this._triB.y, this._triB.z,
+            this._triC.x, this._triC.y, this._triC.z,
+          );
+        }
+      }
+
+      if (localPartBoxes.length > 0) {
+        for (const partBox of localPartBoxes) {
+          this._appendPartBoxEdges(partBoxLineFlat, partBox, worldMatrix);
+          this.partBoxesCount++;
+        }
       }
 
       this.entitiesWithCollision++;
@@ -234,34 +355,58 @@ class ExportSidecarCollisionSystem {
 
     this.shellTriangleCount = Math.floor(worldFlat.length / 9);
 
-    if (worldFlat.length === 0) return;
+    if (worldFlat.length > 0) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(worldFlat, 3));
+      geometry.computeBoundingBox();
 
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(worldFlat, 3));
-    geometry.computeBoundingBox();
+      this.shellGeometry = geometry;
+      this.shellBVH = new MeshBVH(geometry, { maxLeafSize: 24 });
 
-    this.shellGeometry = geometry;
-    this.shellBVH = new MeshBVH(geometry, { maxLeafSize: 24 });
+      const edges = new THREE.EdgesGeometry(geometry, 20);
+      const lines = new THREE.LineSegments(
+        edges,
+        new THREE.LineBasicMaterial({
+          color: 0x3fd56d,
+          transparent: true,
+          opacity: 0.65,
+          depthTest: true,
+        }),
+      );
+      lines.visible = false;
+      lines.renderOrder = 2;
 
-    const edges = new THREE.EdgesGeometry(geometry, 20);
-    const lines = new THREE.LineSegments(
-      edges,
-      new THREE.LineBasicMaterial({
-        color: 0x3fd56d,
-        transparent: true,
-        opacity: 0.65,
-        depthTest: true,
-      }),
-    );
-    lines.visible = false;
-    lines.renderOrder = 2;
+      this.shellLines = lines;
+      this.scene.add(lines);
+    }
 
-    this.shellLines = lines;
-    this.scene.add(lines);
+    if (partBoxLineFlat.length > 0) {
+      const boxGeometry = new THREE.BufferGeometry();
+      boxGeometry.setAttribute('position', new THREE.Float32BufferAttribute(partBoxLineFlat, 3));
+
+      const boxLines = new THREE.LineSegments(
+        boxGeometry,
+        new THREE.LineBasicMaterial({
+          color: 0xff8c3a,
+          transparent: true,
+          opacity: 0.92,
+          depthTest: true,
+        }),
+      );
+      boxLines.visible = false;
+      boxLines.renderOrder = 4;
+
+      this.partBoxesLines = boxLines;
+      this.scene.add(boxLines);
+    }
   }
 
   setDebugVisible(visible) {
     if (this.shellLines) this.shellLines.visible = !!visible;
+  }
+
+  setPartBoxesVisible(visible) {
+    if (this.partBoxesLines) this.partBoxesLines.visible = !!visible;
   }
 
   clipCameraPosition(target, desired, minDistance = 60) {
@@ -424,10 +569,10 @@ class ExportWalkController {
     this.jumpSpeed = 1400;
     this.gravity = 3800;
 
-    this.cameraDistance = 560;
     this.cameraDistanceMin = 220;
     this.cameraDistanceMax = 1800;
-    this.minCameraDistance = 180;
+    this.cameraDistance = this.cameraDistanceMax;
+    this.minCameraDistance = 260;
     this.cameraHeight = 120;
 
     this.gravityEnabled = true;
@@ -546,6 +691,22 @@ class ExportWalkController {
     this.avatar = group;
     this.avatarBody = body;
     this.avatarHead = head;
+  }
+
+  dispose() {
+    if (this.avatar) {
+      this.avatar.traverse((child) => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
+          else child.material.dispose();
+        }
+      });
+      if (this.avatar.parent) this.avatar.parent.remove(this.avatar);
+      this.avatar = null;
+      this.avatarBody = null;
+      this.avatarHead = null;
+    }
   }
 
   setPosition(x, y, z) {
@@ -675,6 +836,7 @@ class ExportReaderApp {
     this.statusEl = document.getElementById('status');
     this.infoEl = document.getElementById('info');
     this.showCollisionToggle = document.getElementById('show-collision');
+    this.showColliderBoxToggle = document.getElementById('show-collider-box');
 
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
@@ -695,11 +857,16 @@ class ExportReaderApp {
 
     this.currentPackage = null;
     this.currentManifest = null;
+    this.transformConventions = null;
+    this.visualSettings = null;
 
     this.terrainSystem = null;
     this.entitySystem = null;
     this.collisionSystem = null;
     this.walkController = null;
+
+    // Increase world size so character is relatively smaller.
+    this.mapWorldScale = 1.5;
 
     this.sky = null;
     this.sunLight = null;
@@ -723,6 +890,9 @@ class ExportReaderApp {
     document.getElementById('open-validator').addEventListener('click', () => this.openValidator());
     this.showCollisionToggle?.addEventListener('change', () => {
       if (this.collisionSystem) this.collisionSystem.setDebugVisible(this.showCollisionToggle.checked);
+    });
+    this.showColliderBoxToggle?.addEventListener('change', () => {
+      if (this.collisionSystem) this.collisionSystem.setPartBoxesVisible(this.showColliderBoxToggle.checked);
     });
 
     await this.refreshPackages();
@@ -853,11 +1023,14 @@ class ExportReaderApp {
     if (this.entitySystem?.entityGroup) this._disposeObjectTree(this.entitySystem.entityGroup);
 
     if (this.collisionSystem) this.collisionSystem.dispose();
+    if (this.walkController) this.walkController.dispose();
 
     this.terrainSystem = null;
     this.entitySystem = null;
     this.collisionSystem = null;
     this.walkController = null;
+    this.transformConventions = null;
+    this.visualSettings = null;
 
     this._clearEnvironment();
   }
@@ -871,16 +1044,45 @@ class ExportReaderApp {
     this.sunLight = null;
   }
 
-  _setupEnvironment(environment) {
+  _setupEnvironment(environment, visualSettings = null) {
     this._clearEnvironment();
 
-    const skyGeo = new THREE.SphereGeometry(200000, 32, 16);
+    const readColor = (value, fallbackHex) => {
+      try {
+        if (Array.isArray(value) && value.length >= 3) {
+          const r = Number(value[0]);
+          const g = Number(value[1]);
+          const b = Number(value[2]);
+          if ([r, g, b].every(Number.isFinite)) return new THREE.Color(r, g, b);
+        }
+        if (typeof value === 'string' || typeof value === 'number') {
+          return new THREE.Color(value);
+        }
+      } catch {
+        // fallthrough
+      }
+      return new THREE.Color(fallbackHex);
+    };
+
+    const skyCfg = visualSettings?.sky || {};
+    const fogCfg = visualSettings?.fog || {};
+    const lightCfg = visualSettings?.lighting || {};
+    const dirCfg = lightCfg.directional || {};
+    const dirShadow = dirCfg.shadow || {};
+    const ambCfg = lightCfg.ambient || {};
+    const hemiCfg = lightCfg.hemisphere || {};
+    const fallbackCfg = lightCfg.fallbackWhenNoEnvironment || {};
+    const skyMult = Array.isArray(hemiCfg.skyColorMultiplier) && hemiCfg.skyColorMultiplier.length >= 3
+      ? hemiCfg.skyColorMultiplier
+      : [0.8, 0.9, 1.2];
+
+    const skyGeo = new THREE.SphereGeometry(Number(skyCfg.radius) || 200000, 32, 16);
     const skyMat = new THREE.ShaderMaterial({
       uniforms: {
-        topColor: { value: new THREE.Color(0x4488cc) },
-        bottomColor: { value: new THREE.Color(0xd4c5a0) },
-        horizonColor: { value: new THREE.Color(0xc8b888) },
-        exponent: { value: 0.5 },
+        topColor: { value: readColor(skyCfg.topColor, '#4488cc') },
+        bottomColor: { value: readColor(skyCfg.bottomColor, '#d4c5a0') },
+        horizonColor: { value: readColor(skyCfg.horizonColor, '#c8b888') },
+        exponent: { value: Number(skyCfg.exponent) || 0.5 },
       },
       vertexShader: `
         varying vec3 vDir;
@@ -913,49 +1115,144 @@ class ExportReaderApp {
     this.scene.add(this.sky);
     this._envNodes.push(this.sky);
 
-    this.scene.fog = new THREE.FogExp2(0xc8b888, 0.0000035);
+    this.scene.fog = new THREE.FogExp2(
+      readColor(fogCfg.color, '#c8b888'),
+      Number(fogCfg.density) || 0.0000035,
+    );
 
     if (environment?.sunlight) {
       const s = environment.sunlight;
       const dir = new THREE.Vector3(s.dir[0], s.dir[1], s.dir[2]).normalize();
-      const col = new THREE.Color(s.diffuse[0], s.diffuse[1], s.diffuse[2]);
+      const col = readColor(s.diffuse, '#ffffff');
 
-      const sun = new THREE.DirectionalLight(col, 3.0);
+      const sun = new THREE.DirectionalLight(col, Number(dirCfg.intensity) || 3.0);
       sun.position.copy(dir.clone().multiplyScalar(100000));
-      sun.castShadow = true;
-      sun.shadow.mapSize.width = 2048;
-      sun.shadow.mapSize.height = 2048;
-      sun.shadow.camera.near = 100;
-      sun.shadow.camera.far = 200000;
-      sun.shadow.camera.left = -50000;
-      sun.shadow.camera.right = 50000;
-      sun.shadow.camera.top = 50000;
-      sun.shadow.camera.bottom = -50000;
-      sun.shadow.bias = -0.001;
-      sun.shadow.normalBias = 200;
+      sun.castShadow = dirCfg.castShadow !== false;
+      const mapSize = Array.isArray(dirShadow.mapSize) ? dirShadow.mapSize : [2048, 2048];
+      sun.shadow.mapSize.width = Number(mapSize[0]) || 2048;
+      sun.shadow.mapSize.height = Number(mapSize[1]) || 2048;
+      sun.shadow.camera.near = Number(dirShadow.near) || 100;
+      sun.shadow.camera.far = Number(dirShadow.far) || 200000;
+      sun.shadow.camera.left = Number(dirShadow.left) || -50000;
+      sun.shadow.camera.right = Number(dirShadow.right) || 50000;
+      sun.shadow.camera.top = Number(dirShadow.top) || 50000;
+      sun.shadow.camera.bottom = Number(dirShadow.bottom) || -50000;
+      sun.shadow.bias = Number(dirShadow.bias ?? -0.001);
+      sun.shadow.normalBias = Number(dirShadow.normalBias ?? 200);
       this.scene.add(sun);
       this._envNodes.push(sun, sun.target);
       this.sunLight = sun;
 
       const ambCol = s.ambientColor
-        ? new THREE.Color(s.ambientColor[0], s.ambientColor[1], s.ambientColor[2])
-        : new THREE.Color(0x666655);
-      const amb = new THREE.AmbientLight(ambCol, 0.8);
+        ? readColor(s.ambientColor, '#666655')
+        : readColor(ambCfg.fallbackColor, '#666655');
+      const amb = new THREE.AmbientLight(ambCol, Number(ambCfg.intensity) || 0.8);
       this.scene.add(amb);
       this._envNodes.push(amb);
 
       const skyCol = s.skyLightColor
-        ? new THREE.Color(s.skyLightColor[0] * 0.8, s.skyLightColor[1] * 0.9, s.skyLightColor[2] * 1.2)
-        : new THREE.Color(0x88aacc);
-      const hemi = new THREE.HemisphereLight(skyCol, 0x8b7355, 1.0);
+        ? new THREE.Color(
+          Number(s.skyLightColor[0]) * Number(skyMult[0]),
+          Number(s.skyLightColor[1]) * Number(skyMult[1]),
+          Number(s.skyLightColor[2]) * Number(skyMult[2]),
+        )
+        : readColor(hemiCfg.fallbackSkyColor, '#88aacc');
+      const hemi = new THREE.HemisphereLight(
+        skyCol,
+        readColor(hemiCfg.groundColor, '#8b7355'),
+        Number(hemiCfg.intensity) || 1.0,
+      );
       this.scene.add(hemi);
       this._envNodes.push(hemi);
     } else {
-      const amb = new THREE.AmbientLight(0x888888, 0.6);
-      const hemi = new THREE.HemisphereLight(0x87ceeb, 0x8b7355, 0.4);
+      const amb = new THREE.AmbientLight(
+        readColor(fallbackCfg.ambientColor, '#888888'),
+        Number(fallbackCfg.ambientIntensity) || 0.6,
+      );
+      const hemi = new THREE.HemisphereLight(
+        readColor(fallbackCfg.hemisphereSkyColor, '#87ceeb'),
+        readColor(fallbackCfg.hemisphereGroundColor, '#8b7355'),
+        Number(fallbackCfg.hemisphereIntensity) || 0.4,
+      );
       this.scene.add(amb);
       this.scene.add(hemi);
       this._envNodes.push(amb, hemi);
+    }
+  }
+
+  _buildScaledConfig(config, scale) {
+    if (!config || !config.landscape || !Number.isFinite(scale) || Math.abs(scale - 1) < 1e-9) {
+      return config;
+    }
+
+    const scaled = JSON.parse(JSON.stringify(config));
+    const l = scaled.landscape;
+
+    if (Number.isFinite(l.worldOriginX)) l.worldOriginX *= scale;
+    if (Number.isFinite(l.worldOriginY)) l.worldOriginY *= scale;
+    if (Number.isFinite(l.unitScaleX)) l.unitScaleX *= scale;
+    if (Number.isFinite(l.unitScaleY)) l.unitScaleY *= scale;
+    if (Number.isFinite(l.heightMin)) l.heightMin *= scale;
+    if (Number.isFinite(l.heightMax)) l.heightMax *= scale;
+
+    return scaled;
+  }
+
+  _applyMapScaleToEntities(scale) {
+    if (!this.entitySystem || !Number.isFinite(scale) || Math.abs(scale - 1) < 1e-9) return;
+
+    const scaleMatrix = new THREE.Matrix4().makeScale(scale, scale, scale);
+    const tmpMatrix = new THREE.Matrix4();
+    const matrixFormat = this.entitySystem.matrixFormat || 'source-lh-row-major';
+
+    for (const group of this.entitySystem.instancedMeshes || []) {
+      const subMeshes = group.subMeshes || (group.mesh ? [group.mesh] : []);
+      for (const instMesh of subMeshes) {
+        if (!instMesh) continue;
+        for (let i = 0; i < instMesh.count; i++) {
+          instMesh.getMatrixAt(i, tmpMatrix);
+          tmpMatrix.premultiply(scaleMatrix);
+          instMesh.setMatrixAt(i, tmpMatrix);
+        }
+        instMesh.instanceMatrix.needsUpdate = true;
+        if (typeof instMesh.computeBoundingSphere === 'function') instMesh.computeBoundingSphere();
+      }
+
+      if (group.center?.isVector3) group.center.multiplyScalar(scale);
+      if (Number.isFinite(group.radius)) group.radius *= scale;
+    }
+
+    for (const entity of this.entitySystem.allEntities || []) {
+      if (entity.worldPos && Number.isFinite(entity.worldPos.x) && Number.isFinite(entity.worldPos.y) && Number.isFinite(entity.worldPos.z)) {
+        entity.worldPos.x *= scale;
+        entity.worldPos.y *= scale;
+        entity.worldPos.z *= scale;
+      }
+
+      if (Array.isArray(entity.matrix) && entity.matrix.length === 16) {
+        const wm = entityMatrixToWorldMatrix(entity.matrix, matrixFormat);
+        wm.premultiply(scaleMatrix);
+        entity.matrix = worldMatrixToEntityMatrix(wm, matrixFormat);
+      }
+    }
+
+    this.entitySystem.drawDistance *= scale;
+
+    // Entity load uses unscaled region bounds, but post-scale LOD culling must use scaled bounds.
+    if (this.entitySystem.regionFilter) {
+      const r = this.entitySystem.regionFilter;
+      const scaled = { ...r };
+      if (Number.isFinite(r.minX)) scaled.minX = r.minX * scale;
+      if (Number.isFinite(r.maxX)) scaled.maxX = r.maxX * scale;
+      if (Number.isFinite(r.minZ)) scaled.minZ = r.minZ * scale;
+      if (Number.isFinite(r.maxZ)) scaled.maxZ = r.maxZ * scale;
+      if (Array.isArray(r.polygon)) {
+        scaled.polygon = r.polygon.map((p) => ({
+          x: Number.isFinite(p?.x) ? p.x * scale : p?.x,
+          z: Number.isFinite(p?.z) ? p.z * scale : p?.z,
+        }));
+      }
+      this.entitySystem.regionFilter = scaled;
     }
   }
 
@@ -998,12 +1295,37 @@ class ExportReaderApp {
     try {
       this._cleanupCurrentMap();
 
-      const manifest = await this.tryFetchJson(`${packageBase}/manifest.json`);
-      const config = await this.fetchJson(`${dataPath}/map-config.json`);
+      const manifest = await this.fetchJson(`${packageBase}/manifest.json`);
+      const transformConventions = await this.fetchJson(`${dataPath}/transform-conventions.json`);
+      const visualSettings = await this.fetchJson(`${dataPath}/visual-settings.json`);
+
+      const matrixFormat = transformConventions?.entities?.normalizedRhMatrixFormat;
+      if (matrixFormat !== 'three-matrix4-column-major') {
+        throw new Error(`Unsupported normalized RH matrix format: ${matrixFormat || 'missing'}`);
+      }
+      if (transformConventions?.entities?.normalizedRhRequiresImporterZFlip === true) {
+        throw new Error('Export contract requires no importer-side Z flip, but package flags true');
+      }
+
+      const rhIndexRelRaw = String(
+        transformConventions?.entities?.normalizedRhIndexFile
+        || manifest?.coordinateContract?.entityRhIndexFile
+        || 'map-data/entity-index-rh.json',
+      );
+      const rhIndexRel = rhIndexRelRaw.replace(/^map-data\//, '').replace(/^\/+/, '');
+      if (!rhIndexRel) {
+        throw new Error('Missing RH entity index file in package contract');
+      }
+      await this.fetchJson(`${dataPath}/${encodePathSegments(rhIndexRel)}`);
+
+      const configSrc = await this.fetchJson(`${dataPath}/map-config.json`);
+      const config = this._buildScaledConfig(configSrc, this.mapWorldScale);
       const environment = await this.tryFetchJson(`${dataPath}/environment.json`);
       this.currentManifest = manifest;
+      this.transformConventions = transformConventions;
+      this.visualSettings = visualSettings;
 
-      this._setupEnvironment(environment);
+      this._setupEnvironment(environment, visualSettings);
 
       this.setLoading('Loading terrain...', 15);
       this.terrainSystem = new TerrainSystem(this.scene, config, dataPath);
@@ -1012,12 +1334,17 @@ class ExportReaderApp {
       });
 
       this.setLoading('Loading entities...', 62);
-      this.entitySystem = new EntitySystem(this.scene, dataPath);
+      this.entitySystem = new EntitySystem(this.scene, dataPath, {
+        entityIndexFile: rhIndexRel,
+        matrixFormat,
+      });
       if (manifest?.region) this.entitySystem.regionFilter = manifest.region;
 
       await this.entitySystem.load((p) => {
         this.setLoading(`Loading entities: ${Math.round(p * 100)}%`, 62 + p * 30);
       });
+
+      this._applyMapScaleToEntities(this.mapWorldScale);
 
       this.setLoading('Loading sidecar collision...', 93);
       this.collisionSystem = new ExportSidecarCollisionSystem(this.terrainSystem, this.scene);
@@ -1025,6 +1352,7 @@ class ExportReaderApp {
         this.setLoading(text, 93 + progress * 6);
       });
       this.collisionSystem.setDebugVisible(this.showCollisionToggle?.checked);
+      this.collisionSystem.setPartBoxesVisible(this.showColliderBoxToggle?.checked);
 
       this.walkController = new ExportWalkController(this.camera, this.canvas, this.collisionSystem, this.scene);
       const start = this._getStartPosition(config);
@@ -1035,7 +1363,8 @@ class ExportReaderApp {
       this.hideLoading();
       this.setStatus(
         `Loaded ${pkgName} | sidecars ${this.collisionSystem.sidecarsLoaded}/${this.collisionSystem.sidecarsExpected}`
-        + `, missing ${this.collisionSystem.sidecarsMissing}, triangles ${this.collisionSystem.shellTriangleCount}`,
+        + `, missing ${this.collisionSystem.sidecarsMissing}, triangles ${this.collisionSystem.shellTriangleCount}`
+        + `, mapScale x${this.mapWorldScale.toFixed(2)}`,
       );
     } catch (err) {
       console.error(err);
@@ -1062,6 +1391,7 @@ class ExportReaderApp {
     if (this.collisionSystem) {
       rows.push(`Collision objects/shells: ${this.collisionSystem.objectsCount} / ${this.collisionSystem.shellCount}`);
       rows.push(`Collision shell triangles: ${this.collisionSystem.shellTriangleCount}`);
+      rows.push(`GLB collision boxes: ${this.collisionSystem.partBoxesCount}`);
       rows.push(`Sidecars loaded/missing: ${this.collisionSystem.sidecarsLoaded} / ${this.collisionSystem.sidecarsMissing}`);
       rows.push(`Entities with collision: ${this.collisionSystem.entitiesWithCollision}`);
     } else {
@@ -1072,6 +1402,9 @@ class ExportReaderApp {
       rows.push(`Walk speed: ${this.walkController.speedPresetLabel} (${Math.round(this.walkController.currentSpeed)})`);
       rows.push(`Gravity: ${this.walkController.gravityEnabled ? 'ON' : 'OFF'} | Grounded: ${this.walkController.isOnGround ? 'YES' : 'NO'}`);
     }
+
+    rows.push(`Map scale: x${this.mapWorldScale.toFixed(2)}`);
+    rows.push(`Export contract: RH normalized + visual settings`);
 
     if (this.terrainSystem) {
       const cfg = this.terrainSystem.config;

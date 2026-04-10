@@ -218,6 +218,66 @@ function collectTextureNames(texInfo) {
   return names;
 }
 
+function buildVisualSettingsExport() {
+  return {
+    kind: 'jx3-visual-settings',
+    version: 1,
+    coordinateSystem: 'three-rh',
+    sky: {
+      type: 'gradient-sphere',
+      topColor: '#4488cc',
+      bottomColor: '#d4c5a0',
+      horizonColor: '#c8b888',
+      exponent: 0.5,
+      radius: 200000,
+    },
+    fog: {
+      type: 'exp2',
+      color: '#c8b888',
+      density: 0.0000035,
+    },
+    lighting: {
+      directional: {
+        intensity: 3.0,
+        castShadow: true,
+        shadow: {
+          mapSize: [2048, 2048],
+          near: 100,
+          far: 200000,
+          left: -50000,
+          right: 50000,
+          top: 50000,
+          bottom: -50000,
+          bias: -0.001,
+          normalBias: 200,
+        },
+      },
+      ambient: {
+        intensity: 0.8,
+        fallbackColor: '#666655',
+      },
+      hemisphere: {
+        intensity: 1.0,
+        skyColorMultiplier: [0.8, 0.9, 1.2],
+        fallbackSkyColor: '#88aacc',
+        groundColor: '#8b7355',
+      },
+      fallbackWhenNoEnvironment: {
+        ambientColor: '#888888',
+        ambientIntensity: 0.6,
+        hemisphereSkyColor: '#87ceeb',
+        hemisphereGroundColor: '#8b7355',
+        hemisphereIntensity: 0.4,
+      },
+    },
+    environmentBinding: {
+      file: 'environment.json',
+      sunlightPath: 'sunlight',
+      notes: 'Use environment sunlight colors/direction if available; otherwise use fallback colors above.',
+    },
+  };
+}
+
 function copyIfExists(src, dst) {
   if (!existsSync(src) || !statSync(src).isFile()) return false;
   ensureDir(dirname(dst));
@@ -295,27 +355,36 @@ async function buildFullExportPackage(payload) {
   }
 
   const entityOut = [];
+  const entityOutRh = [];
   const usedGlb = new Set();
   let entitiesFilteredOut = 0;
 
   for (const ent of entitiesIn) {
     if (!Array.isArray(ent?.matrix) || ent.matrix.length !== 16) continue;
 
+    const runtimeMat = ent.matrix.map((v) => Number(v));
+    if (!runtimeMat.every(Number.isFinite)) continue;
+
     if (region && !isEntityInsideRegion(ent, region)) {
       entitiesFilteredOut++;
       continue;
     }
 
-    const srcMat = toSourceEntityMatrixFromThreeElements(ent.matrix);
+    const srcMat = toSourceEntityMatrixFromThreeElements(runtimeMat);
     let glbName = String(ent?.mesh || '').trim();
     if (!glbName) continue;
     if (!glbName.toLowerCase().endsWith('.glb')) glbName += '.glb';
 
-    const worldPos = extractEntityWorldPos(ent);
+    const worldPos = extractEntityWorldPos({ worldPos: ent?.worldPos, matrix: runtimeMat });
 
     entityOut.push({
       mesh: glbName,
       matrix: srcMat,
+      worldPos,
+    });
+    entityOutRh.push({
+      mesh: glbName,
+      matrix: runtimeMat,
       worldPos,
     });
     usedGlb.add(glbName);
@@ -440,6 +509,27 @@ async function buildFullExportPackage(payload) {
   writeJson(join(outMapData, 'mesh-list.json'), meshList);
   writeJson(join(outMapData, 'entity-index.json'), ['full.json']);
   writeJson(join(outMapData, 'entities', 'full.json'), entityOut);
+  writeJson(join(outMapData, 'entity-index-rh.json'), ['full.rh.json']);
+  writeJson(join(outMapData, 'entities', 'full.rh.json'), entityOutRh);
+  writeJson(join(outMapData, 'transform-conventions.json'), {
+    kind: 'jx3-transform-conventions',
+    version: 1,
+    coordinateSystem: 'three-rh',
+    entities: {
+      defaultFile: 'entities/full.json',
+      defaultMatrixFormat: 'source-lh-row-major',
+      normalizedRhIndexFile: 'entity-index-rh.json',
+      normalizedRhFile: 'entities/full.rh.json',
+      normalizedRhMatrixFormat: 'three-matrix4-column-major',
+      normalizedRhRequiresImporterZFlip: false,
+      worldPosFormat: 'three-rh',
+    },
+    notes: [
+      'Use entity-index-rh.json + entities/full.rh.json to avoid importer-side LH/RH Z-flip conversion.',
+      'entity-index.json + entities/full.json remain for backward compatibility with existing loaders.',
+    ],
+  });
+  writeJson(join(outMapData, 'visual-settings.json'), buildVisualSettingsExport());
   writeJson(join(outMapData, 'texture-map.json'), textureMapOut);
   writeJson(join(outMapData, 'official-meshes.json'), meshList);
   writeJson(join(outMapData, 'verdicts.json'), { approved: meshList, denied: [] });
@@ -505,6 +595,10 @@ async function buildFullExportPackage(payload) {
     stats: {
       entitiesInput: entitiesIn.length,
       entities: entityOut.length,
+      entitiesRh: entityOutRh.length,
+      entityRhIndexWritten: true,
+      transformConventionsWritten: true,
+      visualSettingsWritten: true,
       entitiesFilteredOut,
       meshesRequested: usedGlb.size,
       meshesCopied: copiedGlbCount,
@@ -530,6 +624,10 @@ async function buildFullExportPackage(payload) {
     coordinateContract: {
       world: 'three-rh',
       entityMatrixStoredAs: 'source-lh-row-major',
+      entityRhMatrixFile: 'map-data/entities/full.rh.json',
+      entityRhIndexFile: 'map-data/entity-index-rh.json',
+      transformConventionsFile: 'map-data/transform-conventions.json',
+      visualSettingsFile: 'map-data/visual-settings.json',
       terrain: 'heightmap + map-config (same as source viewer)',
     },
   };
