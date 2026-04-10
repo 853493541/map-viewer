@@ -2368,13 +2368,32 @@ class MapEditor {
 
     // Full export
     document.getElementById('rd-full-export').addEventListener('click', () => {
-      this.exportFullMap();
+      this.exportFullMap({ attachMeshCollision: false });
     });
+
+    // Full export with per-GLB collision sidecars
+    const exportWithCollisionBtn = document.getElementById('rd-full-export-collision');
+    if (exportWithCollisionBtn) {
+      exportWithCollisionBtn.addEventListener('click', () => {
+        this.exportFullMap({ attachMeshCollision: true });
+      });
+    }
 
     // Full import
     document.getElementById('rd-full-import').addEventListener('click', () => {
       this.importFullMap();
     });
+
+    // Collision test mode (single mesh precision check)
+    const collisionTestBtn = document.getElementById('rd-collision-test-mode');
+    if (collisionTestBtn) {
+      collisionTestBtn.addEventListener('click', () => {
+        const dataPath = this.currentMapPath || 'map-data';
+        const url = `/collision-test-mode.html?dataPath=${encodeURIComponent(dataPath)}`;
+        const win = window.open(url, '_blank');
+        if (!win) this.showToast('Popup blocked. Open /collision-test-mode.html manually.');
+      });
+    }
   }
 
   toggleRegionDialog() {
@@ -3104,11 +3123,19 @@ class MapEditor {
   }
 
   // ─── Full Export (terrain + entities + GLBs list) ────
-  async exportFullMap() {
+  async exportFullMap(options = {}) {
     if (!this.entitySystem) {
       this.showToast('Entity system not ready');
       return;
     }
+
+    const attachMeshCollision = !!options.attachMeshCollision;
+    const endpoint = attachMeshCollision ? '/api/export-full-with-collision' : '/api/export-full';
+    const buttonId = attachMeshCollision ? 'rd-full-export-collision' : 'rd-full-export';
+    const fallbackButtonLabel = attachMeshCollision ? '🧱 Export With Collision' : '📦 Full Export';
+    const busyLabel = attachMeshCollision
+      ? '⏳ Building export + attaching GLB collision...'
+      : '⏳ Building full export on Desktop...';
 
     const region = this.entitySystem.regionFilter || null;
     const entities = this._collectCurrentSceneEntities(region);
@@ -3117,11 +3144,11 @@ class MapEditor {
       return;
     }
 
-    const btn = document.getElementById('rd-full-export');
+    const btn = document.getElementById(buttonId) || document.getElementById('rd-full-export');
     const prevText = btn?.textContent;
     if (btn) {
       btn.disabled = true;
-      btn.textContent = '⏳ Building full export on Desktop...';
+      btn.textContent = busyLabel;
     }
 
     try {
@@ -3132,9 +3159,10 @@ class MapEditor {
         region,
         regionCorners: this._regionCorners || null,
         entities,
+        attachMeshCollision,
       };
 
-      const res = await fetch('/api/export-full', {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -3146,7 +3174,15 @@ class MapEditor {
       }
 
       const st = data.stats || {};
-      const msg = `FULL export done: ${st.entities || entities.length} entities, ${st.meshesCopied || 0}/${st.meshesRequested || 0} GLBs, ${st.heightmapsCopied || 0} heightmaps`;
+      const collisionSummary = st.collisionGenerated
+        ? `, ${st.collisionObjects || 0} collision boxes + ${st.collisionShells || 0} shells (${st.collisionShellTriangles || 0} tris)`
+        : ', collision generation skipped';
+
+      const attachedSummary = attachMeshCollision
+        ? `, ${st.meshCollisionAttached || 0} GLBs with attached collision`
+        : '';
+      const exportLabel = attachMeshCollision ? 'FULL export + collision done' : 'FULL export done';
+      const msg = `${exportLabel}: ${st.entities || entities.length} entities, ${st.meshesCopied || 0}/${st.meshesRequested || 0} GLBs, ${st.heightmapsCopied || 0} heightmaps${collisionSummary}${attachedSummary}`;
       this.showToast(msg);
 
       // Open full viewer directly to the new package.
@@ -3160,7 +3196,7 @@ class MapEditor {
     } finally {
       if (btn) {
         btn.disabled = false;
-        btn.textContent = prevText || '📦 Full Export';
+        btn.textContent = prevText || fallbackButtonLabel;
       }
     }
   }

@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-PORT = 3000
+PORT = 3015
 PUBLIC_DIR = Path(__file__).parent / 'public'
 VERDICTS_FILE = PUBLIC_DIR / 'map-data' / 'verdicts.json'
 

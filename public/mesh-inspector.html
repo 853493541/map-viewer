@@ -2,7 +2,8 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>GLB Mesh Inspector</title>
+<title>Regional Mesh Resources</title>
+<link rel="icon" href="data:,">
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; background: #222; color: #eee; font-family: monospace; overflow: hidden; display: flex; }
@@ -77,7 +78,7 @@
 </head>
 <body>
 <div id="sidebar">
-  <h3>GLB Mesh Inspector</h3>
+  <h3>Regional Mesh Resources</h3>
   <div id="tab-bar">
     <button class="tab-btn active" data-tab="undecided">Undecided&nbsp;(<span id="count-undecided">0</span>)</button>
     <button class="tab-btn t-approved" data-tab="approved">&#10003;&nbsp;<span id="count-approved">0</span></button>
@@ -87,6 +88,8 @@
     <label>Filter: <input id="filter" type="text" placeholder="type to filter..."></label>
     <label><input type="checkbox" id="showTextures" checked> Textures</label>
     <label><input type="checkbox" id="doubleSide" checked> Double-sided</label>
+    <label><input type="checkbox" id="showCollisionLines" checked> Collision lines</label>
+    <label><input type="checkbox" id="showCollisionBoxes"> Collision boxes</label>
     <button id="btn-open-folder" style="margin-top:4px;padding:4px 8px;cursor:pointer;background:#444;border:1px solid #666;color:#eee;border-radius:3px;font-family:monospace;font-size:11px;width:100%" title="Open meshes folder in Explorer">&#128194; Open Meshes Folder</button>
   </div>
   <div id="page-nav">
@@ -118,38 +121,144 @@
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from './lib/GLTFLoader.js';
+import { MeshBVH, acceleratedRaycast } from './lib/three-mesh-bvh/src/index.js';
+
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 const PAGE_SIZE = 10;
 
+function normalizeDataPath(raw) {
+  const clean = String(raw || '').trim().replace(/\\/g, '/').replace(/\/+$/, '');
+  return clean || 'map-data';
+}
+
+function normalizeGlbName(raw) {
+  let name = String(raw || '').trim();
+  if (!name) return '';
+  name = name.split('/').pop().split('\\').pop();
+  if (!name.toLowerCase().endsWith('.glb')) name += '.glb';
+  return name;
+}
+
+function withDataPath(apiPath, dataPath) {
+  return `${apiPath}?dataPath=${encodeURIComponent(dataPath)}`;
+}
+
+const qp = new URLSearchParams(window.location.search);
+const pkg = qp.get('pkg');
+const dataPath = normalizeDataPath(
+  qp.get('dataPath') || (pkg ? `/full-exports/${encodeURIComponent(pkg)}/map-data` : 'map-data')
+);
+
+const loadDiagnostics = [];
+
+function normalizeGlbList(list) {
+  const out = [];
+  const seen = new Set();
+  for (const raw of Array.isArray(list) ? list : []) {
+    const n = normalizeGlbName(raw);
+    if (!n) continue;
+    const key = n.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(n);
+  }
+  out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  return out;
+}
+
+async function fetchJsonChecked(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return await res.json();
+}
+
+async function loadMeshNames() {
+  try {
+    const rows = await fetchJsonChecked(withDataPath('/api/meshes', dataPath));
+    const list = normalizeGlbList(rows);
+    if (list.length > 0) return list;
+    loadDiagnostics.push('api/meshes returned 0');
+  } catch (err) {
+    loadDiagnostics.push(`api/meshes failed: ${err?.message || err}`);
+  }
+
+  try {
+    const rows = await fetchJsonChecked(`${dataPath}/mesh-list.json`);
+    const list = normalizeGlbList(rows);
+    if (list.length > 0) {
+      loadDiagnostics.push('fallback: mesh-list.json');
+      return list;
+    }
+    loadDiagnostics.push('mesh-list.json returned 0');
+  } catch (err) {
+    loadDiagnostics.push(`mesh-list.json failed: ${err?.message || err}`);
+  }
+
+  try {
+    const meshMap = await fetchJsonChecked(`${dataPath}/mesh-map.json`);
+    const list = normalizeGlbList(Object.values(meshMap || {}));
+    if (list.length > 0) {
+      loadDiagnostics.push('fallback: mesh-map.json values');
+      return list;
+    }
+    loadDiagnostics.push('mesh-map.json returned 0');
+  } catch (err) {
+    loadDiagnostics.push(`mesh-map.json failed: ${err?.message || err}`);
+  }
+
+  return [];
+}
+
 // ── Data loading ──────────────────────────────────────────────────────────────
 let officialMeshes = [];
-try { officialMeshes = await (await fetch('map-data/official-meshes.json')).json(); } catch {}
+try { officialMeshes = await (await fetch(`${dataPath}/official-meshes.json`)).json(); } catch {}
 const officialSet = new Set(officialMeshes.map(n => n.toLowerCase()));
 
 let textureMap = null;
-try { textureMap = await (await fetch('map-data/texture-map.json')).json(); } catch {}
+try { textureMap = await (await fetch(`${dataPath}/texture-map.json`)).json(); } catch {}
 
-let glbNames = [];
-try { glbNames = await (await fetch('/api/meshes')).json(); } catch {}
+const glbNames = await loadMeshNames();
+
+const glbByLower = new Map(glbNames.map((n) => [n.toLowerCase(), n]));
+const canonicalGlb = (name) => glbByLower.get(normalizeGlbName(name).toLowerCase()) || normalizeGlbName(name);
 
 // ── Verdicts ──────────────────────────────────────────────────────────────────
 let approvedSet = new Set();
 let deniedSet   = new Set();
 
+function applyVerdictSnapshot(obj) {
+  approvedSet = new Set((obj?.approved ?? []).map(canonicalGlb).filter((n) => glbByLower.has(n.toLowerCase())));
+  deniedSet   = new Set((obj?.denied   ?? []).map(canonicalGlb).filter((n) => glbByLower.has(n.toLowerCase())));
+}
+
 async function loadVerdicts() {
   try {
-    const obj = await (await fetch('/api/verdicts')).json();
-    approvedSet = new Set(obj.approved ?? []);
-    deniedSet   = new Set(obj.denied   ?? []);
+    const obj = await (await fetch(withDataPath('/api/verdicts', dataPath))).json();
+    applyVerdictSnapshot(obj);
   } catch {}
 }
 async function saveVerdicts() {
   try {
-    await fetch('/api/verdicts', {
+    const res = await fetch(withDataPath('/api/verdicts', dataPath), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ approved: [...approvedSet], denied: [...deniedSet] }),
+      body: JSON.stringify({ approved: [...approvedSet].sort(), denied: [...deniedSet].sort() }),
     });
+    if (res.ok) {
+      const obj = await res.json().catch(() => null);
+      if (obj) applyVerdictSnapshot(obj);
+    }
   } catch {}
+}
+
+async function saveSingleVerdict(glbFile, verdict) {
+  const res = await fetch(withDataPath('/api/verdicts/set', dataPath), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mesh: glbFile, verdict }),
+  });
+  if (!res.ok) throw new Error(`Failed to save verdict (${res.status})`);
+  const obj = await res.json().catch(() => null);
+  if (obj) applyVerdictSnapshot(obj);
 }
 await loadVerdicts();
 
@@ -185,11 +294,14 @@ const cells = [];
 const textureLoader = new THREE.TextureLoader();
 const textureCache = new Map();
 const gltfLoader = new GLTFLoader();
+const collisionPartCache = new Map();
+const showCollisionLinesInput = document.getElementById('showCollisionLines');
+const showCollisionBoxesInput = document.getElementById('showCollisionBoxes');
 
 function loadTexCached(pngName, linear) {
   const key = pngName + (linear ? '_lin' : '');
   if (!textureCache.has(key)) {
-    const tex = textureLoader.load('map-data/textures/' + encodeURIComponent(pngName));
+    const tex = textureLoader.load(`${dataPath}/textures/` + encodeURIComponent(pngName));
     tex.colorSpace = linear ? THREE.LinearSRGBColorSpace : THREE.SRGBColorSpace;
     tex.flipY = false;
     tex.wrapS = THREE.RepeatWrapping;
@@ -203,7 +315,7 @@ function loadMRECached(pngName) {
   const key = pngName + '_mre';
   if (!textureCache.has(key)) {
     const tex = textureLoader.load(
-      'map-data/textures/' + encodeURIComponent(pngName),
+      `${dataPath}/textures/` + encodeURIComponent(pngName),
       (t) => {
         const canv = document.createElement('canvas');
         const img = t.image;
@@ -226,6 +338,245 @@ function loadMRECached(pngName) {
     textureCache.set(key, tex);
   }
   return textureCache.get(key);
+}
+
+function pointInTri2D(px, pz, ax, az, bx, bz, cx, cz) {
+  const v0x = cx - ax;
+  const v0z = cz - az;
+  const v1x = bx - ax;
+  const v1z = bz - az;
+  const v2x = px - ax;
+  const v2z = pz - az;
+
+  const dot00 = v0x * v0x + v0z * v0z;
+  const dot01 = v0x * v1x + v0z * v1z;
+  const dot02 = v0x * v2x + v0z * v2z;
+  const dot11 = v1x * v1x + v1z * v1z;
+  const dot12 = v1x * v2x + v1z * v2z;
+
+  const invDen = 1 / ((dot00 * dot11 - dot01 * dot01) || 1e-9);
+  const u = (dot11 * dot02 - dot01 * dot12) * invDen;
+  const v = (dot00 * dot12 - dot01 * dot02) * invDen;
+  return u >= -1e-6 && v >= -1e-6 && u + v <= 1 + 1e-6;
+}
+
+function segDistSq2D(px, pz, ax, az, bx, bz) {
+  const abx = bx - ax;
+  const abz = bz - az;
+  const apx = px - ax;
+  const apz = pz - az;
+  const t = Math.max(0, Math.min(1, (apx * abx + apz * abz) / ((abx * abx + abz * abz) || 1e-9)));
+  const qx = ax + abx * t;
+  const qz = az + abz * t;
+  const dx = px - qx;
+  const dz = pz - qz;
+  return dx * dx + dz * dz;
+}
+
+function buildCollisionPartsWithBVH(group, glbFile) {
+  if (collisionPartCache.has(glbFile)) return collisionPartCache.get(glbFile);
+
+  group.updateMatrixWorld(true);
+  const sceneBox = new THREE.Box3().setFromObject(group);
+  if (sceneBox.isEmpty()) {
+    collisionPartCache.set(glbFile, []);
+    return [];
+  }
+
+  const sources = [];
+  group.traverse((child) => {
+    if (!child.isMesh || !child.geometry) return;
+    const geom = child.geometry.clone();
+    geom.applyMatrix4(child.matrixWorld);
+    geom.computeBoundingBox();
+    const bvh = new MeshBVH(geom, { maxLeafTris: 20 });
+    sources.push({ geom, bvh, box: geom.boundingBox.clone() });
+  });
+
+  if (sources.length === 0) {
+    collisionPartCache.set(glbFile, []);
+    return [];
+  }
+
+  const size = sceneBox.getSize(new THREE.Vector3());
+  const maxHorizontal = Math.max(size.x, size.z);
+  const targetCellsAcross = Math.max(12, Math.min(46, Math.round(maxHorizontal / 80)));
+  const cellSize = Math.max(1, maxHorizontal / targetCellsAcross);
+  const minX = sceneBox.min.x;
+  const maxX = sceneBox.max.x;
+  const minZ = sceneBox.min.z;
+  const maxZ = sceneBox.max.z;
+  const cols = Math.max(1, Math.ceil((maxX - minX) / cellSize));
+  const rows = Math.max(1, Math.ceil((maxZ - minZ) / cellSize));
+
+  const occupied = Array.from({ length: rows }, () => Array(cols).fill(false));
+  const cellBottomY = Array.from({ length: rows }, () => Array(cols).fill(Infinity));
+  const cellTopY = Array.from({ length: rows }, () => Array(cols).fill(-Infinity));
+
+  const queryBox = new THREE.Box3();
+  const edgeRadiusSq = Math.pow(cellSize * 0.3, 2);
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const x0 = minX + c * cellSize;
+      const x1 = Math.min(maxX, x0 + cellSize);
+      const z0 = minZ + r * cellSize;
+      const z1 = Math.min(maxZ, z0 + cellSize);
+      const centerX = (x0 + x1) * 0.5;
+      const centerZ = (z0 + z1) * 0.5;
+
+      queryBox.min.set(x0, sceneBox.min.y - 1, z0);
+      queryBox.max.set(x1, sceneBox.max.y + 1, z1);
+
+      let hit = false;
+      let minY = Infinity;
+      let maxY = -Infinity;
+
+      for (const src of sources) {
+        if (!src.box.intersectsBox(queryBox)) continue;
+
+        src.bvh.shapecast({
+          intersectsBounds: (bounds) => bounds.intersectsBox(queryBox),
+          intersectsTriangle: (tri) => {
+            const ax = tri.a.x; const ay = tri.a.y; const az = tri.a.z;
+            const bx = tri.b.x; const by = tri.b.y; const bz = tri.b.z;
+            const cx = tri.c.x; const cy = tri.c.y; const cz = tri.c.z;
+
+            const triMinX = Math.min(ax, bx, cx);
+            const triMaxX = Math.max(ax, bx, cx);
+            const triMinZ = Math.min(az, bz, cz);
+            const triMaxZ = Math.max(az, bz, cz);
+            if (triMaxX < x0 || triMinX > x1 || triMaxZ < z0 || triMinZ > z1) return false;
+
+            const overlaps =
+              pointInTri2D(centerX, centerZ, ax, az, bx, bz, cx, cz) ||
+              segDistSq2D(centerX, centerZ, ax, az, bx, bz) <= edgeRadiusSq ||
+              segDistSq2D(centerX, centerZ, bx, bz, cx, cz) <= edgeRadiusSq ||
+              segDistSq2D(centerX, centerZ, cx, cz, ax, az) <= edgeRadiusSq;
+            if (!overlaps) return false;
+
+            hit = true;
+            const triMinY = Math.min(ay, by, cy);
+            const triMaxY = Math.max(ay, by, cy);
+            if (triMinY < minY) minY = triMinY;
+            if (triMaxY > maxY) maxY = triMaxY;
+            return false;
+          },
+        });
+      }
+
+      if (hit) {
+        occupied[r][c] = true;
+        cellBottomY[r][c] = minY;
+        cellTopY[r][c] = maxY;
+      }
+    }
+  }
+
+  for (const src of sources) src.geom.dispose();
+
+  const used = Array.from({ length: rows }, () => Array(cols).fill(false));
+  const parts = [];
+  const mergeHeightTolerance = Math.max(1.5, size.y * 0.035);
+  const maxMergeCols = 6;
+  const maxMergeRows = 6;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (!occupied[r][c] || used[r][c]) continue;
+
+      const seedBottom = cellBottomY[r][c];
+      const seedTop = cellTopY[r][c];
+      const sameBand = (rr, cc) => (
+        occupied[rr][cc] &&
+        !used[rr][cc] &&
+        Math.abs(cellBottomY[rr][cc] - seedBottom) <= mergeHeightTolerance &&
+        Math.abs(cellTopY[rr][cc] - seedTop) <= mergeHeightTolerance
+      );
+
+      let c2 = c;
+      while (c2 + 1 < cols && (c2 - c + 1) < maxMergeCols && sameBand(r, c2 + 1)) c2++;
+
+      let r2 = r;
+      outer: while (r2 + 1 < rows) {
+        if ((r2 - r + 1) >= maxMergeRows) break;
+        for (let cc = c; cc <= c2; cc++) {
+          if (!sameBand(r2 + 1, cc)) break outer;
+        }
+        r2++;
+      }
+
+      let partMinY = Infinity;
+      let partMaxY = -Infinity;
+      for (let rr = r; rr <= r2; rr++) {
+        for (let cc = c; cc <= c2; cc++) {
+          used[rr][cc] = true;
+          if (cellBottomY[rr][cc] < partMinY) partMinY = cellBottomY[rr][cc];
+          if (cellTopY[rr][cc] > partMaxY) partMaxY = cellTopY[rr][cc];
+        }
+      }
+
+      const w = (c2 - c + 1) * cellSize;
+      const d = (r2 - r + 1) * cellSize;
+      if (w < cellSize * 0.45 || d < cellSize * 0.45) continue;
+
+      parts.push({
+        cx: minX + (c + c2 + 1) * cellSize * 0.5,
+        cz: minZ + (r + r2 + 1) * cellSize * 0.5,
+        w,
+        d,
+        minY: partMinY,
+        maxY: partMaxY,
+      });
+    }
+  }
+
+  if (parts.length === 0) {
+    parts.push({
+      cx: (sceneBox.min.x + sceneBox.max.x) * 0.5,
+      cz: (sceneBox.min.z + sceneBox.max.z) * 0.5,
+      w: size.x,
+      d: size.z,
+      minY: sceneBox.min.y,
+      maxY: sceneBox.max.y,
+    });
+  }
+
+  collisionPartCache.set(glbFile, parts);
+  return parts;
+}
+
+function clearCollisionOverlays(cellData) {
+  if (Array.isArray(cellData.collisionHelpers)) {
+    for (const h of cellData.collisionHelpers) {
+      cellData.scene.remove(h);
+      if (h.material && typeof h.material.dispose === 'function') h.material.dispose();
+    }
+    cellData.collisionHelpers = [];
+  }
+
+  if (cellData.collisionLineGroup) {
+    cellData.scene.remove(cellData.collisionLineGroup);
+    cellData.collisionLineGroup.traverse((obj) => {
+      if (obj.isLineSegments) {
+        if (obj.geometry && typeof obj.geometry.dispose === 'function') obj.geometry.dispose();
+        if (obj.material && typeof obj.material.dispose === 'function') obj.material.dispose();
+      }
+    });
+    cellData.collisionLineGroup = null;
+  }
+}
+
+function applyCollisionOverlayVisibility(cellData) {
+  const showLines = !!showCollisionLinesInput?.checked;
+  const showBoxes = !!showCollisionBoxesInput?.checked;
+
+  if (Array.isArray(cellData.collisionHelpers)) {
+    for (const h of cellData.collisionHelpers) h.visible = showBoxes;
+  }
+  if (cellData.collisionLineGroup) {
+    cellData.collisionLineGroup.visible = showLines;
+  }
 }
 
 // Create PAGE_SIZE preview cells, each with its own renderer/scene/camera
@@ -324,7 +675,7 @@ for (let i = 0; i < PAGE_SIZE; i++) {
   cells.push({
     cell, cvs, renderer: rend, scene: scene3, camera: cam, infoDiv,
     approveBtn, denyBtn, checkbox: cb, nameSpan, copyBtn, label,
-    meshGroup: null, glbFile: null,
+    meshGroup: null, collisionHelpers: [], collisionLineGroup: null, glbFile: null,
     setOrbit(t, p, r, tgt) { oTheta = t; oPhi = p; oRad = r; oTgt.copy(tgt); updCam(); },
   });
 }
@@ -350,8 +701,9 @@ function loadMeshIntoCell(cellIdx, glbFile) {
 
   // Remove old mesh
   if (c.meshGroup) { c.scene.remove(c.meshGroup); c.meshGroup = null; }
+  clearCollisionOverlays(c);
 
-  gltfLoader.load('map-data/meshes/' + glbFile, (gltf) => {
+  gltfLoader.load(`${dataPath}/meshes/` + encodeURIComponent(glbFile), (gltf) => {
     const group = gltf.scene;
     let totalVerts = 0, totalFaces = 0, meshCount = 0;
 
@@ -391,11 +743,48 @@ function loadMeshIntoCell(cellIdx, glbFile) {
     const center = new THREE.Vector3(), size = new THREE.Vector3();
     box.getCenter(center); box.getSize(size);
 
+    const collisionParts = buildCollisionPartsWithBVH(group, glbFile);
+    const collisionHelpers = [];
+    for (const part of collisionParts) {
+      const partBox = new THREE.Box3(
+        new THREE.Vector3(part.cx - part.w * 0.5, part.minY, part.cz - part.d * 0.5),
+        new THREE.Vector3(part.cx + part.w * 0.5, part.maxY, part.cz + part.d * 0.5)
+      );
+      const helper = new THREE.Box3Helper(partBox, 0x2dd35c);
+      helper.material.depthTest = false;
+      helper.renderOrder = 2;
+      collisionHelpers.push(helper);
+    }
+
+    group.updateMatrixWorld(true);
+    const collisionLineGroup = new THREE.Group();
+    group.traverse((child) => {
+      if (!child.isMesh || !child.geometry) return;
+      const edges = new THREE.EdgesGeometry(child.geometry, 20);
+      const lineMat = new THREE.LineBasicMaterial({
+        color: 0x2dd35c,
+        transparent: true,
+        opacity: 0.95,
+        depthTest: false,
+      });
+      const line = new THREE.LineSegments(edges, lineMat);
+      line.matrixAutoUpdate = false;
+      line.matrix.copy(child.matrixWorld);
+      line.frustumCulled = false;
+      line.renderOrder = 3;
+      collisionLineGroup.add(line);
+    });
+
     c.scene.add(group);
+    for (const helper of collisionHelpers) c.scene.add(helper);
+    c.scene.add(collisionLineGroup);
     c.meshGroup = group;
+    c.collisionHelpers = collisionHelpers;
+    c.collisionLineGroup = collisionLineGroup;
+    applyCollisionOverlayVisibility(c);
     c.setOrbit(0.3, 0.8, Math.max(size.x, size.y, size.z) * 1.5, center);
 
-    c.infoDiv.textContent = `V:${totalVerts} F:${Math.round(totalFaces)} S:${meshCount}`;
+    c.infoDiv.textContent = `V:${totalVerts} F:${Math.round(totalFaces)} S:${meshCount} C:${collisionParts.length} parts B:${size.x.toFixed(1)}x${size.y.toFixed(1)}x${size.z.toFixed(1)}`;
   }, undefined, () => {
     c.infoDiv.textContent = 'Load failed';
   });
@@ -429,6 +818,7 @@ function loadPage() {
       const c = cells[i];
       c.cell.style.display = 'none';
       if (c.meshGroup) { c.scene.remove(c.meshGroup); c.meshGroup = null; }
+      clearCollisionOverlays(c);
       c.glbFile = null;
     }
   }
@@ -445,6 +835,25 @@ function renderSidebarList() {
   const visible = getVisibleList();
   const start = currentPage * PAGE_SIZE;
   const end = Math.min(start + PAGE_SIZE, visible.length);
+
+  if (visible.length === 0) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'padding:8px;color:#f88;font-size:11px;line-height:1.4;border:1px solid rgba(255,120,120,0.35);background:rgba(120,20,20,0.2);border-radius:4px;';
+
+    const lines = [];
+    lines.push('No meshes visible for current tab/filter.');
+    if (!filterInput.value && glbNames.length === 0) {
+      lines.push(`dataPath: ${dataPath}`);
+      if (loadDiagnostics.length) lines.push(`load: ${loadDiagnostics.join(' | ')}`);
+      if (dataPath.startsWith('/full-exports/')) {
+        lines.push('Tip: use node server.js (supports /full-exports + dataPath APIs), not serve.py.');
+      }
+    }
+
+    empty.textContent = lines.join('\n');
+    listDiv.appendChild(empty);
+    return;
+  }
 
   for (let i = 0; i < visible.length; i++) {
     const glbFile = visible[i];
@@ -519,27 +928,32 @@ async function setCellVerdict(cellIdx, verdict) {
   }
 
   const prev = approvedSet.has(glb) ? 'approved' : deniedSet.has(glb) ? 'denied' : null;
-  approvedSet.delete(glb);
-  deniedSet.delete(glb);
-  if (verdict !== prev) {
-    if (verdict === 'approved') approvedSet.add(glb);
-    else                        deniedSet.add(glb);
+  const nextVerdict = verdict === prev ? 'clear' : verdict;
+  selectedSet.delete(glb);
+  try {
+    await saveSingleVerdict(glb, nextVerdict);
+  } catch {
+    await loadVerdicts();
   }
-  await saveVerdicts();
-  refreshCellVerdict(cellIdx);
-  updateCounts();
-  renderSidebarList();
+  loadPage();
 }
 
 // Wire up per-cell events
 for (let i = 0; i < PAGE_SIZE; i++) {
   const c = cells[i];
-  c.approveBtn.addEventListener('click', () => setCellVerdict(i, 'approved'));
-  c.denyBtn.addEventListener('click', () => setCellVerdict(i, 'denied'));
+  c.approveBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setCellVerdict(i, 'approved');
+  });
+  c.denyBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setCellVerdict(i, 'denied');
+  });
 
   // Click anywhere on the cell (not on a button/checkbox) to toggle selection
   c.cell.addEventListener('click', (e) => {
-    if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+    const targetEl = e.target instanceof Element ? e.target : e.target?.parentElement;
+    if (targetEl && targetEl.closest('button, input')) return;
     if (!c.glbFile) return;
     if (selectedSet.has(c.glbFile)) {
       selectedSet.delete(c.glbFile);
@@ -558,7 +972,9 @@ for (let i = 0; i < PAGE_SIZE; i++) {
       else { selectedSet.delete(c.glbFile); c.cell.classList.remove('selected'); }
     }
   });
-  c.copyBtn.addEventListener('click', () => {
+  c.checkbox.addEventListener('click', (e) => e.stopPropagation());
+  c.copyBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
     if (!c.glbFile) return;
     const stem = c.glbFile.replace(/\.glb$/i, '');
     navigator.clipboard.writeText(stem).catch(() => {});
@@ -612,7 +1028,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
 // ── Open Folder ───────────────────────────────────────────────────────────────
 document.getElementById('btn-open-folder').addEventListener('click', async () => {
-  try { await fetch('/api/open-meshes-folder'); } catch {}
+  try { await fetch(withDataPath('/api/open-meshes-folder', dataPath)); } catch {}
 });
 
 // ── Filter ────────────────────────────────────────────────────────────────────
@@ -621,6 +1037,11 @@ filterInput.addEventListener('input', () => { currentPage = 0; loadPage(); });
 // ── Texture/DoubleSide toggle ─────────────────────────────────────────────────
 for (const id of ['showTextures', 'doubleSide']) {
   document.getElementById(id).addEventListener('change', () => loadPage());
+}
+for (const id of ['showCollisionLines', 'showCollisionBoxes']) {
+  document.getElementById(id).addEventListener('change', () => {
+    for (const c of cells) applyCollisionOverlayVisibility(c);
+  });
 }
 
 // ── Render loop ───────────────────────────────────────────────────────────────

@@ -11,7 +11,7 @@
     "build": "node tools/build-map-data.js"
   },
   "dependencies": {
-    "three": "^0.170.0"
-  },
-  "devDependencies": {}
+    "three": "^0.170.0",
+    "three-mesh-bvh": "^0.9.9"
+  }
 }

@@ -52,6 +52,7 @@ class FullMapViewer {
   async init() {
     document.getElementById('refresh-packages').addEventListener('click', () => this.refreshPackages());
     document.getElementById('load-package').addEventListener('click', () => this.loadSelectedPackage());
+    document.getElementById('open-resources').addEventListener('click', () => this.openResourcesForCurrentPackage());
     document.getElementById('open-validator').addEventListener('click', () => this.openValidatorForCurrentPackage());
 
     await this.refreshPackages();
@@ -158,6 +159,14 @@ class FullMapViewer {
     const url = `/full-validator.html?pkg=${encodeURIComponent(pkg)}`;
     const win = window.open(url, '_blank');
     if (!win) this.setStatus('Popup blocked. Open /full-validator.html manually.');
+  }
+
+  openResourcesForCurrentPackage() {
+    const pkg = this.packageSelect.value;
+    if (!pkg) return;
+    const url = `/mesh-inspector.html?pkg=${encodeURIComponent(pkg)}`;
+    const win = window.open(url, '_blank');
+    if (!win) this.setStatus('Popup blocked. Open /mesh-inspector.html manually.');
   }
 
   _disposeObjectTree(obj) {

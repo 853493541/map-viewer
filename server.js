@@ -17,13 +17,15 @@ import {
   copyFileSync,
   readdirSync,
 } from 'fs';
+import { spawn } from 'child_process';
 import { join, extname, dirname, resolve, basename } from 'path';
 import { fileURLToPath } from 'url';
 import os from 'os';
+import { generateCollisionDataForExport } from './tools/collision-generator.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const PUBLIC_DIR = resolve(join(__dirname, 'public'));
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = Number(process.env.PORT) || 3015;
 const DESKTOP_EXPORT_ROOT = resolve(join(os.homedir(), 'Desktop', 'JX3FullExports'));
 
 const MIME_TYPES = {
@@ -168,7 +170,7 @@ function buildFlatFileLookup(dirPath) {
   return map;
 }
 
-function buildFullExportPackage(payload) {
+async function buildFullExportPackage(payload) {
   const exportName = sanitizeName(payload?.name, 'full-map');
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const packageName = `${exportName}-${stamp}`;
@@ -205,6 +207,7 @@ function buildFullExportPackage(payload) {
 
   const region = payload?.region && typeof payload.region === 'object' ? payload.region : null;
   const regionCorners = Array.isArray(payload?.regionCorners) ? payload.regionCorners : null;
+  const attachMeshCollision = !!payload?.attachMeshCollision;
 
   const entitiesIn = Array.isArray(payload?.entities) ? payload.entities : [];
   if (entitiesIn.length === 0) {
@@ -360,6 +363,48 @@ function buildFullExportPackage(payload) {
   writeJson(join(outMapData, 'verdicts.json'), { approved: meshList, denied: [] });
   if (terrainIndexOut) writeJson(join(outMapData, 'terrain-textures', 'index.json'), terrainIndexOut);
 
+  let collision = {
+    generated: false,
+    file: 'collision.json',
+    objects: 0,
+    shells: 0,
+    shellTriangles: 0,
+    meshSidecarsWritten: 0,
+    meshSidecarsFailed: 0,
+    meshesLoaded: 0,
+    meshesFailed: 0,
+    skippedEntities: entityOut.length,
+    error: null,
+  };
+
+  try {
+    const generated = await generateCollisionDataForExport({
+      mapDataRoot: outMapData,
+      packageName,
+      region,
+      outputFileName: 'collision.json',
+      attachToMeshes: attachMeshCollision,
+      meshSidecarSuffix: '.collision.json',
+    });
+
+    collision = {
+      generated: true,
+      file: 'collision.json',
+      objects: generated.objects,
+      shells: generated.shells || 0,
+      shellTriangles: generated.shellTriangles || 0,
+      meshSidecarsWritten: generated.meshSidecarsWritten || 0,
+      meshSidecarsFailed: generated.meshSidecarsFailed || 0,
+      meshesLoaded: generated.meshesLoaded,
+      meshesFailed: generated.meshesFailed,
+      skippedEntities: generated.skippedEntities,
+      error: null,
+    };
+  } catch (err) {
+    collision.error = err?.message || String(err);
+    console.warn(`[export-full] collision generation skipped for ${packageName}: ${collision.error}`);
+  }
+
   const manifest = {
     kind: 'jx3-full-map-export',
     version: 1,
@@ -378,7 +423,17 @@ function buildFullExportPackage(payload) {
       heightmapsCopied: copiedHeightmapCount,
       terrainTexturesCopied: copiedTerrainTextureCount,
       tilesSelected: tiles.length,
+      collisionGenerated: collision.generated,
+      collisionObjects: collision.objects,
+      collisionShells: collision.shells,
+      collisionShellTriangles: collision.shellTriangles,
+      meshCollisionAttached: collision.meshSidecarsWritten,
+      meshCollisionAttachFailures: collision.meshSidecarsFailed,
+      collisionMeshesLoaded: collision.meshesLoaded,
+      collisionMeshesFailed: collision.meshesFailed,
+      collisionSkippedEntities: collision.skippedEntities,
     },
+    collision,
     coordinateContract: {
       world: 'three-rh',
       entityMatrixStoredAs: 'source-lh-row-major',
@@ -481,10 +536,139 @@ function listFullExports() {
   return out;
 }
 
+function normalizeInspectorDataPath(rawValue) {
+  const raw = String(rawValue || '').trim();
+  const clean = raw.replace(/\\/g, '/').replace(/\/+$/, '');
+  return clean || 'map-data';
+}
+
+function resolveInspectorDataRoot(rawDataPath) {
+  const dataPath = normalizeInspectorDataPath(rawDataPath);
+
+  if (dataPath.startsWith('/full-exports/') || dataPath.startsWith('full-exports/')) {
+    const rel = dataPath
+      .replace(/^\/+/, '')
+      .replace(/^full-exports\//, '');
+    return safePathUnder(DESKTOP_EXPORT_ROOT, rel);
+  }
+
+  const rel = dataPath.replace(/^\/+/, '');
+  return safePathUnder(PUBLIC_DIR, rel);
+}
+
+function extractGlbListFromDataRoot(dataRoot) {
+  const out = [];
+  const seen = new Set();
+  const meshDir = join(dataRoot, 'meshes');
+
+  if (existsSync(meshDir) && statSync(meshDir).isDirectory()) {
+    for (const ent of readdirSync(meshDir, { withFileTypes: true })) {
+      if (!ent.isFile()) continue;
+      if (!ent.name.toLowerCase().endsWith('.glb')) continue;
+      const n = ent.name;
+      const key = n.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(n);
+    }
+  }
+
+  // Fallback for unusual layouts: derive names from mesh-map values.
+  if (out.length === 0) {
+    const meshMap = readJsonUtf8(join(dataRoot, 'mesh-map.json'), {});
+    for (const v of Object.values(meshMap || {})) {
+      if (typeof v !== 'string') continue;
+      const n = basename(v);
+      if (!n.toLowerCase().endsWith('.glb')) continue;
+      const key = n.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(n);
+    }
+  }
+
+  out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  return out;
+}
+
+function normalizeVerdictList(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  const seen = new Set();
+
+  for (const raw of list) {
+    let name = basename(String(raw || '').trim());
+    if (!name) continue;
+    if (!name.toLowerCase().endsWith('.glb')) name += '.glb';
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+
+  out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  return out;
+}
+
+function readInspectorVerdicts(dataRoot) {
+  const verdictPath = join(dataRoot, 'verdicts.json');
+  const raw = readJsonUtf8(verdictPath, { approved: [], denied: [] });
+  return {
+    approved: normalizeVerdictList(raw?.approved),
+    denied: normalizeVerdictList(raw?.denied),
+  };
+}
+
+function writeInspectorVerdicts(dataRoot, payload) {
+  const verdictPath = join(dataRoot, 'verdicts.json');
+  const approved = normalizeVerdictList(payload?.approved);
+  const deniedRaw = normalizeVerdictList(payload?.denied);
+  const approvedSet = new Set(approved.map((x) => x.toLowerCase()));
+  const denied = deniedRaw.filter((x) => !approvedSet.has(x.toLowerCase()));
+  writeJson(verdictPath, { approved, denied });
+  return { approved, denied };
+}
+
+function setSingleInspectorVerdict(dataRoot, meshNameRaw, verdictRaw) {
+  let meshName = basename(String(meshNameRaw || '').trim());
+  if (!meshName) throw new Error('mesh is required');
+  if (!meshName.toLowerCase().endsWith('.glb')) meshName += '.glb';
+
+  const rawVerdict = String(verdictRaw || '').trim().toLowerCase();
+  const verdict = rawVerdict === 'none' ? 'clear' : rawVerdict;
+  if (!['approved', 'denied', 'clear'].includes(verdict)) {
+    throw new Error('Invalid verdict. Use approved, denied, or clear.');
+  }
+
+  const meshList = extractGlbListFromDataRoot(dataRoot);
+  const meshByLower = new Map(meshList.map((n) => [n.toLowerCase(), n]));
+  const targetKey = meshName.toLowerCase();
+  const targetName = meshByLower.get(targetKey) || meshName;
+
+  const current = readInspectorVerdicts(dataRoot);
+  const approvedMap = new Map(current.approved.map((n) => [n.toLowerCase(), n]));
+  const deniedMap = new Map(current.denied.map((n) => [n.toLowerCase(), n]));
+
+  approvedMap.delete(targetKey);
+  deniedMap.delete(targetKey);
+
+  if (verdict === 'approved') approvedMap.set(targetKey, targetName);
+  if (verdict === 'denied') deniedMap.set(targetKey, targetName);
+
+  for (const key of approvedMap.keys()) deniedMap.delete(key);
+
+  const approved = [...approvedMap.values()].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  const denied = [...deniedMap.values()].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+  writeJson(join(dataRoot, 'verdicts.json'), { approved, denied });
+  return { approved, denied, mesh: targetName, verdict };
+}
+
 const server = createServer(async (req, res) => {
   const method = req.method || 'GET';
   const rawUrl = req.url || '/';
   const urlPath = decodeURIComponent(rawUrl.split('?')[0]);
+  const reqUrl = new URL(rawUrl, 'http://localhost');
 
   if (method === 'OPTIONS') {
     res.writeHead(204, {
@@ -507,11 +691,113 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  // API: mesh inspector list meshes for a selected data root.
+  if (method === 'GET' && urlPath === '/api/meshes') {
+    try {
+      const dataRoot = resolveInspectorDataRoot(reqUrl.searchParams.get('dataPath'));
+      if (!dataRoot || !existsSync(dataRoot) || !statSync(dataRoot).isDirectory()) {
+        sendJson(res, 404, { error: 'Data root not found' });
+        return;
+      }
+      sendJson(res, 200, extractGlbListFromDataRoot(dataRoot));
+    } catch (err) {
+      sendJson(res, 500, { error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  // API: mesh inspector verdicts read.
+  if (method === 'GET' && urlPath === '/api/verdicts') {
+    try {
+      const dataRoot = resolveInspectorDataRoot(reqUrl.searchParams.get('dataPath'));
+      if (!dataRoot || !existsSync(dataRoot) || !statSync(dataRoot).isDirectory()) {
+        sendJson(res, 404, { error: 'Data root not found' });
+        return;
+      }
+      sendJson(res, 200, readInspectorVerdicts(dataRoot));
+    } catch (err) {
+      sendJson(res, 500, { error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  // API: mesh inspector verdicts write.
+  if (method === 'POST' && urlPath === '/api/verdicts') {
+    try {
+      const dataRoot = resolveInspectorDataRoot(reqUrl.searchParams.get('dataPath'));
+      if (!dataRoot || !existsSync(dataRoot) || !statSync(dataRoot).isDirectory()) {
+        sendJson(res, 404, { error: 'Data root not found' });
+        return;
+      }
+      const payload = await readBodyJson(req);
+      const saved = writeInspectorVerdicts(dataRoot, payload);
+      sendJson(res, 200, { ok: true, ...saved });
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  // API: set one verdict atomically for one mesh.
+  if (method === 'POST' && urlPath === '/api/verdicts/set') {
+    try {
+      const dataRoot = resolveInspectorDataRoot(reqUrl.searchParams.get('dataPath'));
+      if (!dataRoot || !existsSync(dataRoot) || !statSync(dataRoot).isDirectory()) {
+        sendJson(res, 404, { error: 'Data root not found' });
+        return;
+      }
+      const payload = await readBodyJson(req);
+      const saved = setSingleInspectorVerdict(dataRoot, payload?.mesh, payload?.verdict);
+      sendJson(res, 200, { ok: true, ...saved });
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  // API: open meshes folder in Explorer for the selected data root.
+  if (method === 'GET' && urlPath === '/api/open-meshes-folder') {
+    try {
+      const dataRoot = resolveInspectorDataRoot(reqUrl.searchParams.get('dataPath'));
+      const meshDir = dataRoot ? join(dataRoot, 'meshes') : null;
+      if (!meshDir || !existsSync(meshDir) || !statSync(meshDir).isDirectory()) {
+        sendJson(res, 404, { ok: false, error: 'Meshes folder not found' });
+        return;
+      }
+      const child = spawn('explorer.exe', [meshDir], { detached: true, stdio: 'ignore' });
+      child.unref();
+      sendJson(res, 200, { ok: true, opened: meshDir });
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
   // API: build full export package on Desktop
   if (method === 'POST' && urlPath === '/api/export-full') {
     try {
       const payload = await readBodyJson(req);
-      const result = buildFullExportPackage(payload);
+      const result = await buildFullExportPackage(payload);
+      sendJson(res, 200, {
+        ok: true,
+        packageName: result.packageName,
+        desktopRoot: DESKTOP_EXPORT_ROOT,
+        packagePath: result.packageRoot,
+        viewerUrl: `/full-viewer.html?pkg=${encodeURIComponent(result.packageName)}`,
+        stats: result.stats,
+      });
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  // API: build full export package on Desktop and attach per-GLB collision sidecars.
+  if (method === 'POST' && urlPath === '/api/export-full-with-collision') {
+    try {
+      const payload = await readBodyJson(req);
+      payload.attachMeshCollision = true;
+      const result = await buildFullExportPackage(payload);
       sendJson(res, 200, {
         ok: true,
         packageName: result.packageName,
