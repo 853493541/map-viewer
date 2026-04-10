@@ -409,8 +409,13 @@ class ExportWalkController {
     this.bodyCenter = new THREE.Vector3(0, 220, 0);
     this.velocity = new THREE.Vector3();
 
-    this.radius = 120;
-    this.eyeHeight = 240;
+    this.modelRadius = 120;
+    this.modelEyeHeight = 240;
+    this.modelScale = 0.5;
+
+    // Match collision to the rendered avatar body width.
+    this.radius = this.modelRadius * 0.95 * this.modelScale;
+    this.eyeHeight = this.modelEyeHeight * this.modelScale;
     this.bodyOffset = this.eyeHeight - this.radius;
 
     this.baseSpeed = 2200;
@@ -521,11 +526,11 @@ class ExportWalkController {
       emissive: 0x2b1700,
     });
 
-    const bodyHeight = Math.max(this.eyeHeight * 0.74, this.radius * 2.3);
-    const headRadius = this.radius * 0.65;
+    const bodyHeight = Math.max(this.modelEyeHeight * 0.74, this.modelRadius * 2.3);
+    const headRadius = this.modelRadius * 0.65;
 
     const body = new THREE.Mesh(
-      new THREE.CylinderGeometry(this.radius * 0.82, this.radius * 0.95, bodyHeight, 18),
+      new THREE.CylinderGeometry(this.modelRadius * 0.82, this.modelRadius * 0.95, bodyHeight, 18),
       bodyMat,
     );
     body.position.y = bodyHeight * 0.5;
@@ -535,7 +540,7 @@ class ExportWalkController {
 
     const group = new THREE.Group();
     group.add(body, head);
-    group.scale.setScalar(0.5);
+    group.scale.setScalar(this.modelScale);
     this.scene.add(group);
 
     this.avatar = group;
@@ -872,10 +877,10 @@ class ExportReaderApp {
     const skyGeo = new THREE.SphereGeometry(200000, 32, 16);
     const skyMat = new THREE.ShaderMaterial({
       uniforms: {
-        topColor: { value: new THREE.Color(0x447fbf) },
-        bottomColor: { value: new THREE.Color(0xd4c29d) },
-        horizonColor: { value: new THREE.Color(0xc6b289) },
-        exponent: { value: 0.52 },
+        topColor: { value: new THREE.Color(0x4488cc) },
+        bottomColor: { value: new THREE.Color(0xd4c5a0) },
+        horizonColor: { value: new THREE.Color(0xc8b888) },
+        exponent: { value: 0.5 },
       },
       vertexShader: `
         varying vec3 vDir;
@@ -908,7 +913,7 @@ class ExportReaderApp {
     this.scene.add(this.sky);
     this._envNodes.push(this.sky);
 
-    this.scene.fog = new THREE.FogExp2(0xc8ba98, 0.0000035);
+    this.scene.fog = new THREE.FogExp2(0xc8b888, 0.0000035);
 
     if (environment?.sunlight) {
       const s = environment.sunlight;
@@ -932,24 +937,25 @@ class ExportReaderApp {
       this._envNodes.push(sun, sun.target);
       this.sunLight = sun;
 
-      const ambientColor = s.ambientColor
+      const ambCol = s.ambientColor
         ? new THREE.Color(s.ambientColor[0], s.ambientColor[1], s.ambientColor[2])
         : new THREE.Color(0x666655);
-      const ambient = new THREE.AmbientLight(ambientColor, 0.8);
-      this.scene.add(ambient);
-      this._envNodes.push(ambient);
+      const amb = new THREE.AmbientLight(ambCol, 0.8);
+      this.scene.add(amb);
+      this._envNodes.push(amb);
 
-      const skyColor = s.skyLightColor
+      const skyCol = s.skyLightColor
         ? new THREE.Color(s.skyLightColor[0] * 0.8, s.skyLightColor[1] * 0.9, s.skyLightColor[2] * 1.2)
         : new THREE.Color(0x88aacc);
-      const hemi = new THREE.HemisphereLight(skyColor, 0x8b7355, 1.0);
+      const hemi = new THREE.HemisphereLight(skyCol, 0x8b7355, 1.0);
       this.scene.add(hemi);
       this._envNodes.push(hemi);
     } else {
-      const ambient = new THREE.AmbientLight(0x888888, 0.6);
-      const hemi = new THREE.HemisphereLight(0x87ceeb, 0x8b7355, 0.45);
-      this.scene.add(ambient, hemi);
-      this._envNodes.push(ambient, hemi);
+      const amb = new THREE.AmbientLight(0x888888, 0.6);
+      const hemi = new THREE.HemisphereLight(0x87ceeb, 0x8b7355, 0.4);
+      this.scene.add(amb);
+      this.scene.add(hemi);
+      this._envNodes.push(amb, hemi);
     }
   }
 
