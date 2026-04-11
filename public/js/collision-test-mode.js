@@ -16,14 +16,9 @@ const dom = {
   meshList: document.getElementById('mesh-list'),
   prevMesh: document.getElementById('prev-mesh'),
   nextMesh: document.getElementById('next-mesh'),
-  loadMesh: document.getElementById('load-mesh'),
   rebuildCollision: document.getElementById('rebuild-collision'),
   frameMesh: document.getElementById('frame-mesh'),
-  walkCollisionSource: document.getElementById('walk-collision-source'),
-  walkSpeed: document.getElementById('walk-speed'),
-  walkStart: document.getElementById('walk-start'),
-  walkStop: document.getElementById('walk-stop'),
-  walkResult: document.getElementById('walk-result'),
+  walkSpeedLevels: document.getElementById('walk-speed-levels'),
   probeX: document.getElementById('probe-x'),
   probeY: document.getElementById('probe-y'),
   probeZ: document.getElementById('probe-z'),
@@ -76,7 +71,7 @@ const state = {
   walkMode: {
     enabled: false,
     keys: {},
-    speed: 7.5,
+    speed: 2000,
     runMultiplier: 1.8,
     jumpSpeed: 8.6,
     gravity: 19,
@@ -85,29 +80,30 @@ const state = {
     position: new THREE.Vector3(0, 4, 0),
     velocity: new THREE.Vector3(),
     onGround: false,
-    jumpConsumed: false,
     marker: null,
     markerBody: null,
     markerHead: null,
     lastHitDistance: Infinity,
     collisionSourceUsed: 'none',
-    userSpeedOverride: false,
   },
 };
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0b1118);
+scene.background = new THREE.Color(0x8db7e6);
 
 const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 2000);
 
 const renderer = new THREE.WebGLRenderer({ canvas: dom.canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth - 390, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.45;
 
 const orbit = {
-  theta: 0.9,
-  phi: 0.75,
-  radius: 30,
+  theta: 0.88,
+  phi: 0.96,
+  radius: 42,
   target: new THREE.Vector3(0, 3.5, 0),
 };
 
@@ -131,6 +127,10 @@ const tmpUp = new THREE.Vector3(0, 1, 0);
 const walkHitTarget = { point: new THREE.Vector3(), distance: Infinity, faceIndex: -1 };
 const walkGroundRay = new THREE.Ray();
 let lastFrameTime = performance.now();
+const autoStartWalkMode = true;
+const thirdPersonScaleMultiplier = 1;
+const SPEED_LEVELS = [500, 1000, 2000, 3000];
+const walkSpeedButtons = Array.from(document.querySelectorAll('#walk-speed-levels .speed-btn'));
 
 const probeMarker = new THREE.Mesh(
   new THREE.SphereGeometry(0.14, 12, 12),
@@ -143,6 +143,8 @@ wireEvents();
 window.addEventListener('resize', onResize);
 
 dom.dataPath.value = state.dataPath;
+if (dom.verdictFilter) dom.verdictFilter.value = 'approved';
+setWalkSpeed(2000, false);
 setStatus('Loading mesh list...');
 loadMeshList();
 animate();
@@ -333,8 +335,8 @@ function applyMeshMaterials(group, meshName) {
     if (subTex && subTex.albedo) {
       const opts = {
         color: 0xffffff,
-        roughness: 1.0,
-        metalness: 1.0,
+        roughness: 0.82,
+        metalness: 0.2,
         side: THREE.DoubleSide,
         map: loadTexCached(subTex.albedo, false),
       };
@@ -439,7 +441,7 @@ function applyMeshFilter() {
   for (const name of state.filteredMeshNames) {
     const option = document.createElement('option');
     option.value = name;
-    option.textContent = name;
+    option.textContent = name.replace(/\.glb$/i, '');
     dom.meshList.appendChild(option);
   }
 
@@ -461,6 +463,37 @@ function applyMeshFilter() {
   }
 }
 
+function setWalkSpeed(speed, updateHud = true) {
+  const numeric = Number(speed);
+  const safe = Number.isFinite(numeric) ? numeric : 2000;
+  state.walkMode.speed = safe;
+
+  for (const btn of walkSpeedButtons) {
+    const btnSpeed = Number(btn.dataset.speed);
+    btn.classList.toggle('active', btnSpeed === safe);
+  }
+
+  if (updateHud) updateWalkHud();
+}
+
+function autoChooseSpeedLevelForMesh() {
+  if (!state.meshGeometry?.boundingBox) {
+    setWalkSpeed(2000);
+    return;
+  }
+
+  const sphere = new THREE.Sphere();
+  state.meshGeometry.boundingBox.getBoundingSphere(sphere);
+  const r = Math.max(0, sphere.radius || 0);
+
+  let picked = 2000;
+  if (r < 120) picked = 500;
+  else if (r < 380) picked = 1000;
+  else if (r > 1800) picked = 3000;
+
+  setWalkSpeed(picked);
+}
+
 function wireEvents() {
   dom.reloadList.addEventListener('click', () => {
     setStatus('Reloading mesh list...');
@@ -469,7 +502,7 @@ function wireEvents() {
 
   dom.openInspector.addEventListener('click', () => {
     const url = `/mesh-inspector.html?dataPath=${encodeURIComponent(normalizeDataPath(dom.dataPath.value))}`;
-    window.open(url, '_blank');
+    window.location.href = url;
   });
 
   dom.meshFilter.addEventListener('input', () => {
@@ -491,13 +524,7 @@ function wireEvents() {
     setStatus(dom.showCollision.checked ? 'Collision overlay enabled.' : 'Collision overlay hidden.');
   });
 
-  dom.loadMesh.addEventListener('click', () => {
-    const name = dom.meshList.value;
-    if (!name) return;
-    loadSingleMesh(name);
-  });
-
-  dom.meshList.addEventListener('dblclick', () => {
+  dom.meshList.addEventListener('change', () => {
     const name = dom.meshList.value;
     if (!name) return;
     loadSingleMesh(name);
@@ -517,25 +544,13 @@ function wireEvents() {
     setStatus('Camera framed to current mesh bounds.');
   });
 
-  dom.walkSpeed?.addEventListener('change', () => {
-    const v = parseFloat(dom.walkSpeed.value);
-    state.walkMode.speed = Number.isFinite(v) && v > 0 ? v : 7.5;
-    state.walkMode.userSpeedOverride = true;
-    dom.walkSpeed.value = state.walkMode.speed.toFixed(1);
-    updateWalkHud();
-  });
-
-  dom.walkCollisionSource?.addEventListener('change', () => {
-    updateWalkHud();
-  });
-
-  dom.walkStart?.addEventListener('click', () => {
-    startWalkMode();
-  });
-
-  dom.walkStop?.addEventListener('click', () => {
-    stopWalkMode();
-  });
+  for (const btn of walkSpeedButtons) {
+    btn.addEventListener('click', () => {
+      const speed = Number(btn.dataset.speed);
+      if (!SPEED_LEVELS.includes(speed)) return;
+      setWalkSpeed(speed);
+    });
+  }
 
   dom.checkProbe?.addEventListener('click', () => {
     evaluateProbePoint();
@@ -616,12 +631,19 @@ function onWheel(event) {
 }
 
 function initScene() {
-  const ambient = new THREE.AmbientLight(0xffffff, 0.55);
+  const hemi = new THREE.HemisphereLight(0xc9e4ff, 0x62744f, 1.28);
+  scene.add(hemi);
+
+  const ambient = new THREE.AmbientLight(0xffffff, 0.58);
   scene.add(ambient);
 
-  const directional = new THREE.DirectionalLight(0xffffff, 0.9);
-  directional.position.set(18, 24, 8);
-  scene.add(directional);
+  const keySun = new THREE.DirectionalLight(0xfff3d0, 2.55);
+  keySun.position.set(160, 220, 90);
+  scene.add(keySun);
+
+  const fillSun = new THREE.DirectionalLight(0xd9e9ff, 1.0);
+  fillSun.position.set(-130, 120, -140);
+  scene.add(fillSun);
 
   const axes = new THREE.AxesHelper(6);
   scene.add(axes);
@@ -911,17 +933,14 @@ function autoFitWalkCharacterToMesh() {
   box.getBoundingSphere(sphere);
 
   const horizontal = Math.max(size.x, size.z);
-  const targetRadius = THREE.MathUtils.clamp(
-    Math.max(sphere.radius * 0.03, horizontal * 0.012),
-    0.9,
-    14,
-  );
-  const targetEyeHeight = THREE.MathUtils.clamp(targetRadius * 2.95, 2.7, 44);
+  const baseRadius = Math.max(sphere.radius * 0.03, horizontal * 0.012);
+  const targetRadius = THREE.MathUtils.clamp(baseRadius * thirdPersonScaleMultiplier, 0.9, 120);
+  const targetEyeHeight = THREE.MathUtils.clamp(targetRadius * 2.95, 2.7, 350);
 
   walk.radius = targetRadius;
   walk.eyeHeight = targetEyeHeight;
-  walk.jumpSpeed = THREE.MathUtils.clamp(targetEyeHeight * 2.65, 7.8, 88);
-  walk.gravity = THREE.MathUtils.clamp(targetEyeHeight * 5.8, 18, 185);
+  walk.jumpSpeed = THREE.MathUtils.clamp(targetEyeHeight * 2.65, 7.8, 650);
+  walk.gravity = THREE.MathUtils.clamp(targetEyeHeight * 5.8, 18, 1800);
 
   syncWalkMarkerGeometry();
 }
@@ -937,7 +956,7 @@ function onWalkKeyDown(event) {
   if (!state.walkMode.enabled) return;
 
   state.walkMode.keys[event.code] = true;
-  if (event.code === 'Space' || event.code.startsWith('Arrow')) {
+  if (event.code === 'KeyW' || event.code === 'Space' || event.code.startsWith('Arrow')) {
     event.preventDefault();
   }
 }
@@ -947,19 +966,7 @@ function onWalkKeyUp(event) {
 }
 
 function getWalkCollisionEntries() {
-  const mode = dom.walkCollisionSource?.value || 'collision';
-  if (mode === 'none') return [];
-  if (mode === 'render') return state.meshEntry ? [state.meshEntry] : [];
-
-  const entries = [];
-  if (state.collisionEntry) entries.push(state.collisionEntry);
-
-  // Guard against missing sidecar walls by also using render geometry in collision mode.
-  if (state.meshEntry && state.meshEntry !== state.collisionEntry) {
-    entries.push(state.meshEntry);
-  }
-
-  return entries;
+  return state.collisionEntry ? [state.collisionEntry] : [];
 }
 
 function getWalkSpawnPosition() {
@@ -973,37 +980,55 @@ function getWalkSpawnPosition() {
 }
 
 function startWalkMode() {
-  if (!state.meshGroup || !state.meshEntry) {
-    setStatus('Load a mesh first before starting walk mode.', 'warn');
-    setResult(dom.walkResult, 'Walk mode cannot start: no mesh loaded.', 'warn');
+  if (!state.meshGroup || !state.collisionEntry) {
+    setStatus('Walk mode needs sidecar collision. This mesh has no sidecar.', 'warn');
+    setResult(dom.walkResult, 'Walk mode cannot start: sidecar collision missing.', 'warn');
     return;
   }
 
   const walk = state.walkMode;
   walk.enabled = true;
-  const parsedSpeed = parseFloat(dom.walkSpeed?.value);
-  walk.speed = Number.isFinite(parsedSpeed) ? Math.max(0.5, parsedSpeed) : walk.speed;
-  if (dom.walkSpeed) dom.walkSpeed.value = walk.speed.toFixed(1);
 
   walk.position.copy(getWalkSpawnPosition());
   walk.velocity.set(0, 0, 0);
   walk.onGround = false;
-  walk.jumpConsumed = false;
   walk.lastHitDistance = Infinity;
-  walk.collisionSourceUsed = dom.walkCollisionSource?.value || 'collision';
+  walk.collisionSourceUsed = 'sidecar';
 
   if (walk.marker) {
     walk.marker.visible = true;
-    walk.marker.position.copy(walk.position);
+    walk.marker.position.set(walk.position.x, walk.position.y - walk.radius, walk.position.z);
+  }
+
+  let meshRadius = 0;
+  if (state.meshGeometry?.boundingBox) {
+    const sphere = new THREE.Sphere();
+    state.meshGeometry.boundingBox.getBoundingSphere(sphere);
+    meshRadius = Math.max(0, sphere.radius || 0);
   }
 
   orbit.target.set(walk.position.x, walk.position.y + walk.eyeHeight * 0.45, walk.position.z);
-  orbit.radius = Math.max(7, Math.min(14, orbit.radius));
-  orbit.phi = Math.min(Math.max(0.65, orbit.phi), 1.4);
+  const cameraCeiling = Math.max(
+    state.maxOrbitRadius || 500,
+    meshRadius * 8,
+    walk.eyeHeight * 14,
+  );
+  const desiredFarRadius = THREE.MathUtils.clamp(
+    Math.max(
+      orbit.radius,
+      walk.eyeHeight * 7.5,
+      meshRadius * 1.35,
+      180,
+    ),
+    60,
+    cameraCeiling,
+  );
+  orbit.radius = desiredFarRadius;
+  orbit.phi = 1.04;
   updateCameraFromOrbit();
 
   updateWalkHud();
-  setStatus('Walk mode started. Use W/A/S/D + Space.', 'info');
+  setStatus('Walk mode started (sidecar collision). Use W/A/S/D (hold W to auto-jump).', 'info');
 }
 
 function stopWalkMode() {
@@ -1017,7 +1042,6 @@ function stopWalkMode() {
   walk.keys = {};
   walk.velocity.set(0, 0, 0);
   walk.onGround = false;
-  walk.jumpConsumed = false;
   if (walk.marker) walk.marker.visible = false;
   setResult(dom.walkResult, 'Walk mode is off.', 'info');
   updateHud();
@@ -1089,16 +1113,6 @@ function sampleGroundHeight(entry, position) {
   return hit.point.y;
 }
 
-function suggestWalkSpeedFromMesh() {
-  if (!state.meshGeometry?.boundingBox) return state.walkMode.speed;
-
-  const size = new THREE.Vector3();
-  state.meshGeometry.boundingBox.getSize(size);
-  const base = size.length() * 0.03;
-  const minSpeed = Math.max(5, state.walkMode.radius * 4.5);
-  return THREE.MathUtils.clamp(base, minSpeed, 280);
-}
-
 function updateWalkMode(dt) {
   if (!state.walkMode.enabled || !state.walkMode.marker) return;
 
@@ -1142,13 +1156,9 @@ function updateWalkMode(dt) {
     }
   }
 
-  if (keys.Space && walk.onGround && !walk.jumpConsumed) {
+  if ((keys.KeyW || keys.Space) && walk.onGround) {
     walk.velocity.y = walk.jumpSpeed;
     walk.onGround = false;
-    walk.jumpConsumed = true;
-  }
-  if (!keys.Space) {
-    walk.jumpConsumed = false;
   }
 
   walk.velocity.y -= walk.gravity * dt;
@@ -1157,10 +1167,7 @@ function updateWalkMode(dt) {
   const collisionResult = resolveWalkAgainstEntries(collisionEntries, walk.position, walk.radius, walk.velocity);
   walk.onGround = collisionResult.onGround;
   walk.lastHitDistance = collisionResult.hitDistance;
-  const selectedMode = dom.walkCollisionSource?.value || 'collision';
-  walk.collisionSourceUsed = selectedMode === 'collision' && collisionEntries.length > 1
-    ? 'collision + render guard'
-    : selectedMode;
+  walk.collisionSourceUsed = 'sidecar';
 
   let meshGroundY = null;
   for (const entry of collisionEntries) {
@@ -1191,7 +1198,7 @@ function updateWalkMode(dt) {
     walk.velocity.set(0, 0, 0);
   }
 
-  walk.marker.position.copy(walk.position);
+  walk.marker.position.set(walk.position.x, walk.position.y - walk.radius, walk.position.z);
   orbit.target.set(walk.position.x, walk.position.y + walk.eyeHeight * 0.45, walk.position.z);
   updateCameraFromOrbit();
 
@@ -1215,7 +1222,7 @@ function updateWalkHud() {
     `Speed: ${walk.speed.toFixed(2)} (Shift x${walk.runMultiplier.toFixed(1)})`,
     `Nearest collision distance: ${Number.isFinite(walk.lastHitDistance) ? walk.lastHitDistance.toFixed(4) : 'INF'}`,
     `Position: (${walk.position.x.toFixed(2)}, ${walk.position.y.toFixed(2)}, ${walk.position.z.toFixed(2)})`,
-    'Keys: W/A/S/D or arrows move, Space jump, Shift run',
+    'Keys: W/A/S/D move, hold W for repeated jumps, Shift run',
     `Collision lines visible: ${dom.showCollision?.checked ? 'YES' : 'NO'} (visual only)`
   ];
 
@@ -1316,11 +1323,11 @@ async function loadSingleMesh(meshName) {
 
     rebuildPrecisionData();
     autoFitWalkCharacterToMesh();
-    if (!state.walkMode.userSpeedOverride) {
-      state.walkMode.speed = suggestWalkSpeedFromMesh();
-      if (dom.walkSpeed) dom.walkSpeed.value = state.walkMode.speed.toFixed(1);
-    }
+    autoChooseSpeedLevelForMesh();
     frameCameraToCurrentMesh();
+    if (autoStartWalkMode) {
+      startWalkMode();
+    }
 
     setStatus(`Loaded ${meshName}. Collision source: ${state.collisionSource}.`);
   } catch (err) {
@@ -1353,9 +1360,16 @@ function rebuildPrecisionData() {
     state.collisionGeometry.computeBoundingBox();
     state.collisionSource = 'attached-sidecar';
   } else {
-    state.collisionGeometry = state.meshGeometry.clone();
-    state.collisionGeometry.computeBoundingBox();
-    state.collisionSource = 'mesh-fallback-exact';
+    state.collisionGeometry = null;
+    state.collisionEntry = null;
+    state.collisionSource = 'missing-sidecar';
+    updateCollisionVisibility();
+    rebuildGroundAroundMesh();
+    clearMismatchMarkers();
+    updateHud();
+    updateWalkHud();
+    setStatus('Sidecar collision not found for this mesh.', 'warn');
+    return;
   }
 
   state.collisionEntry = {
@@ -1642,7 +1656,7 @@ function updateHud() {
     : '(0, 0, 0)';
 
   const walkModeText = state.walkMode.enabled ? 'ON' : 'OFF';
-  const walkSource = dom.walkCollisionSource?.value || 'collision';
+  const walkSource = 'collision';
 
   dom.hud.textContent = [
     `Mesh: ${meshName}`,

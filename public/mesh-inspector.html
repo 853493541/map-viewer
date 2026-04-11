@@ -6,10 +6,61 @@
 <link rel="icon" href="data:,">
 <style>
   * { box-sizing: border-box; }
-  body { margin: 0; background: #222; color: #eee; font-family: monospace; overflow: hidden; display: flex; }
+  :root {
+    --global-header-height: 44px;
+  }
+  body { margin: 0; background: #222; color: #eee; font-family: monospace; overflow: hidden; display: flex; padding-top: var(--global-header-height); }
+
+  #global-header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--global-header-height);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 12px;
+    background: rgba(10, 10, 12, 0.92);
+    border-bottom: 1px solid #444;
+    z-index: 180;
+    backdrop-filter: blur(6px);
+  }
+  #global-header .gh-title {
+    color: #d9e3ef;
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  #global-header .gh-links {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  #global-header .gh-link {
+    text-decoration: none;
+    color: #eee;
+    font-size: 12px;
+    border: 1px solid #666;
+    background: #333;
+    border-radius: 6px;
+    padding: 4px 10px;
+  }
+  #global-header .gh-link:hover {
+    background: #4a4a4a;
+    border-color: #58a6ff;
+  }
+  #global-header .gh-link.current {
+    color: #fff;
+    background: #1f5d98;
+    border-color: #58a6ff;
+  }
+  #global-header .gh-link.gh-muted {
+    opacity: 0.78;
+  }
 
   /* Left sidebar */
-  #sidebar { width: 250px; min-width: 250px; height: 100vh; background: rgba(0,0,0,0.7); padding: 10px; display: flex; flex-direction: column; z-index: 10; }
+  #sidebar { width: 250px; min-width: 250px; height: calc(100vh - var(--global-header-height)); background: rgba(0,0,0,0.7); padding: 10px; display: flex; flex-direction: column; z-index: 10; }
   #sidebar h3 { margin: 0 0 8px; }
 
   /* Tab bar */
@@ -57,7 +108,7 @@
   #btn-bulk-deny:hover { background: rgba(160,30,30,0.6); color: #fff; }
 
   /* Preview grid */
-  #preview-area { flex: 1; display: grid; grid-template-columns: repeat(5, 1fr); grid-template-rows: repeat(2, 1fr); gap: 4px; padding: 4px; height: 100vh; }
+  #preview-area { flex: 1; display: grid; grid-template-columns: repeat(5, 1fr); grid-template-rows: repeat(2, 1fr); gap: 4px; padding: 4px; height: calc(100vh - var(--global-header-height)); }
   .preview-cell { position: relative; background: #333344; border-radius: 4px; overflow: hidden; border: 2px solid transparent; cursor: pointer; }
   .preview-cell.selected { border-color: #0078d4; }
   .preview-cell.v-approved { border-color: #2d4; }
@@ -77,18 +128,28 @@
 </style>
 </head>
 <body>
+<header id="global-header">
+  <div class="gh-title">JX3 Tool Pages</div>
+  <nav class="gh-links">
+    <a class="gh-link" href="index.html">Editor</a>
+    <a class="gh-link" href="export-reader.html">Export Reader</a>
+    <a class="gh-link current" href="mesh-inspector.html" aria-current="page">Mesh Inspector</a>
+    <a class="gh-link" href="collision-test-mode.html">Collision Test</a>
+    <a class="gh-link gh-muted" href="full-viewer.html">Full Viewer (Paused)</a>
+  </nav>
+</header>
+
 <div id="sidebar">
   <h3>Regional Mesh Resources</h3>
   <div id="tab-bar">
-    <button class="tab-btn active" data-tab="undecided">Undecided&nbsp;(<span id="count-undecided">0</span>)</button>
-    <button class="tab-btn t-approved" data-tab="approved">&#10003;&nbsp;<span id="count-approved">0</span></button>
+    <button class="tab-btn" data-tab="undecided">Undecided&nbsp;(<span id="count-undecided">0</span>)</button>
+    <button class="tab-btn t-approved active" data-tab="approved">&#10003;&nbsp;<span id="count-approved">0</span></button>
     <button class="tab-btn t-denied"   data-tab="denied">&#10007;&nbsp;<span id="count-denied">0</span></button>
   </div>
   <div id="controls">
     <label>Filter: <input id="filter" type="text" placeholder="type to filter..."></label>
     <label><input type="checkbox" id="showTextures" checked> Textures</label>
-    <label><input type="checkbox" id="doubleSide" checked> Double-sided</label>
-    <label><input type="checkbox" id="showCollisionLines" checked> Collision lines</label>
+    <label><input type="checkbox" id="showCollisionLines"> Collision lines</label>
     <label><input type="checkbox" id="showCollisionBoxes"> Collision boxes</label>
     <button id="btn-open-folder" style="margin-top:4px;padding:4px 8px;cursor:pointer;background:#444;border:1px solid #666;color:#eee;border-radius:3px;font-family:monospace;font-size:11px;width:100%" title="Open meshes folder in Explorer">&#128194; Open Meshes Folder</button>
   </div>
@@ -263,7 +324,7 @@ async function saveSingleVerdict(glbFile, verdict) {
 await loadVerdicts();
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let currentTab = 'undecided';
+let currentTab = 'approved';
 let currentPage = 0;
 let selectedSet = new Set();  // checked meshes for bulk action
 let softHiddenSet = new Set(); // denied meshes hidden this session (not persisted)
@@ -294,7 +355,7 @@ const cells = [];
 const textureLoader = new THREE.TextureLoader();
 const textureCache = new Map();
 const gltfLoader = new GLTFLoader();
-const collisionPartCache = new Map();
+const collisionSidecarCache = new Map();
 const showCollisionLinesInput = document.getElementById('showCollisionLines');
 const showCollisionBoxesInput = document.getElementById('showCollisionBoxes');
 
@@ -340,210 +401,89 @@ function loadMRECached(pngName) {
   return textureCache.get(key);
 }
 
-function pointInTri2D(px, pz, ax, az, bx, bz, cx, cz) {
-  const v0x = cx - ax;
-  const v0z = cz - az;
-  const v1x = bx - ax;
-  const v1z = bz - az;
-  const v2x = px - ax;
-  const v2z = pz - az;
+function extractSidecarTriangles(json) {
+  const positions = [];
+  const shells = Array.isArray(json?.shells) ? json.shells : [];
 
-  const dot00 = v0x * v0x + v0z * v0z;
-  const dot01 = v0x * v1x + v0z * v1z;
-  const dot02 = v0x * v2x + v0z * v2z;
-  const dot11 = v1x * v1x + v1z * v1z;
-  const dot12 = v1x * v2x + v1z * v2z;
-
-  const invDen = 1 / ((dot00 * dot11 - dot01 * dot01) || 1e-9);
-  const u = (dot11 * dot02 - dot01 * dot12) * invDen;
-  const v = (dot00 * dot12 - dot01 * dot02) * invDen;
-  return u >= -1e-6 && v >= -1e-6 && u + v <= 1 + 1e-6;
-}
-
-function segDistSq2D(px, pz, ax, az, bx, bz) {
-  const abx = bx - ax;
-  const abz = bz - az;
-  const apx = px - ax;
-  const apz = pz - az;
-  const t = Math.max(0, Math.min(1, (apx * abx + apz * abz) / ((abx * abx + abz * abz) || 1e-9)));
-  const qx = ax + abx * t;
-  const qz = az + abz * t;
-  const dx = px - qx;
-  const dz = pz - qz;
-  return dx * dx + dz * dz;
-}
-
-function buildCollisionPartsWithBVH(group, glbFile) {
-  if (collisionPartCache.has(glbFile)) return collisionPartCache.get(glbFile);
-
-  group.updateMatrixWorld(true);
-  const sceneBox = new THREE.Box3().setFromObject(group);
-  if (sceneBox.isEmpty()) {
-    collisionPartCache.set(glbFile, []);
-    return [];
-  }
-
-  const sources = [];
-  group.traverse((child) => {
-    if (!child.isMesh || !child.geometry) return;
-    const geom = child.geometry.clone();
-    geom.applyMatrix4(child.matrixWorld);
-    geom.computeBoundingBox();
-    const bvh = new MeshBVH(geom, { maxLeafTris: 20 });
-    sources.push({ geom, bvh, box: geom.boundingBox.clone() });
-  });
-
-  if (sources.length === 0) {
-    collisionPartCache.set(glbFile, []);
-    return [];
-  }
-
-  const size = sceneBox.getSize(new THREE.Vector3());
-  const maxHorizontal = Math.max(size.x, size.z);
-  const targetCellsAcross = Math.max(12, Math.min(46, Math.round(maxHorizontal / 80)));
-  const cellSize = Math.max(1, maxHorizontal / targetCellsAcross);
-  const minX = sceneBox.min.x;
-  const maxX = sceneBox.max.x;
-  const minZ = sceneBox.min.z;
-  const maxZ = sceneBox.max.z;
-  const cols = Math.max(1, Math.ceil((maxX - minX) / cellSize));
-  const rows = Math.max(1, Math.ceil((maxZ - minZ) / cellSize));
-
-  const occupied = Array.from({ length: rows }, () => Array(cols).fill(false));
-  const cellBottomY = Array.from({ length: rows }, () => Array(cols).fill(Infinity));
-  const cellTopY = Array.from({ length: rows }, () => Array(cols).fill(-Infinity));
-
-  const queryBox = new THREE.Box3();
-  const edgeRadiusSq = Math.pow(cellSize * 0.3, 2);
-
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const x0 = minX + c * cellSize;
-      const x1 = Math.min(maxX, x0 + cellSize);
-      const z0 = minZ + r * cellSize;
-      const z1 = Math.min(maxZ, z0 + cellSize);
-      const centerX = (x0 + x1) * 0.5;
-      const centerZ = (z0 + z1) * 0.5;
-
-      queryBox.min.set(x0, sceneBox.min.y - 1, z0);
-      queryBox.max.set(x1, sceneBox.max.y + 1, z1);
-
-      let hit = false;
-      let minY = Infinity;
-      let maxY = -Infinity;
-
-      for (const src of sources) {
-        if (!src.box.intersectsBox(queryBox)) continue;
-
-        src.bvh.shapecast({
-          intersectsBounds: (bounds) => bounds.intersectsBox(queryBox),
-          intersectsTriangle: (tri) => {
-            const ax = tri.a.x; const ay = tri.a.y; const az = tri.a.z;
-            const bx = tri.b.x; const by = tri.b.y; const bz = tri.b.z;
-            const cx = tri.c.x; const cy = tri.c.y; const cz = tri.c.z;
-
-            const triMinX = Math.min(ax, bx, cx);
-            const triMaxX = Math.max(ax, bx, cx);
-            const triMinZ = Math.min(az, bz, cz);
-            const triMaxZ = Math.max(az, bz, cz);
-            if (triMaxX < x0 || triMinX > x1 || triMaxZ < z0 || triMinZ > z1) return false;
-
-            const overlaps =
-              pointInTri2D(centerX, centerZ, ax, az, bx, bz, cx, cz) ||
-              segDistSq2D(centerX, centerZ, ax, az, bx, bz) <= edgeRadiusSq ||
-              segDistSq2D(centerX, centerZ, bx, bz, cx, cz) <= edgeRadiusSq ||
-              segDistSq2D(centerX, centerZ, cx, cz, ax, az) <= edgeRadiusSq;
-            if (!overlaps) return false;
-
-            hit = true;
-            const triMinY = Math.min(ay, by, cy);
-            const triMaxY = Math.max(ay, by, cy);
-            if (triMinY < minY) minY = triMinY;
-            if (triMaxY > maxY) maxY = triMaxY;
-            return false;
-          },
-        });
-      }
-
-      if (hit) {
-        occupied[r][c] = true;
-        cellBottomY[r][c] = minY;
-        cellTopY[r][c] = maxY;
-      }
-    }
-  }
-
-  for (const src of sources) src.geom.dispose();
-
-  const used = Array.from({ length: rows }, () => Array(cols).fill(false));
-  const parts = [];
-  const mergeHeightTolerance = Math.max(1.5, size.y * 0.035);
-  const maxMergeCols = 6;
-  const maxMergeRows = 6;
-
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      if (!occupied[r][c] || used[r][c]) continue;
-
-      const seedBottom = cellBottomY[r][c];
-      const seedTop = cellTopY[r][c];
-      const sameBand = (rr, cc) => (
-        occupied[rr][cc] &&
-        !used[rr][cc] &&
-        Math.abs(cellBottomY[rr][cc] - seedBottom) <= mergeHeightTolerance &&
-        Math.abs(cellTopY[rr][cc] - seedTop) <= mergeHeightTolerance
+  for (const shell of shells) {
+    const triangles = Array.isArray(shell?.triangles) ? shell.triangles : [];
+    for (const tri of triangles) {
+      if (!Array.isArray(tri) || tri.length < 9) continue;
+      if (!Number.isFinite(tri[0]) || !Number.isFinite(tri[1]) || !Number.isFinite(tri[2])) continue;
+      if (!Number.isFinite(tri[3]) || !Number.isFinite(tri[4]) || !Number.isFinite(tri[5])) continue;
+      if (!Number.isFinite(tri[6]) || !Number.isFinite(tri[7]) || !Number.isFinite(tri[8])) continue;
+      positions.push(
+        tri[0], tri[1], tri[2],
+        tri[3], tri[4], tri[5],
+        tri[6], tri[7], tri[8],
       );
-
-      let c2 = c;
-      while (c2 + 1 < cols && (c2 - c + 1) < maxMergeCols && sameBand(r, c2 + 1)) c2++;
-
-      let r2 = r;
-      outer: while (r2 + 1 < rows) {
-        if ((r2 - r + 1) >= maxMergeRows) break;
-        for (let cc = c; cc <= c2; cc++) {
-          if (!sameBand(r2 + 1, cc)) break outer;
-        }
-        r2++;
-      }
-
-      let partMinY = Infinity;
-      let partMaxY = -Infinity;
-      for (let rr = r; rr <= r2; rr++) {
-        for (let cc = c; cc <= c2; cc++) {
-          used[rr][cc] = true;
-          if (cellBottomY[rr][cc] < partMinY) partMinY = cellBottomY[rr][cc];
-          if (cellTopY[rr][cc] > partMaxY) partMaxY = cellTopY[rr][cc];
-        }
-      }
-
-      const w = (c2 - c + 1) * cellSize;
-      const d = (r2 - r + 1) * cellSize;
-      if (w < cellSize * 0.45 || d < cellSize * 0.45) continue;
-
-      parts.push({
-        cx: minX + (c + c2 + 1) * cellSize * 0.5,
-        cz: minZ + (r + r2 + 1) * cellSize * 0.5,
-        w,
-        d,
-        minY: partMinY,
-        maxY: partMaxY,
-      });
     }
   }
 
-  if (parts.length === 0) {
+  return positions;
+}
+
+function extractSidecarParts(json) {
+  const shells = Array.isArray(json?.shells) ? json.shells : [];
+  const parts = [];
+
+  for (const shell of shells) {
+    const triangles = Array.isArray(shell?.triangles) ? shell.triangles : [];
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+
+    for (const tri of triangles) {
+      if (!Array.isArray(tri) || tri.length < 9) continue;
+      for (let i = 0; i < 9; i += 3) {
+        const x = tri[i];
+        const y = tri[i + 1];
+        const z = tri[i + 2];
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (z < minZ) minZ = z;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+        if (z > maxZ) maxZ = z;
+      }
+    }
+
+    if (!Number.isFinite(minX) || !Number.isFinite(maxX)) continue;
     parts.push({
-      cx: (sceneBox.min.x + sceneBox.max.x) * 0.5,
-      cz: (sceneBox.min.z + sceneBox.max.z) * 0.5,
-      w: size.x,
-      d: size.z,
-      minY: sceneBox.min.y,
-      maxY: sceneBox.max.y,
+      cx: (minX + maxX) * 0.5,
+      cz: (minZ + maxZ) * 0.5,
+      w: Math.max(0.01, maxX - minX),
+      d: Math.max(0.01, maxZ - minZ),
+      minY,
+      maxY,
     });
   }
 
-  collisionPartCache.set(glbFile, parts);
   return parts;
+}
+
+async function loadCollisionSidecar(glbFile) {
+  if (!collisionSidecarCache.has(glbFile)) {
+    const task = (async () => {
+      const sidecarName = `${glbFile}.collision.json`;
+      const url = `${dataPath}/meshes/${encodeURIComponent(sidecarName)}`;
+
+      try {
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        const json = await res.json();
+        const triangles = extractSidecarTriangles(json);
+        const parts = extractSidecarParts(json);
+        if (triangles.length === 0 && parts.length === 0) return null;
+        return { triangles, parts };
+      } catch {
+        return null;
+      }
+    })();
+    collisionSidecarCache.set(glbFile, task);
+  }
+
+  return await collisionSidecarCache.get(glbFile);
 }
 
 function clearCollisionOverlays(cellData) {
@@ -629,15 +569,18 @@ for (let i = 0; i < PAGE_SIZE; i++) {
   const rend = new THREE.WebGLRenderer({ canvas: cvs, antialias: true });
   rend.setClearColor(0x333344);
   rend.toneMapping = THREE.ACESFilmicToneMapping;
-  rend.toneMappingExposure = 1.0;
+  rend.toneMappingExposure = 1.35;
   rend.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene3 = new THREE.Scene();
-  scene3.add(new THREE.AmbientLight(0xffffff, 0.5));
-  const dl = new THREE.DirectionalLight(0xffffff, 1.0);
-  dl.position.set(100, 200, 150);
-  scene3.add(dl);
-  scene3.add(new THREE.HemisphereLight(0x88aacc, 0x8B7355, 0.4));
+  scene3.add(new THREE.AmbientLight(0xffffff, 0.62));
+  const keySun = new THREE.DirectionalLight(0xfff2d1, 2.0);
+  keySun.position.set(160, 260, 140);
+  scene3.add(keySun);
+  const fillSun = new THREE.DirectionalLight(0xc5dcff, 0.9);
+  fillSun.position.set(-140, 180, -120);
+  scene3.add(fillSun);
+  scene3.add(new THREE.HemisphereLight(0x9ac6ff, 0x6c7856, 0.95));
 
   const cam = new THREE.PerspectiveCamera(50, 1, 0.1, 100000);
 
@@ -703,12 +646,12 @@ function loadMeshIntoCell(cellIdx, glbFile) {
   if (c.meshGroup) { c.scene.remove(c.meshGroup); c.meshGroup = null; }
   clearCollisionOverlays(c);
 
-  gltfLoader.load(`${dataPath}/meshes/` + encodeURIComponent(glbFile), (gltf) => {
+  gltfLoader.load(`${dataPath}/meshes/` + encodeURIComponent(glbFile), async (gltf) => {
+    const requestedGlb = glbFile;
     const group = gltf.scene;
     let totalVerts = 0, totalFaces = 0, meshCount = 0;
 
     const showTex = document.getElementById('showTextures').checked;
-    const dblSide = document.getElementById('doubleSide').checked;
 
     group.traverse((child) => {
       if (!child.isMesh) return;
@@ -724,8 +667,8 @@ function loadMeshIntoCell(cellIdx, glbFile) {
 
       if (subTex && subTex.albedo) {
         const opts = {
-          color: 0xffffff, roughness: 1.0, metalness: 1.0,
-          side: dblSide ? THREE.DoubleSide : THREE.FrontSide,
+          color: 0xffffff, roughness: 0.78, metalness: 0.18,
+          side: THREE.DoubleSide,
           map: loadTexCached(subTex.albedo, false),
         };
         if (subTex.mre)    { opts.roughnessMap = opts.metalnessMap = loadMRECached(subTex.mre); }
@@ -734,7 +677,7 @@ function loadMeshIntoCell(cellIdx, glbFile) {
       } else {
         child.material = new THREE.MeshPhongMaterial({
           color: hasColors ? 0xffffff : 0xccbbaa, vertexColors: hasColors, shininess: 8,
-          side: dblSide ? THREE.DoubleSide : THREE.FrontSide,
+          side: THREE.DoubleSide,
         });
       }
     });
@@ -743,7 +686,10 @@ function loadMeshIntoCell(cellIdx, glbFile) {
     const center = new THREE.Vector3(), size = new THREE.Vector3();
     box.getCenter(center); box.getSize(size);
 
-    const collisionParts = buildCollisionPartsWithBVH(group, glbFile);
+    const sidecar = await loadCollisionSidecar(glbFile);
+    if (c.glbFile !== requestedGlb) return;
+
+    const collisionParts = sidecar?.parts?.length ? sidecar.parts : [];
     const collisionHelpers = [];
     for (const part of collisionParts) {
       const partBox = new THREE.Box3(
@@ -757,10 +703,13 @@ function loadMeshIntoCell(cellIdx, glbFile) {
     }
 
     group.updateMatrixWorld(true);
-    const collisionLineGroup = new THREE.Group();
-    group.traverse((child) => {
-      if (!child.isMesh || !child.geometry) return;
-      const edges = new THREE.EdgesGeometry(child.geometry, 20);
+    let collisionLineGroup = null;
+    if (sidecar?.triangles?.length) {
+      collisionLineGroup = new THREE.Group();
+      const sidecarGeom = new THREE.BufferGeometry();
+      sidecarGeom.setAttribute('position', new THREE.Float32BufferAttribute(sidecar.triangles, 3));
+      sidecarGeom.applyMatrix4(group.matrixWorld);
+      const edges = new THREE.EdgesGeometry(sidecarGeom, 20);
       const lineMat = new THREE.LineBasicMaterial({
         color: 0x2dd35c,
         transparent: true,
@@ -768,23 +717,23 @@ function loadMeshIntoCell(cellIdx, glbFile) {
         depthTest: false,
       });
       const line = new THREE.LineSegments(edges, lineMat);
-      line.matrixAutoUpdate = false;
-      line.matrix.copy(child.matrixWorld);
       line.frustumCulled = false;
       line.renderOrder = 3;
       collisionLineGroup.add(line);
-    });
+      sidecarGeom.dispose();
+    }
 
     c.scene.add(group);
     for (const helper of collisionHelpers) c.scene.add(helper);
-    c.scene.add(collisionLineGroup);
+    if (collisionLineGroup) c.scene.add(collisionLineGroup);
     c.meshGroup = group;
     c.collisionHelpers = collisionHelpers;
     c.collisionLineGroup = collisionLineGroup;
     applyCollisionOverlayVisibility(c);
     c.setOrbit(0.3, 0.8, Math.max(size.x, size.y, size.z) * 1.5, center);
 
-    c.infoDiv.textContent = `V:${totalVerts} F:${Math.round(totalFaces)} S:${meshCount} C:${collisionParts.length} parts B:${size.x.toFixed(1)}x${size.y.toFixed(1)}x${size.z.toFixed(1)}`;
+    const sidecarTag = sidecar ? 'SC:yes' : 'SC:no';
+    c.infoDiv.textContent = `V:${totalVerts} F:${Math.round(totalFaces)} S:${meshCount} C:${collisionParts.length} parts ${sidecarTag} B:${size.x.toFixed(1)}x${size.y.toFixed(1)}x${size.z.toFixed(1)}`;
   }, undefined, () => {
     c.infoDiv.textContent = 'Load failed';
   });
@@ -867,7 +816,7 @@ function renderSidebarList() {
     if (approvedSet.has(glbFile))      btn.classList.add('approved');
     else if (deniedSet.has(glbFile))   btn.classList.add('denied');
     if (i >= start && i < end)         btn.classList.add('active');
-    btn.textContent = glbFile;
+    btn.textContent = glbFile.replace(/\.glb$/i, '');
     btn.title = glbFile;
     btn.addEventListener('click', () => {
       const pageIdx = Math.floor(i / PAGE_SIZE);
@@ -1034,8 +983,8 @@ document.getElementById('btn-open-folder').addEventListener('click', async () =>
 // ── Filter ────────────────────────────────────────────────────────────────────
 filterInput.addEventListener('input', () => { currentPage = 0; loadPage(); });
 
-// ── Texture/DoubleSide toggle ─────────────────────────────────────────────────
-for (const id of ['showTextures', 'doubleSide']) {
+// ── Texture toggle ────────────────────────────────────────────────────────────
+for (const id of ['showTextures']) {
   document.getElementById(id).addEventListener('change', () => loadPage());
 }
 for (const id of ['showCollisionLines', 'showCollisionBoxes']) {

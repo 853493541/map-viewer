@@ -4,9 +4,16 @@
   "description": "JX3 Map Viewer - Reverse-engineered KSword3D scene renderer for web",
   "type": "module",
   "scripts": {
+    "setup:runtime-libs": "node tools/setup-runtime-libs.js",
+    "predev": "npm run setup:runtime-libs",
+    "prelocal": "npm run setup:runtime-libs",
+    "prestart": "npm run setup:runtime-libs",
+    "postinstall": "npm run setup:runtime-libs",
     "convert": "node tools/convert-map.js",
     "convert:mesh": "node tools/convert-mesh.js",
     "dev": "node server.js",
+    "local": "node server.js",
+    "start": "node server.js",
     "dev:py": "python tools/serve.py",
     "build": "node tools/build-map-data.js"
   },

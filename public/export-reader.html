@@ -6,11 +6,63 @@
   <title>JX3 Export Reader Walk Test</title>
   <style>
     * { box-sizing: border-box; }
+    :root {
+      --global-header-height: 44px;
+      --global-header-offset: 54px;
+    }
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
     body {
       background: #0a1117;
       color: #d5deea;
       font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    #global-header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: var(--global-header-height);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 12px;
+      background: rgba(6, 10, 15, 0.9);
+      border-bottom: 1px solid rgba(130, 170, 220, 0.28);
+      z-index: 110;
+      backdrop-filter: blur(6px);
+    }
+    #global-header .gh-title {
+      color: #d8e5f5;
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    #global-header .gh-links {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    #global-header .gh-link {
+      text-decoration: none;
+      color: #d5deea;
+      font-size: 12px;
+      border: 1px solid rgba(130, 170, 220, 0.35);
+      background: rgba(20, 30, 42, 0.85);
+      border-radius: 6px;
+      padding: 4px 10px;
+    }
+    #global-header .gh-link:hover {
+      border-color: rgba(180, 215, 250, 0.7);
+      background: rgba(66, 104, 146, 0.5);
+    }
+    #global-header .gh-link.current {
+      color: #fff;
+      border-color: rgba(180, 215, 250, 0.78);
+      background: rgba(70, 120, 180, 0.7);
+    }
+    #global-header .gh-link.gh-muted {
+      opacity: 0.78;
     }
 
     #canvas {
@@ -23,7 +75,7 @@
 
     #toolbar {
       position: fixed;
-      top: 10px;
+      top: var(--global-header-offset);
       left: 10px;
       z-index: 50;
       display: flex;
@@ -145,6 +197,17 @@
   </style>
 </head>
 <body>
+  <header id="global-header">
+    <div class="gh-title">JX3 Tool Pages</div>
+    <nav class="gh-links">
+      <a class="gh-link" href="index.html">Editor</a>
+      <a class="gh-link current" href="export-reader.html" aria-current="page">Export Reader</a>
+      <a class="gh-link" href="mesh-inspector.html">Mesh Inspector</a>
+      <a class="gh-link" href="collision-test-mode.html">Collision Test</a>
+      <a class="gh-link gh-muted" href="full-viewer.html">Full Viewer (Paused)</a>
+    </nav>
+  </header>
+
   <canvas id="canvas"></canvas>
 
   <div id="toolbar">
@@ -152,7 +215,6 @@
     <button id="refresh-packages" type="button">Refresh</button>
     <button id="load-package" type="button">Load</button>
     <button id="open-resources" type="button">Resources</button>
-    <button id="open-validator" type="button">Validate</button>
     <label><input id="show-collision" type="checkbox"> Show collision shells</label>
     <label><input id="show-collider-box" type="checkbox"> Show GLB collision boxes</label>
     <span id="status">Ready</span>

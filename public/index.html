@@ -6,11 +6,64 @@
   <title>JX3 Map Manager</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --global-header-height: 44px;
+      --global-header-offset: 54px;
+    }
     body { overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; color: #eee; }
     #canvas { width: 100vw; height: 100vh; display: block; }
 
+    #global-header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: var(--global-header-height);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 12px;
+      background: rgba(8, 10, 14, 0.92);
+      border-bottom: 1px solid rgba(180, 210, 255, 0.24);
+      z-index: 360;
+      backdrop-filter: blur(6px);
+    }
+    #global-header .gh-title {
+      color: #d6e4ff;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+    }
+    #global-header .gh-links {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    #global-header .gh-link {
+      text-decoration: none;
+      color: #d8e1f0;
+      font-size: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 6px;
+      padding: 4px 10px;
+    }
+    #global-header .gh-link:hover {
+      border-color: rgba(162, 200, 255, 0.66);
+      background: rgba(110, 160, 230, 0.22);
+    }
+    #global-header .gh-link.current {
+      color: #ffffff;
+      border-color: rgba(130, 194, 255, 0.72);
+      background: rgba(70, 126, 222, 0.4);
+    }
+    #global-header .gh-link.gh-muted {
+      opacity: 0.78;
+    }
+
     #ui-overlay {
-      position: fixed; top: 10px; left: 10px;
+      position: fixed; top: var(--global-header-offset); left: 10px;
       background: rgba(0,0,0,0.75); padding: 10px 14px; border-radius: 6px;
       font-size: 12px; max-width: 300px; pointer-events: none; z-index: 10;
       border: 1px solid rgba(255,255,255,0.1);
@@ -56,7 +109,7 @@
 
     /* Mesh panel */
     #mesh-panel {
-      position: fixed; top: 10px; right: 10px; width: 360px;
+      position: fixed; top: var(--global-header-offset); right: 10px; width: 360px;
       max-height: calc(100vh - 80px);
       background: rgba(15,15,20,0.94); border: 1px solid rgba(255,255,255,0.15);
       border-radius: 6px; z-index: 30; display: none;
@@ -231,12 +284,6 @@
     #tab-region .region-info { padding: 6px 12px; font-size: 11px; color: #888; }
     #tab-region .region-stats { padding: 6px 12px; font-size: 11px; color: #adf; border-top: 1px solid rgba(255,255,255,0.08); }
 
-    /* Region selection box on minimap */
-    #minimap-region-box {
-      position: absolute; border: 2px solid #0f0; background: rgba(0,255,0,0.1);
-      pointer-events: none; z-index: 2; display: none;
-    }
-
     /* Resource Manager */
     #resource-manager {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -299,7 +346,7 @@
 
     /* Exit button (editor -> manager) */
     #exit-to-manager {
-      position: fixed; top: 10px; left: 320px; z-index: 50;
+      position: fixed; top: var(--global-header-offset); left: 320px; z-index: 50;
       background: rgba(200,60,60,0.2); border: 1px solid rgba(200,60,60,0.4);
       color: #faa; padding: 5px 12px; border-radius: 4px; cursor: pointer;
       font-size: 12px; font-family: inherit; display: none;
@@ -308,7 +355,7 @@
 
     /* Lock indicator */
     #lock-indicator {
-      position: fixed; top: 10px; left: 460px; z-index: 50;
+      position: fixed; top: var(--global-header-offset); left: 460px; z-index: 50;
       background: rgba(255,180,60,0.15); border: 1px solid rgba(255,180,60,0.3);
       color: #fc6; padding: 5px 12px; border-radius: 4px;
       font-size: 11px; display: none;
@@ -323,7 +370,7 @@
 
     /* Top mode bar */
     #mode-bar {
-      position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
+      position: fixed; top: calc(var(--global-header-offset) - 2px); left: 50%; transform: translateX(-50%);
       background: rgba(15,15,20,0.92); border: 1px solid rgba(255,255,255,0.2);
       border-radius: 6px; padding: 3px 4px; z-index: 50; display: none;
       font-size: 12px;
@@ -358,8 +405,6 @@
     }
     #region-action-bar .rab-btn.apply { background: rgba(0,200,100,0.35); border-color: rgba(0,255,100,0.7); color: #0f8; }
     #region-action-bar .rab-btn.apply:hover { background: rgba(0,200,100,0.6); }
-    #region-action-bar .rab-btn.save { background: rgba(100,150,255,0.3); border-color: rgba(100,180,255,0.6); color: #acf; }
-    #region-action-bar .rab-btn.save:hover { background: rgba(100,150,255,0.55); }
     #region-action-bar .rab-btn.edit { background: rgba(255,200,60,0.2); border-color: rgba(255,200,60,0.55); color: #fd0; }
     #region-action-bar .rab-btn.edit:hover { background: rgba(255,200,60,0.4); }
     #region-action-bar .rab-btn.cancel { background: rgba(255,60,60,0.15); border-color: rgba(255,80,80,0.5); color: #f88; }
@@ -408,35 +453,9 @@
     #region-dialog .rd-stats { color: #888; font-size: 11px; margin-top: 8px; padding-top: 8px;
       border-top: 1px solid rgba(255,255,255,0.08); }
 
-    /* Save dialog */
-    #save-dialog {
-      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-      background: rgba(15,15,25,0.96); border: 1px solid rgba(100,200,100,0.3);
-      border-radius: 10px; padding: 20px 28px; z-index: 110; display: none;
-      min-width: 380px; font-size: 13px;
-    }
-    #save-dialog.visible { display: block; }
-    #save-dialog h2 { color: #dca; font-size: 16px; margin-bottom: 12px; }
-    #save-dialog label { display: block; color: #aaa; font-size: 11px; margin-bottom: 3px; }
-    #save-dialog input[type="text"] {
-      width: 100%; padding: 6px 10px; background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.15); border-radius: 4px;
-      color: #eee; font-size: 13px; margin-bottom: 12px;
-    }
-    #save-dialog .sd-btn {
-      padding: 8px 20px; border-radius: 5px; cursor: pointer; font-size: 12px;
-      font-family: inherit; margin-right: 8px;
-    }
-    #save-dialog .sd-btn.primary {
-      background: rgba(100,200,100,0.3); border: 1px solid rgba(100,200,100,0.5); color: #cfc;
-    }
-    #save-dialog .sd-btn.cancel {
-      background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2); color: #aaa;
-    }
-
     /* Multi-select info bar */
     #multi-select-bar {
-      position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+      position: fixed; top: calc(var(--global-header-offset) + 6px); left: 50%; transform: translateX(-50%);
       background: rgba(15,15,20,0.94); border: 1px solid rgba(100,200,255,0.3);
       border-radius: 8px; padding: 8px 16px; z-index: 40; display: none;
       font-size: 12px; min-width: 300px; text-align: center;
@@ -453,6 +472,17 @@
   </style>
 </head>
 <body>
+  <header id="global-header">
+    <div class="gh-title">JX3 Tool Pages</div>
+    <nav class="gh-links">
+      <a class="gh-link current" href="index.html" aria-current="page">Editor</a>
+      <a class="gh-link" href="export-reader.html">Export Reader</a>
+      <a class="gh-link" href="mesh-inspector.html">Mesh Inspector</a>
+      <a class="gh-link" href="collision-test-mode.html">Collision Test</a>
+      <a class="gh-link gh-muted" href="full-viewer.html">Full Viewer (Paused)</a>
+    </nav>
+  </header>
+
   <!-- Resource Manager (landing page) -->
   <div id="resource-manager">
     <h1>JX3 Map Manager</h1>
@@ -479,9 +509,6 @@
 
   <!-- Lock indicator -->
   <div id="lock-indicator" title="This map is read-only">🔒 Original (read-only)</div>
-
-  <!-- Save changes button (shown only for custom maps) -->
-  <button id="save-changes-btn" style="display:none;position:fixed;top:8px;right:160px;z-index:60;background:rgba(60,180,90,0.25);border:1px solid rgba(80,220,100,0.5);color:#8f8;padding:5px 12px;border-radius:4px;font-size:12px;cursor:pointer" title="Export current scene state (Ctrl+S)">💾 Save Changes</button>
 
   <!-- Drag-select box overlay -->
   <div id="drag-select-box"></div>
@@ -526,7 +553,6 @@
     <canvas id="minimap" width="256" height="256" style="width:200px;height:200px"></canvas>
     <div id="minimap-marker"></div>
     <div id="minimap-fov"></div>
-    <div id="minimap-region-box"></div>
     <div id="minimap-toggle" style="position:absolute;top:2px;right:2px;z-index:2;font-size:9px;color:#aaa;cursor:pointer;background:rgba(0,0,0,0.5);padding:1px 4px;border-radius:2px" title="Toggle minimap view">🔄</div>
   </div>
 
@@ -623,41 +649,12 @@
       <div><label>Min Z</label><input type="number" id="rd-min-z" step="1000"></div>
       <div><label>Max Z</label><input type="number" id="rd-max-z" step="1000"></div>
     </div>
-    <button class="rd-btn" id="rd-use-camera">📍 Center on Camera (±10k)</button>
     <button class="rd-btn" id="rd-draw-on-map" style="border-color:rgba(0,255,100,0.5);color:#0f6">✏️ Draw Box on Map (click+drag)</button>
-    <button class="rd-btn" id="rd-pen-mode" style="border-color:rgba(0,200,255,0.5);color:#0cf">🖊 Pen Mode (click to add polygon points)</button>
-    <button class="rd-btn" id="rd-preview">👁 Preview on Minimap</button>
     <button class="rd-btn primary" id="rd-apply">✂ Apply Region Filter</button>
     <button class="rd-btn danger" id="rd-clear">↩ Show Full Map</button>
-    <button class="rd-btn" id="rd-save-arena" style="margin-top:10px;border-color:rgba(100,150,255,0.4);color:#adf">💾 Save Arena as New Map (Ctrl+S)</button>
-    <div style="display:flex;gap:6px;margin-top:6px">
-      <button class="rd-btn" id="rd-full-export" style="flex:1;border-color:rgba(255,200,0,0.4);color:#fda">📦 Full Export</button>
-      <button class="rd-btn" id="rd-full-export-collision" style="flex:1;border-color:rgba(0,255,120,0.5);color:#9f9">🧱 Export With Collision</button>
-      <button class="rd-btn" id="rd-full-import" style="flex:1;border-color:rgba(0,200,255,0.4);color:#aef">📥 Import Map</button>
-    </div>
-    <button class="rd-btn" id="rd-regional-export-collision" style="margin-top:6px;border-color:rgba(0,255,170,0.55);color:#8ff">🗺️ Export Region + Collision</button>
+    <button class="rd-btn" id="rd-full-export-collision" style="margin-top:10px;border-color:rgba(0,255,120,0.5);color:#9f9">🧱 Export With Collision</button>
     <button class="rd-btn" id="rd-collision-test-mode" style="margin-top:6px;border-color:rgba(0,255,160,0.5);color:#9ff">🧪 Collision Test Mode (Single Mesh)</button>
     <div class="rd-stats" id="rd-stats">No region filter active</div>
-  </div>
-
-  <!-- Save dialog (Ctrl+S) -->
-  <div id="save-dialog">
-    <h2>Save Map</h2>
-    <div id="save-overwrite-section" style="display:none;margin-bottom:12px">
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:#cfc;font-size:12px;margin-bottom:6px">
-        <input type="radio" name="save-mode" id="save-mode-overwrite" value="overwrite" checked> Overwrite "<span id="save-overwrite-name"></span>"
-      </label>
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:#adf;font-size:12px">
-        <input type="radio" name="save-mode" id="save-mode-new" value="new"> Save as new map
-      </label>
-    </div>
-    <label>Map name:</label>
-    <input type="text" id="save-map-name" placeholder="my-arena-01">
-    <div style="color:#888;font-size:10px;margin-bottom:12px">
-      Entities within the active region will be saved as a new custom map JSON.
-    </div>
-    <button class="sd-btn primary" id="save-confirm">Save</button>
-    <button class="sd-btn cancel" id="save-cancel">Cancel</button>
   </div>
 
   <!-- Region action bar (shown after drawing) -->
@@ -666,7 +663,6 @@
     <div class="rab-info" id="rab-info">Drag the white corner handles to resize the box</div>
     <div class="rab-actions">
       <button class="rab-btn apply" id="rab-apply">✂ Apply Filter</button>
-      <button class="rab-btn save" id="rab-save">💾 Save as Map</button>
       <button class="rab-btn edit" id="rab-edit">⚙ Edit Bounds</button>
       <button class="rab-btn cancel" id="rab-cancel">✕ Cancel</button>
     </div>
@@ -689,7 +685,7 @@
   {
     "imports": {
       "three": "./lib/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      "three/addons/": "./lib/three-addons/"
     }
   }
   </script>

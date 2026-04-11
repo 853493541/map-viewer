@@ -3,181 +3,132 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JX3 Full Viewer</title>
+  <title>JX3 Full Viewer (Paused)</title>
   <style>
-    * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
-    body {
-      background: #0b0f14;
-      color: #d7dee6;
-      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    :root {
+      --global-header-height: 44px;
     }
-
-    #canvas {
-      position: fixed;
-      inset: 0;
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
       width: 100%;
       height: 100%;
-      display: block;
+      overflow: hidden;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: radial-gradient(circle at 15% 10%, #1c2735 0%, #0a1018 55%, #05090f 100%);
+      color: #d8e1ef;
     }
 
-    #toolbar {
+    #global-header {
       position: fixed;
-      top: 10px;
-      left: 10px;
-      z-index: 50;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: var(--global-header-height);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 12px;
+      background: rgba(8, 10, 14, 0.9);
+      border-bottom: 1px solid rgba(150, 180, 210, 0.25);
+      z-index: 20;
+      backdrop-filter: blur(6px);
+    }
+    #global-header .gh-title {
+      color: #d8e5f5;
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    #global-header .gh-links {
       display: flex;
       gap: 8px;
-      align-items: center;
-      padding: 10px 12px;
-      background: rgba(8, 10, 14, 0.9);
-      border: 1px solid rgba(150, 180, 210, 0.25);
-      border-radius: 8px;
-      backdrop-filter: blur(4px);
+      flex-wrap: wrap;
     }
-
-    #toolbar select,
-    #toolbar button {
-      height: 30px;
-      border-radius: 6px;
+    #global-header .gh-link {
+      text-decoration: none;
+      color: #d7dee6;
+      font-size: 12px;
       border: 1px solid rgba(140, 165, 190, 0.35);
       background: rgba(23, 31, 42, 0.95);
-      color: #d7dee6;
-      padding: 0 10px;
-      font-size: 12px;
+      border-radius: 6px;
+      padding: 4px 10px;
     }
-
-    #toolbar select {
-      min-width: 340px;
-    }
-
-    #toolbar button {
-      cursor: pointer;
-    }
-
-    #toolbar button:hover {
+    #global-header .gh-link:hover {
       border-color: rgba(173, 210, 246, 0.65);
       background: rgba(35, 48, 65, 0.95);
     }
-
-    #status {
-      color: #9fb3c8;
-      font-size: 12px;
-      white-space: nowrap;
+    #global-header .gh-link.current {
+      color: #fff;
+      border-color: rgba(173, 210, 246, 0.8);
+      background: rgba(70, 120, 180, 0.75);
     }
 
-    #info {
+    #paused-card {
       position: fixed;
-      left: 10px;
-      bottom: 10px;
-      z-index: 45;
-      padding: 10px 12px;
-      min-width: 320px;
-      background: rgba(8, 10, 14, 0.85);
-      border: 1px solid rgba(150, 180, 210, 0.25);
-      border-radius: 8px;
-      font-size: 12px;
-      line-height: 1.5;
-      color: #c7d0d9;
-      pointer-events: none;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: min(620px, calc(100vw - 40px));
+      padding: 24px;
+      border-radius: 12px;
+      background: rgba(9, 14, 22, 0.86);
+      border: 1px solid rgba(173, 210, 246, 0.28);
+      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.42);
+      text-align: left;
     }
-
-    #help {
-      position: fixed;
-      right: 10px;
-      bottom: 10px;
-      z-index: 45;
-      max-width: 360px;
-      padding: 8px 10px;
-      background: rgba(8, 10, 14, 0.85);
-      border: 1px solid rgba(150, 180, 210, 0.2);
-      border-radius: 8px;
-      font-size: 11px;
-      line-height: 1.5;
-      color: #aab8c5;
-      pointer-events: none;
-    }
-
-    #loading {
-      position: fixed;
-      inset: 0;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      flex-direction: column;
-      background: rgba(0, 0, 0, 0.75);
-      z-index: 100;
-    }
-
-    #loading h1 {
-      margin: 0;
+    #paused-card h1 {
+      margin: 0 0 8px;
+      color: #e5c18f;
       font-size: 24px;
-      color: #d9c6a2;
-      letter-spacing: 1px;
     }
-
-    #loading p {
-      margin: 8px 0 0;
-      color: #b0bac7;
+    #paused-card p {
+      margin: 0 0 14px;
+      color: #b8c6d8;
+      line-height: 1.55;
+      font-size: 14px;
+    }
+    #paused-card .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    #paused-card .actions a {
+      text-decoration: none;
+      color: #d7dee6;
+      border: 1px solid rgba(140, 165, 190, 0.35);
+      background: rgba(23, 31, 42, 0.95);
+      border-radius: 6px;
+      padding: 8px 12px;
       font-size: 13px;
     }
-
-    #loading .bar {
-      margin-top: 12px;
-      width: 420px;
-      max-width: calc(100vw - 60px);
-      height: 6px;
-      background: rgba(255, 255, 255, 0.15);
-      border-radius: 999px;
-      overflow: hidden;
-    }
-
-    #loading .fill {
-      height: 100%;
-      width: 0%;
-      background: linear-gradient(90deg, #6aa06f, #a3c087);
-      transition: width 0.2s;
+    #paused-card .actions a:hover {
+      border-color: rgba(173, 210, 246, 0.65);
+      background: rgba(35, 48, 65, 0.95);
     }
   </style>
 </head>
 <body>
-  <canvas id="canvas"></canvas>
+  <header id="global-header">
+    <div class="gh-title">JX3 Tool Pages</div>
+    <nav class="gh-links">
+      <a class="gh-link" href="index.html">Editor</a>
+      <a class="gh-link" href="export-reader.html">Export Reader</a>
+      <a class="gh-link" href="mesh-inspector.html">Mesh Inspector</a>
+      <a class="gh-link" href="collision-test-mode.html">Collision Test</a>
+      <a class="gh-link current" href="full-viewer.html" aria-current="page">Full Viewer (Paused)</a>
+    </nav>
+  </header>
 
-  <div id="toolbar">
-    <select id="package-select"></select>
-    <button id="refresh-packages" type="button">Refresh</button>
-    <button id="load-package" type="button">Load</button>
-    <button id="open-walk-reader" type="button">Walk Reader</button>
-    <button id="open-resources" type="button">Resources</button>
-    <button id="open-validator" type="button">Validate</button>
-    <span id="status">Ready</span>
-  </div>
-
-  <div id="info">
-    <div id="info-package">Package: -</div>
-    <div id="info-cam">Cam: 0, 0, 0</div>
-    <div id="info-fps">FPS: -</div>
-    <div id="info-objects">Objects: -</div>
-    <div id="info-region">Region: -</div>
-  </div>
-
-  <div id="help">
-    Click canvas to lock mouse. WASD move, Space/Ctrl up/down, Shift sprint, wheel speed, G gravity toggle.
-  </div>
-
-  <div id="loading">
-    <h1>Loading Full Export</h1>
-    <p id="loading-text">Preparing...</p>
-    <div class="bar"><div class="fill" id="loading-fill"></div></div>
-  </div>
-
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "./lib/three.module.js"
-    }
-  }
-  </script>
-  <script type="module" src="js/full-viewer.js"></script>
+  <section id="paused-card">
+    <h1>Full Viewer Is Paused</h1>
+    <p>The full-viewer runtime UI is hidden for now as requested. Use Export Reader or Collision Test for active validation workflows.</p>
+    <div class="actions">
+      <a href="export-reader.html">Open Export Reader</a>
+      <a href="collision-test-mode.html">Open Collision Test</a>
+      <a href="mesh-inspector.html">Open Mesh Inspector</a>
+      <a href="index.html">Back To Editor</a>
+    </div>
+  </section>
 </body>
 </html>

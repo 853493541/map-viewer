@@ -3,7 +3,6 @@
     "cq_ca??001_002_hd.glb",
     "cq_ca地台001_002_hd.glb",
     "cq_mvp城墙001_002_hd.glb",
-    "cq_tc破城墙配件001_002_hd.glb",
     "cq_tc破废墟001_002_hd.glb",
     "cq_tc破废墟001_006_hd.glb",
     "cq_玉门关城墙001_001_hd.glb",
@@ -56,6 +55,7 @@
     "jz_xb玉门关建筑001_001_hd.glb",
     "jz_xb玉门关建筑001_002_hd.glb",
     "jz_xb玉门关建筑001_003_hd.glb",
+    "jz_xb玉门关建筑001_003sw_hd.glb",
     "jz_xb玉门关建筑001_004_hd.glb",
     "jz_xb玉门关建筑002_001_hd.glb",
     "jz_xb玉门关建筑002_002_hd.glb",
@@ -500,6 +500,7 @@
     "y_鱼群02_红_hd.glb"
   ],
   "denied": [
+    "cq_tc破城墙配件001_002_hd.glb",
     "jz_hgb地下遗迹001_001sw_hd.glb",
     "jz_js加沙粮仓001_004_hd.glb",
     "jz_mj中型帐篷002_002_hd.glb",
