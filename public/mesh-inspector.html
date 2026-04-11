@@ -135,7 +135,6 @@
     <a class="gh-link" href="export-reader.html">Export Reader</a>
     <a class="gh-link current" href="mesh-inspector.html" aria-current="page">Mesh Inspector</a>
     <a class="gh-link" href="collision-test-mode.html">Collision Test</a>
-    <a class="gh-link gh-muted" href="full-viewer.html">Full Viewer (Paused)</a>
   </nav>
 </header>
 
@@ -207,9 +206,9 @@ function withDataPath(apiPath, dataPath) {
 
 const qp = new URLSearchParams(window.location.search);
 const pkg = qp.get('pkg');
-const dataPath = normalizeDataPath(
-  qp.get('dataPath') || (pkg ? `/full-exports/${encodeURIComponent(pkg)}/map-data` : 'map-data')
-);
+const hasExplicitDataPath = qp.has('dataPath') || Boolean(pkg);
+const defaultDataPath = pkg ? `/full-exports/${encodeURIComponent(pkg)}/map-data` : 'map-data';
+let dataPath = normalizeDataPath(qp.get('dataPath') || defaultDataPath);
 
 const loadDiagnostics = [];
 
@@ -232,6 +231,40 @@ async function fetchJsonChecked(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return await res.json();
+}
+
+async function resolvePreferredDefaultPath() {
+  try {
+    const exportInfo = await fetchJsonChecked('/api/full-exports');
+    const exportsList = Array.isArray(exportInfo?.exports) ? exportInfo.exports.slice() : [];
+    exportsList.sort((a, b) => Number(b?.createdAt || 0) - Number(a?.createdAt || 0));
+
+    const preferred = exportsList.find((entry) => {
+      const stats = entry?.stats || {};
+      return stats.meshCollisionComplete === true || Number(stats.meshCollisionAttached || 0) > 0;
+    });
+
+    if (preferred?.packageName) {
+      return `/full-exports/${encodeURIComponent(preferred.packageName)}/map-data`;
+    }
+  } catch {
+    // Fall back to local map-data when no generated sidecar export is available.
+  }
+
+  return defaultDataPath;
+}
+
+function encodePathSegments(pathLike) {
+  return String(pathLike || '')
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter((segment) => segment.length > 0)
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+}
+
+if (!hasExplicitDataPath) {
+  dataPath = normalizeDataPath(await resolvePreferredDefaultPath());
 }
 
 async function loadMeshNames() {
@@ -356,6 +389,8 @@ const textureLoader = new THREE.TextureLoader();
 const textureCache = new Map();
 const gltfLoader = new GLTFLoader();
 const collisionSidecarCache = new Map();
+let cachedSidecarIndexDataPath = '';
+let cachedSidecarPathByMeshKey = new Map();
 const showCollisionLinesInput = document.getElementById('showCollisionLines');
 const showCollisionBoxesInput = document.getElementById('showCollisionBoxes');
 
@@ -424,72 +459,135 @@ function extractSidecarTriangles(json) {
 }
 
 function extractSidecarParts(json) {
-  const shells = Array.isArray(json?.shells) ? json.shells : [];
+  const rawParts = Array.isArray(json?.parts) ? json.parts : [];
   const parts = [];
 
-  for (const shell of shells) {
-    const triangles = Array.isArray(shell?.triangles) ? shell.triangles : [];
-    let minX = Infinity, minY = Infinity, minZ = Infinity;
-    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  for (const part of rawParts) {
+    const cx = Number(part?.localCx);
+    const cz = Number(part?.localCz);
+    const w = Number(part?.localW);
+    const d = Number(part?.localD);
+    const baseY = Number(part?.localBaseY);
+    const topY = Number(part?.localTopY);
+    if (![cx, cz, w, d, baseY, topY].every(Number.isFinite)) continue;
+    if (w <= 0 || d <= 0 || topY < baseY) continue;
 
-    for (const tri of triangles) {
-      if (!Array.isArray(tri) || tri.length < 9) continue;
-      for (let i = 0; i < 9; i += 3) {
-        const x = tri[i];
-        const y = tri[i + 1];
-        const z = tri[i + 2];
-        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
-        if (x < minX) minX = x;
-        if (y < minY) minY = y;
-        if (z < minZ) minZ = z;
-        if (x > maxX) maxX = x;
-        if (y > maxY) maxY = y;
-        if (z > maxZ) maxZ = z;
-      }
-    }
-
-    if (!Number.isFinite(minX) || !Number.isFinite(maxX)) continue;
     parts.push({
-      cx: (minX + maxX) * 0.5,
-      cz: (minZ + maxZ) * 0.5,
-      w: Math.max(0.01, maxX - minX),
-      d: Math.max(0.01, maxZ - minZ),
-      minY,
-      maxY,
+      cx,
+      cz,
+      w,
+      d,
+      baseY,
+      topY,
     });
   }
 
   return parts;
 }
 
-async function loadCollisionSidecar(glbFile) {
-  if (!collisionSidecarCache.has(glbFile)) {
-    const task = (async () => {
-      const sidecarName = `${glbFile}.collision.json`;
-      const url = `${dataPath}/meshes/${encodeURIComponent(sidecarName)}`;
+function appendPartBoxEdges(flatOut, partBox, worldMatrix) {
+  const halfW = partBox.w * 0.5;
+  const halfD = partBox.d * 0.5;
 
-      try {
-        const res = await fetch(url);
-        if (!res.ok) return null;
-        const json = await res.json();
-        const triangles = extractSidecarTriangles(json);
-        const parts = extractSidecarParts(json);
-        if (triangles.length === 0 && parts.length === 0) return null;
-        return { triangles, parts };
-      } catch {
-        return null;
+  const minX = partBox.cx - halfW;
+  const maxX = partBox.cx + halfW;
+  const minZ = partBox.cz - halfD;
+  const maxZ = partBox.cz + halfD;
+  const minY = partBox.baseY;
+  const maxY = partBox.topY;
+
+  const corners = [
+    new THREE.Vector3(minX, minY, minZ),
+    new THREE.Vector3(maxX, minY, minZ),
+    new THREE.Vector3(maxX, minY, maxZ),
+    new THREE.Vector3(minX, minY, maxZ),
+    new THREE.Vector3(minX, maxY, minZ),
+    new THREE.Vector3(maxX, maxY, minZ),
+    new THREE.Vector3(maxX, maxY, maxZ),
+    new THREE.Vector3(minX, maxY, maxZ),
+  ];
+
+  for (const corner of corners) corner.applyMatrix4(worldMatrix);
+
+  const edges = [
+    [0, 1], [1, 2], [2, 3], [3, 0],
+    [4, 5], [5, 6], [6, 7], [7, 4],
+    [0, 4], [1, 5], [2, 6], [3, 7],
+  ];
+
+  for (const [a, b] of edges) {
+    flatOut.push(
+      corners[a].x, corners[a].y, corners[a].z,
+      corners[b].x, corners[b].y, corners[b].z,
+    );
+  }
+}
+
+async function loadCollisionSidecar(glbFile) {
+  const cacheKey = `${dataPath}|${glbFile}`;
+
+  if (!collisionSidecarCache.has(cacheKey)) {
+    const task = (async () => {
+      const normalizedGlbFile = normalizeGlbName(glbFile);
+      const directRelPath = `meshes/${normalizedGlbFile}.collision.json`;
+      const sidecarPathByMeshKey = await getSidecarPathByMeshKey();
+      const indexedRelPath = sidecarPathByMeshKey.get(normalizedGlbFile.toLowerCase());
+      const candidateRelPaths = indexedRelPath && indexedRelPath !== directRelPath
+        ? [directRelPath, indexedRelPath]
+        : [directRelPath];
+
+      for (const relPath of candidateRelPaths) {
+        try {
+          const res = await fetch(`${dataPath}/${encodePathSegments(relPath)}`);
+          if (!res.ok) continue;
+          const json = await res.json();
+          const triangles = extractSidecarTriangles(json);
+          const parts = extractSidecarParts(json);
+          if (triangles.length === 0 && parts.length === 0) continue;
+          return { triangles, parts };
+        } catch {
+          // Try the next known sidecar location.
+        }
       }
+
+      return null;
     })();
-    collisionSidecarCache.set(glbFile, task);
+    collisionSidecarCache.set(cacheKey, task);
   }
 
-  return await collisionSidecarCache.get(glbFile);
+  return await collisionSidecarCache.get(cacheKey);
+}
+
+async function getSidecarPathByMeshKey() {
+  if (cachedSidecarIndexDataPath === dataPath) {
+    return cachedSidecarPathByMeshKey;
+  }
+
+  cachedSidecarIndexDataPath = dataPath;
+  cachedSidecarPathByMeshKey = new Map();
+
+  try {
+    const sidecarIndex = await fetchJsonChecked(`${dataPath}/mesh-collision-index.json`);
+    if (Array.isArray(sidecarIndex?.entries)) {
+      for (const entry of sidecarIndex.entries) {
+        const meshName = normalizeGlbName(entry?.mesh);
+        const sidecarRel = String(entry?.sidecar || '').trim().replace(/^\/+/, '');
+        if (!meshName || !sidecarRel) continue;
+        cachedSidecarPathByMeshKey.set(meshName.toLowerCase(), sidecarRel);
+      }
+    }
+  } catch {
+    // Fall back to direct per-mesh sidecar paths when no index is present.
+  }
+
+  return cachedSidecarPathByMeshKey;
 }
 
 function clearCollisionOverlays(cellData) {
   if (Array.isArray(cellData.collisionHelpers)) {
     for (const h of cellData.collisionHelpers) {
       cellData.scene.remove(h);
+      if (h.geometry && typeof h.geometry.dispose === 'function') h.geometry.dispose();
       if (h.material && typeof h.material.dispose === 'function') h.material.dispose();
     }
     cellData.collisionHelpers = [];
@@ -691,18 +789,29 @@ function loadMeshIntoCell(cellIdx, glbFile) {
 
     const collisionParts = sidecar?.parts?.length ? sidecar.parts : [];
     const collisionHelpers = [];
-    for (const part of collisionParts) {
-      const partBox = new THREE.Box3(
-        new THREE.Vector3(part.cx - part.w * 0.5, part.minY, part.cz - part.d * 0.5),
-        new THREE.Vector3(part.cx + part.w * 0.5, part.maxY, part.cz + part.d * 0.5)
+    group.updateMatrixWorld(true);
+
+    if (collisionParts.length > 0) {
+      const partBoxLineFlat = [];
+      for (const part of collisionParts) {
+        appendPartBoxEdges(partBoxLineFlat, part, group.matrixWorld);
+      }
+
+      const partBoxGeometry = new THREE.BufferGeometry();
+      partBoxGeometry.setAttribute('position', new THREE.Float32BufferAttribute(partBoxLineFlat, 3));
+      const partBoxLines = new THREE.LineSegments(
+        partBoxGeometry,
+        new THREE.LineBasicMaterial({
+          color: 0xff8c3a,
+          transparent: true,
+          opacity: 0.92,
+          depthTest: true,
+        }),
       );
-      const helper = new THREE.Box3Helper(partBox, 0x2dd35c);
-      helper.material.depthTest = false;
-      helper.renderOrder = 2;
-      collisionHelpers.push(helper);
+      partBoxLines.renderOrder = 4;
+      collisionHelpers.push(partBoxLines);
     }
 
-    group.updateMatrixWorld(true);
     let collisionLineGroup = null;
     if (sidecar?.triangles?.length) {
       collisionLineGroup = new THREE.Group();
