@@ -19,6 +19,9 @@ const dom = {
   rebuildCollision: document.getElementById('rebuild-collision'),
   frameMesh: document.getElementById('frame-mesh'),
   walkSpeedLevels: document.getElementById('walk-speed-levels'),
+  startWalk: document.getElementById('start-walk'),
+  stopWalk: document.getElementById('stop-walk'),
+  walkResult: document.getElementById('walk-result'),
   probeX: document.getElementById('probe-x'),
   probeY: document.getElementById('probe-y'),
   probeZ: document.getElementById('probe-z'),
@@ -36,6 +39,7 @@ const dom = {
 
 const query = new URLSearchParams(window.location.search);
 const pkg = query.get('pkg');
+const hasExplicitDataPath = query.has('dataPath') || Boolean(pkg);
 const defaultPath = pkg ? `/full-exports/${encodeURIComponent(pkg)}/map-data` : 'map-data';
 
 const state = {
@@ -142,12 +146,11 @@ initScene();
 wireEvents();
 window.addEventListener('resize', onResize);
 
-dom.dataPath.value = state.dataPath;
 if (dom.verdictFilter) dom.verdictFilter.value = 'approved';
 setWalkSpeed(2000, false);
-setStatus('Loading mesh list...');
-loadMeshList();
+updateWalkHud();
 animate();
+bootstrap();
 
 function normalizeDataPath(raw) {
   const clean = String(raw || '').trim().replace(/\\/g, '/').replace(/\/+$/, '');
@@ -161,6 +164,46 @@ function normalizeMeshName(raw) {
   if (slash >= 0) name = name.slice(slash + 1);
   if (!name.toLowerCase().endsWith('.glb')) name += '.glb';
   return name;
+}
+
+function encodePathSegments(pathLike) {
+  return String(pathLike || '')
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter((segment) => segment.length > 0)
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+}
+
+async function bootstrap() {
+  if (!hasExplicitDataPath) {
+    state.dataPath = await resolvePreferredDefaultPath();
+  }
+
+  dom.dataPath.value = state.dataPath;
+  setStatus('Loading mesh list...');
+  await loadMeshList();
+}
+
+async function resolvePreferredDefaultPath() {
+  try {
+    const exportInfo = await fetchJson('/api/full-exports');
+    const exportsList = Array.isArray(exportInfo?.exports) ? exportInfo.exports.slice() : [];
+    exportsList.sort((a, b) => Number(b?.createdAt || 0) - Number(a?.createdAt || 0));
+
+    const preferred = exportsList.find((entry) => {
+      const stats = entry?.stats || {};
+      return stats.meshCollisionComplete === true || Number(stats.meshCollisionAttached || 0) > 0;
+    });
+
+    if (preferred?.packageName) {
+      return `/full-exports/${encodeURIComponent(preferred.packageName)}/map-data`;
+    }
+  } catch {
+    // Fall back to the local map-data path when no generated export is available.
+  }
+
+  return defaultPath;
 }
 
 function normalizeMeshList(list) {
@@ -415,6 +458,12 @@ async function loadMeshList() {
     return;
   }
 
+  const selectedName = dom.meshList.disabled ? '' : dom.meshList.value;
+  if (selectedName) {
+    await loadSingleMesh(selectedName);
+    return;
+  }
+
   setStatus(`Loaded ${meshNames.length} meshes. ${diagnostics.join(' | ')}`);
 }
 
@@ -551,6 +600,14 @@ function wireEvents() {
       setWalkSpeed(speed);
     });
   }
+
+  dom.startWalk?.addEventListener('click', () => {
+    startWalkMode();
+  });
+
+  dom.stopWalk?.addEventListener('click', () => {
+    stopWalkMode();
+  });
 
   dom.checkProbe?.addEventListener('click', () => {
     evaluateProbePoint();
@@ -988,6 +1045,7 @@ function startWalkMode() {
 
   const walk = state.walkMode;
   walk.enabled = true;
+  walk.keys = {};
 
   walk.position.copy(getWalkSpawnPosition());
   walk.velocity.set(0, 0, 0);
@@ -1278,21 +1336,58 @@ function extractSidecarTriangles(json) {
   return positions;
 }
 
-async function loadSidecarPositions(meshName) {
-  const sidecarName = `${meshName}.collision.json`;
-  const url = `${state.dataPath}/meshes/${encodeURIComponent(sidecarName)}`;
+let cachedSidecarIndexDataPath = '';
+let cachedSidecarPathByMeshKey = new Map();
+
+async function getSidecarPathByMeshKey() {
+  if (cachedSidecarIndexDataPath === state.dataPath) {
+    return cachedSidecarPathByMeshKey;
+  }
+
+  cachedSidecarIndexDataPath = state.dataPath;
+  cachedSidecarPathByMeshKey = new Map();
 
   try {
-    const data = await fetchJson(url);
-    const positions = extractSidecarTriangles(data);
-    if (positions.length === 0) return null;
-    return {
-      positions,
-      meta: data,
-    };
+    const sidecarIndex = await fetchJson(`${state.dataPath}/mesh-collision-index.json`);
+    if (Array.isArray(sidecarIndex?.entries)) {
+      for (const entry of sidecarIndex.entries) {
+        const meshName = normalizeMeshName(entry?.mesh);
+        const sidecarRel = String(entry?.sidecar || '').trim().replace(/^\/+/, '');
+        if (!meshName || !sidecarRel) continue;
+        cachedSidecarPathByMeshKey.set(meshName.toLowerCase(), sidecarRel);
+      }
+    }
   } catch {
-    return null;
+    // Fall back to direct per-mesh sidecar paths when no index is present.
   }
+
+  return cachedSidecarPathByMeshKey;
+}
+
+async function loadSidecarPositions(meshName) {
+  const normalizedMeshName = normalizeMeshName(meshName);
+  const sidecarPathByMeshKey = await getSidecarPathByMeshKey();
+  const indexedRelPath = sidecarPathByMeshKey.get(normalizedMeshName.toLowerCase());
+  const directRelPath = `meshes/${normalizedMeshName}.collision.json`;
+  const candidateRelPaths = indexedRelPath && indexedRelPath !== directRelPath
+    ? [directRelPath, indexedRelPath]
+    : [directRelPath];
+
+  for (const relPath of candidateRelPaths) {
+    try {
+      const data = await fetchJson(`${state.dataPath}/${encodePathSegments(relPath)}`);
+      const positions = extractSidecarTriangles(data);
+      if (positions.length === 0) continue;
+      return {
+        positions,
+        meta: data,
+      };
+    } catch {
+      // Try the next known sidecar location.
+    }
+  }
+
+  return null;
 }
 
 async function loadSingleMesh(meshName) {

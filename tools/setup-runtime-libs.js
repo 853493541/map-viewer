@@ -44,6 +44,19 @@ function rewriteGLTFLoaderImport(loaderPath) {
   }
 }
 
+function rewriteBvhBareImports(filePath, replacements) {
+  const original = readFileSync(filePath, 'utf8');
+  let updated = original;
+
+  for (const [from, to] of replacements) {
+    updated = updated.replace(from, to);
+  }
+
+  if (updated !== original) {
+    writeFileSync(filePath, updated, 'utf8');
+  }
+}
+
 function main() {
   ensureDir(PUBLIC_LIB);
 
@@ -69,6 +82,22 @@ function main() {
   copyDirChecked(
     join(BVH_ROOT, 'src'),
     join(PUBLIC_LIB, 'three-mesh-bvh', 'src')
+  );
+
+  rewriteBvhBareImports(
+    join(PUBLIC_LIB, 'three-mesh-bvh', 'src', 'core', 'ObjectBVH.js'),
+    [[
+      "from 'three-mesh-bvh';",
+      "from '../index.js';",
+    ]]
+  );
+
+  rewriteBvhBareImports(
+    join(PUBLIC_LIB, 'three-mesh-bvh', 'src', 'core', 'SkinnedMeshBVH.js'),
+    [[
+      "from 'three-mesh-bvh';",
+      "from '../index.js';",
+    ]]
   );
 
   console.log('[setup-runtime-libs] Runtime browser libs are ready in public/lib');
