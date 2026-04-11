@@ -54,7 +54,6 @@ class FullMapViewer {
     document.getElementById('load-package').addEventListener('click', () => this.loadSelectedPackage());
     document.getElementById('open-walk-reader').addEventListener('click', () => this.openWalkReaderForCurrentPackage());
     document.getElementById('open-resources').addEventListener('click', () => this.openResourcesForCurrentPackage());
-    document.getElementById('open-validator').addEventListener('click', () => this.openValidatorForCurrentPackage());
 
     await this.refreshPackages();
 
@@ -154,28 +153,18 @@ class FullMapViewer {
     await this.loadPackage(pkg);
   }
 
-  openValidatorForCurrentPackage() {
-    const pkg = this.packageSelect.value;
-    if (!pkg) return;
-    const url = `/full-validator.html?pkg=${encodeURIComponent(pkg)}`;
-    const win = window.open(url, '_blank');
-    if (!win) this.setStatus('Popup blocked. Open /full-validator.html manually.');
-  }
-
   openResourcesForCurrentPackage() {
     const pkg = this.packageSelect.value;
     if (!pkg) return;
     const url = `/mesh-inspector.html?pkg=${encodeURIComponent(pkg)}`;
-    const win = window.open(url, '_blank');
-    if (!win) this.setStatus('Popup blocked. Open /mesh-inspector.html manually.');
+    window.location.href = url;
   }
 
   openWalkReaderForCurrentPackage() {
     const pkg = this.packageSelect.value;
     if (!pkg) return;
     const url = `/export-reader.html?pkg=${encodeURIComponent(pkg)}`;
-    const win = window.open(url, '_blank');
-    if (!win) this.setStatus('Popup blocked. Open /export-reader.html manually.');
+    window.location.href = url;
   }
 
   _disposeObjectTree(obj) {

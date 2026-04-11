@@ -7,8 +7,60 @@
   <link rel="icon" href="data:,">
   <style>
     * { box-sizing: border-box; }
+    :root {
+      --global-header-height: 44px;
+    }
     html, body { margin: 0; height: 100%; background: #0d1117; color: #e6edf3; font-family: Consolas, "Courier New", monospace; }
-    #layout { display: flex; height: 100%; width: 100%; }
+
+    #global-header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: var(--global-header-height);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 12px;
+      background: rgba(11, 15, 22, 0.94);
+      border-bottom: 1px solid #30363d;
+      z-index: 160;
+      backdrop-filter: blur(6px);
+    }
+    #global-header .gh-title {
+      color: #cfe4ff;
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    #global-header .gh-links {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    #global-header .gh-link {
+      text-decoration: none;
+      color: #e6edf3;
+      font-size: 12px;
+      border: 1px solid #30363d;
+      background: #21262d;
+      border-radius: 6px;
+      padding: 4px 10px;
+    }
+    #global-header .gh-link:hover {
+      background: #30363d;
+      border-color: #58a6ff;
+    }
+    #global-header .gh-link.current {
+      color: #fff;
+      background: #1f3d66;
+      border-color: #58a6ff;
+    }
+    #global-header .gh-link.gh-muted {
+      opacity: 0.78;
+    }
+
+    #layout { display: flex; height: calc(100% - var(--global-header-height)); width: 100%; margin-top: var(--global-header-height); }
     #panel {
       width: 390px;
       min-width: 340px;
@@ -63,6 +115,17 @@
       grid-template-columns: 1fr 1fr 1fr;
       gap: 6px;
       margin-top: 6px;
+    }
+    .speed-levels {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-top: 6px;
+    }
+    .speed-btn.active {
+      background: #2f81f7;
+      border-color: #58a6ff;
+      color: #fff;
     }
     .toggle-row {
       display: grid;
@@ -150,6 +213,17 @@
   </style>
 </head>
 <body>
+  <header id="global-header">
+    <div class="gh-title">JX3 Tool Pages</div>
+    <nav class="gh-links">
+      <a class="gh-link" href="index.html">Editor</a>
+      <a class="gh-link" href="export-reader.html">Export Reader</a>
+      <a class="gh-link" href="mesh-inspector.html">Mesh Inspector</a>
+      <a class="gh-link current" href="collision-test-mode.html" aria-current="page">Collision Test</a>
+      <a class="gh-link gh-muted" href="full-viewer.html">Full Viewer (Paused)</a>
+    </nav>
+  </header>
+
   <div id="layout">
     <aside id="panel">
       <h1>Collision Walk Test</h1>
@@ -174,7 +248,7 @@
             <label for="verdict-filter">Verdict Filter</label>
             <select id="verdict-filter">
               <option value="all">All</option>
-              <option value="approved">Approved</option>
+              <option value="approved" selected>Approved</option>
               <option value="denied">Denied</option>
               <option value="undecided">Undecided</option>
             </select>
@@ -191,34 +265,21 @@
         <div class="actions3">
           <button id="prev-mesh">Prev</button>
           <button id="next-mesh">Next</button>
-          <button id="load-mesh">Load Selected</button>
-          <button id="rebuild-collision">Rebuild Collision</button>
+          <button id="rebuild-collision">Reload Sidecar Collision</button>
           <button id="frame-mesh">Frame Mesh</button>
         </div>
       </div>
 
       <div class="card">
         <h2>Third Person Walk Test</h2>
-        <p style="margin-bottom:8px;">Large avatar test: avatar size now auto-adjusts per selected mesh. W/A/S/D or arrows move, Shift run, Space jump, drag mouse to orbit camera. Physics uses selected collision source even if collision lines are hidden.</p>
-        <div class="row2">
-          <div class="field">
-            <label for="walk-collision-source">Walk collision source</label>
-            <select id="walk-collision-source">
-              <option value="collision">Collision geometry (sidecar/fallback)</option>
-              <option value="render">Render mesh geometry</option>
-              <option value="none">No collision (debug)</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="walk-speed">Walk speed</label>
-            <input id="walk-speed" type="number" step="0.1" min="0.5" value="7.5">
+        <div class="field">
+          <div class="speed-levels" id="walk-speed-levels">
+            <button class="speed-btn" data-speed="500">0.5</button>
+            <button class="speed-btn" data-speed="1000">1</button>
+            <button class="speed-btn active" data-speed="2000">2</button>
+            <button class="speed-btn" data-speed="3000">3</button>
           </div>
         </div>
-        <div class="actions">
-          <button id="walk-start">Start Walk</button>
-          <button id="walk-stop">Stop Walk</button>
-        </div>
-        <div id="walk-result" class="result" style="margin-top:8px;">Walk mode is off.</div>
       </div>
     </aside>
 

@@ -22,6 +22,7 @@ export class PlayerController {
     this.pitch = -0.3; // slightly looking down
     this.mouseSensitivity = 0.002;
     this.isPointerLocked = false;
+    this.allowPointerLock = true;
 
     this.keys = {};
     this.speedLevel = 6;      // 1-15, default 6
@@ -50,7 +51,7 @@ export class PlayerController {
       _mouseDownY = e.clientY;
     });
     this.canvas.addEventListener('mouseup', (e) => {
-      if (this._blockPointerLock) return;
+      if (!this.allowPointerLock || this._blockPointerLock) return;
       const dt = performance.now() - _mouseDownTime;
       const dx = Math.abs(e.clientX - _mouseDownX);
       const dy = Math.abs(e.clientY - _mouseDownY);

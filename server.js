@@ -2,9 +2,9 @@
  * Static + export API server for the map viewer.
  *
  * Adds:
- * 1) POST /api/export-full -> build self-contained full export on Desktop
- * 2) POST /api/export-full-with-collision -> full export + per-mesh sidecars
- * 3) POST /api/export-regional-with-collision -> region-required export + per-mesh sidecars
+ * 1) POST /api/export-full -> build self-contained full export on Desktop (sidecar collision only)
+ * 2) POST /api/export-full-with-collision -> alias of sidecar-only full export
+ * 3) POST /api/export-regional-with-collision -> region-required sidecar-only export
  * 4) GET  /api/full-exports -> list exported packages
  * 5) GET  /full-exports/* -> serve exported package files
  */
@@ -347,7 +347,8 @@ async function buildFullExportPackage(payload) {
     }
     : null;
   const regionCorners = Array.isArray(payload?.regionCorners) ? payload.regionCorners : null;
-  const attachMeshCollision = !!payload?.attachMeshCollision;
+  // Sidecar collision is the only supported export format.
+  const attachMeshCollision = true;
 
   const entitiesIn = Array.isArray(payload?.entities) ? payload.entities : [];
   if (entitiesIn.length === 0) {
@@ -537,7 +538,7 @@ async function buildFullExportPackage(payload) {
 
   let collision = {
     generated: false,
-    file: 'collision.json',
+    file: '',
     objects: 0,
     shells: 0,
     shellTriangles: 0,
@@ -557,14 +558,14 @@ async function buildFullExportPackage(payload) {
       mapDataRoot: outMapData,
       packageName,
       region,
-      outputFileName: 'collision.json',
+      outputFileName: '',
       attachToMeshes: attachMeshCollision,
       meshSidecarSuffix: '.collision.json',
     });
 
     collision = {
       generated: true,
-      file: 'collision.json',
+      file: '',
       objects: generated.objects,
       shells: generated.shells || 0,
       shellTriangles: generated.shellTriangles || 0,

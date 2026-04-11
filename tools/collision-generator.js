@@ -1240,29 +1240,33 @@ export async function generateCollisionDataForExport({
     }
   }
 
-  const outputPath = join(mapDataRoot, outputFileName);
-  writeJsonUtf8(outputPath, {
-    version: 1,
-    formatRevision: 2,
-    generator: 'collision-generator-v3-shell',
-    generatedAt: Date.now(),
-    packageName,
-    region: resolvedRegion,
-    scaleFactor,
-    offsetX,
-    offsetY,
-    models: {
-      broadPhase: 'box-prisms',
-      narrowPhase: 'surface-shell-triangles',
-      shellThickness: round3(SHELL_THICKNESS),
-      shellTriangleFormat: 'packed-triangle-xyz9',
-      meshAttachment: attachToMeshes ? 'per-glb-sidecar-json' : 'none',
-      meshSidecarSuffix: attachToMeshes ? meshSidecarSuffix : '',
-      meshSidecarIndexFile: attachToMeshes ? meshSidecarIndexFile : '',
-    },
-    objects,
-    shells,
-  });
+  let outputPath = '';
+  const normalizedOutput = String(outputFileName || '').trim();
+  if (normalizedOutput) {
+    outputPath = join(mapDataRoot, normalizedOutput);
+    writeJsonUtf8(outputPath, {
+      version: 1,
+      formatRevision: 2,
+      generator: 'collision-generator-v3-shell',
+      generatedAt: Date.now(),
+      packageName,
+      region: resolvedRegion,
+      scaleFactor,
+      offsetX,
+      offsetY,
+      models: {
+        broadPhase: 'box-prisms',
+        narrowPhase: 'surface-shell-triangles',
+        shellThickness: round3(SHELL_THICKNESS),
+        shellTriangleFormat: 'packed-triangle-xyz9',
+        meshAttachment: attachToMeshes ? 'per-glb-sidecar-json' : 'none',
+        meshSidecarSuffix: attachToMeshes ? meshSidecarSuffix : '',
+        meshSidecarIndexFile: attachToMeshes ? meshSidecarIndexFile : '',
+      },
+      objects,
+      shells,
+    });
+  }
 
   return {
     outputPath,
