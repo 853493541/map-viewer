@@ -128,10 +128,11 @@ If any other guide is reintroduced, it must not conflict with these files.
 
 Before shipping major changes:
 0. Before editing any file, read the current on-disk file content first so edits are based on the newest version, not stale cached context.
-1. Confirm sidecar-only collision behavior is still enforced.
-2. Confirm page header navigation still links all active pages.
-3. Confirm local startup command still works.
-4. Keep docs synchronized with actual behavior.
+1. Before telling the user a fix is done or giving a final result, check errors for the affected files and any visible runtime/browser errors for the affected page. Fix relevant errors first, or explicitly report that they still exist.
+2. Confirm sidecar-only collision behavior is still enforced.
+3. Confirm page header navigation still links all active pages.
+4. Confirm local startup command still works.
+5. Keep docs synchronized with actual behavior.
 
 ## 9. Reporting Format Requirement
 

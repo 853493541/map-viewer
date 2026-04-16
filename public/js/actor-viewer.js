@@ -146,6 +146,7 @@ class ActorViewerApp {
       clipSourceList: document.getElementById('clip-source-list'),
       animationSelect: document.getElementById('animation-select'),
       clipList: document.getElementById('clip-list'),
+      autoRunAnimation: document.getElementById('auto-run-animation'),
       togglePlayback: document.getElementById('toggle-playback'),
       restartAnimation: document.getElementById('restart-animation'),
       speed: document.getElementById('speed'),
@@ -346,20 +347,24 @@ class ActorViewerApp {
       }
     });
 
-    this.dom.clipSourceSelect.addEventListener('change', () => {
-      this.applySelectedClipSource({ preserveCurrentIndex: true });
-    });
+    if (this.dom.clipSourceSelect) {
+      this.dom.clipSourceSelect.addEventListener('change', () => {
+        this.applySelectedClipSource({ preserveCurrentIndex: true });
+      });
+    }
 
-    this.dom.clipSourceList.addEventListener('click', (event) => {
-      const button = event.target.closest('[data-clip-source-name]');
-      if (!button) return;
+    if (this.dom.clipSourceList && this.dom.clipSourceSelect) {
+      this.dom.clipSourceList.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-clip-source-name]');
+        if (!button) return;
 
-      const exportName = String(button.getAttribute('data-clip-source-name') || '');
-      if (!exportName || exportName === this.dom.clipSourceSelect.value) return;
-      this.dom.clipSourceSelect.value = exportName;
-      this.renderClipSourceList();
-      this.applySelectedClipSource({ preserveCurrentIndex: false });
-    });
+        const exportName = String(button.getAttribute('data-clip-source-name') || '');
+        if (!exportName || exportName === this.dom.clipSourceSelect.value) return;
+        this.dom.clipSourceSelect.value = exportName;
+        this.renderClipSourceList();
+        this.applySelectedClipSource({ preserveCurrentIndex: false });
+      });
+    }
 
     this.dom.clipList.addEventListener('click', (event) => {
       const button = event.target.closest('[data-clip-index]');
@@ -1690,7 +1695,6 @@ function formatCount(value) {
 
       this.renderClipSourceList();
       this.renderClipList();
-      this.scanClipSourcesInBackground();
     } catch (err) {
       this.setStatus(`Could not read actor exports: ${err?.message || err}`, 'warn');
     }
@@ -1734,9 +1738,14 @@ function formatCount(value) {
     const select = this.dom.clipSourceSelect;
     select.innerHTML = '';
 
-    if (!this.exports.length) {
+    const matchingExport = this.current?.exportInfo
+      || this.exports.find((item) => item.name === preferredName)
+      || this.exports.find((item) => item.name === this.dom.actorSelect.value)
+      || this.exports[0];
+
+    if (!matchingExport) {
       const option = document.createElement('option');
-      option.textContent = 'No clip sources detected';
+      option.textContent = 'No matching clip source';
       option.value = '';
       select.appendChild(option);
       select.disabled = true;
@@ -1744,23 +1753,12 @@ function formatCount(value) {
       return;
     }
 
-    select.disabled = false;
-
-    for (const exportInfo of this.exports) {
-      const option = document.createElement('option');
-      const cached = this.sharedClipLibraries.get(exportInfo.name);
-      const suffix = cached?.loaded ? ` • ${cached.clips.length} clip${cached.clips.length === 1 ? '' : 's'}` : '';
-      option.value = exportInfo.name;
-      option.textContent = `${exportInfo.name}${suffix}`;
-      select.appendChild(option);
-    }
-
-    const preferred = this.exports.find((item) => item.name === preferredName)
-      || this.exports.find((item) => item.name === this.currentClipSourceName)
-      || this.exports.find((item) => item.name === this.dom.actorSelect.value)
-      || this.exports[0];
-
-    select.value = preferred?.name || this.exports[0].name;
+    const option = document.createElement('option');
+    option.value = matchingExport.name;
+    option.textContent = `${matchingExport.name} • matching clips`;
+    select.appendChild(option);
+    select.value = matchingExport.name;
+    select.disabled = true;
     this.renderClipSourceList();
   }
 
@@ -1786,32 +1784,23 @@ function formatCount(value) {
   }
 
   getVisibleClipSourceExports() {
-    return this.exports.filter((exportInfo) => {
-      const cached = this.sharedClipLibraries.get(exportInfo.name);
-      return cached?.loaded && Array.isArray(cached.clips) && cached.clips.length > 0;
-    });
+    const matchingExport = this.current?.exportInfo || this.getSelectedExport();
+    return matchingExport ? [matchingExport] : [];
   }
 
   renderClipSourceList() {
     const container = this.dom.clipSourceList;
     if (!container) return;
 
-    const visibleExports = this.getVisibleClipSourceExports();
-    if (!visibleExports.length) {
-      container.innerHTML = `<div class="selection-empty">${this.isScanningClipSources ? 'Scanning exports for clips...' : 'No clip exports found yet.'}</div>`;
+    const matchingExport = this.current?.exportInfo || this.getSelectedExport();
+    if (!matchingExport) {
+      container.innerHTML = '<div class="selection-empty">Load an actor to use its matching clips.</div>';
       return;
     }
 
-    const selectedName = this.dom.clipSourceSelect.value || this.currentClipSourceName;
-    container.innerHTML = visibleExports.map((exportInfo) => `
-      <button
-        class="selection-item ${exportInfo.name === selectedName ? 'active' : ''}"
-        data-clip-source-name="${escapeHtml(exportInfo.name)}"
-        type="button"
-      >
-        <div class="selection-item-title">${escapeHtml(exportInfo.name)}</div>
-      </button>
-    `).join('');
+    container.innerHTML = `
+      <div class="selection-empty">Using matching clips from ${escapeHtml(matchingExport.name)}.</div>
+    `;
   }
 
   renderClipList() {
@@ -1820,7 +1809,9 @@ function formatCount(value) {
 
     const clips = Array.isArray(this.current?.clips) ? this.current.clips : [];
     if (!clips.length) {
-      container.innerHTML = '<div class="selection-empty">Choose a clip source to see its clips.</div>';
+      container.innerHTML = this.current?.exportInfo
+        ? `<div class="selection-empty">${escapeHtml(this.current.exportInfo.name)} has no embedded clips.</div>`
+        : '<div class="selection-empty">Load an actor to see its matching clips.</div>';
       return;
     }
 
@@ -1871,8 +1862,16 @@ function formatCount(value) {
   async openSelectedExportFolder() {
     const exportName = String(this.dom.actorSelect.value || '').trim();
 
+    if (!exportName && !this.exports.length) {
+      this.setStatus('No actor export is available to open yet.', 'warn');
+      return;
+    }
+
     try {
-      const response = await fetch(`/api/open-actor-export-folder?name=${encodeURIComponent(exportName)}`);
+      const url = exportName
+        ? `/api/open-actor-export-folder?name=${encodeURIComponent(exportName)}`
+        : '/api/open-actor-export-folder';
+      const response = await fetch(url);
       if (!response.ok) {
         throw new Error(await response.text() || `HTTP ${response.status}`);
       }
@@ -2159,12 +2158,12 @@ function formatCount(value) {
       this.currentAnimationIndex = -1;
       this.isPlaying = false;
       this.updatePlaybackButton();
-      this.setStatus(`Loaded ${exportInfo.name}. Select a clip source to test shared animation playback.`, 'warn');
+      this.setStatus(`Loaded ${exportInfo.name}. This export has no matching embedded clips.`, 'warn');
     }
 
     if (this.current.clips.length > 0) {
       this.setStatus(
-        `Loaded ${exportInfo.name}: ${stats.bones} bones, ${stats.skinnedMeshes} skinned meshes, using ${this.current.clips.length} clip(s) from ${this.current.clipSourceName}`,
+        `Loaded ${exportInfo.name}: ${stats.bones} bones, ${stats.skinnedMeshes} skinned meshes, using ${this.current.clips.length} matching clip(s).`,
         'good',
       );
     }
@@ -3352,10 +3351,14 @@ function formatCount(value) {
     this.renderClipList();
   }
 
+  shouldAutoRunAnimation() {
+    return this.dom.autoRunAnimation?.checked !== false;
+  }
+
   async applySelectedClipSource({ preserveCurrentIndex = false } = {}) {
     if (!this.current) return;
 
-    const clipSourceExport = this.getSelectedClipSourceExport();
+    const clipSourceExport = this.current.exportInfo;
     if (!clipSourceExport) {
       this.current.clips = [];
       this.current.clipSourceName = '';
@@ -3369,48 +3372,33 @@ function formatCount(value) {
       ? Math.max(0, toFiniteNumber(this.dom.animationSelect.value, 0))
       : 0;
 
-    this.dom.clipSourceSelect.disabled = true;
-    this.setStatus(`Loading clips from ${requestedSourceName}...`, 'warn');
+    const entry = {
+      exportInfo: clipSourceExport,
+      clips: this.current.embeddedClips,
+      loaded: true,
+    };
 
-    try {
-      const entry = clipSourceExport.name === this.current.exportInfo.name
-        ? {
-            exportInfo: clipSourceExport,
-            clips: this.current.embeddedClips,
-            loaded: true,
-          }
-        : await this.ensureClipSourceLoaded(clipSourceExport);
-      if (!this.current || this.dom.clipSourceSelect.value !== requestedSourceName) return;
+    this.currentClipSourceName = requestedSourceName;
+    this.current.clipSourceName = requestedSourceName;
+    this.current.clips = entry.clips;
+    this.populateClipSourceSelect(requestedSourceName);
+    this.stopCurrentAnimationPlayback();
+    this.populateAnimationSelect(entry.clips, requestedSourceName);
 
-      this.currentClipSourceName = requestedSourceName;
-      this.current.clipSourceName = requestedSourceName;
-      this.current.clips = entry.clips;
-      this.populateClipSourceSelect(requestedSourceName);
-      this.stopCurrentAnimationPlayback();
-      this.populateAnimationSelect(entry.clips, requestedSourceName);
-
-      if (entry.clips.length) {
-        const nextIndex = Math.min(preferredIndex, entry.clips.length - 1);
-        this.playClip(nextIndex);
-        this.setStatus(`Using ${entry.clips.length} clip(s) from ${requestedSourceName} on ${this.current.exportInfo.name}.`, 'good');
-      } else {
-        this.setStatus(`${requestedSourceName} has no clips to share with ${this.current.exportInfo.name}.`, 'warn');
-      }
-    } catch (err) {
-      if (!this.current || this.dom.clipSourceSelect.value !== requestedSourceName) return;
-      this.current.clips = [];
-      this.current.clipSourceName = requestedSourceName;
-      this.populateAnimationSelect([], requestedSourceName);
-      this.stopCurrentAnimationPlayback();
-      this.setStatus(`Could not load clips from ${requestedSourceName}: ${err?.message || err}`, 'warn');
-    } finally {
-      if (this.dom.clipSourceSelect.value === requestedSourceName) {
-        this.dom.clipSourceSelect.disabled = false;
-      }
+    if (entry.clips.length) {
+      const nextIndex = Math.min(preferredIndex, entry.clips.length - 1);
+      const autoRunAnimation = this.shouldAutoRunAnimation();
+      this.playClip(nextIndex, { autoplay: autoRunAnimation });
+      this.setStatus(
+        `Using ${entry.clips.length} matching clip(s) from ${requestedSourceName}${autoRunAnimation ? '.' : ' with auto-run disabled.'}`,
+        'good',
+      );
+    } else {
+      this.setStatus(`${requestedSourceName} has no embedded clips.`, 'warn');
     }
   }
 
-  playClip(index) {
+  playClip(index, { autoplay = this.shouldAutoRunAnimation() } = {}) {
     if (!this.current?.mixer || !this.current.clips[index]) return;
 
     const nextClip = this.current.clips[index];
@@ -3430,13 +3418,18 @@ function formatCount(value) {
     nextAction.setEffectiveWeight(1);
     nextAction.reset();
     nextAction.play();
+    nextAction.paused = false;
 
     this.current.mixer.update(0);
     this.current.root.updateMatrixWorld(true);
 
+    if (!autoplay) {
+      nextAction.paused = true;
+    }
+
     this.current.activeAction = nextAction;
     this.currentAnimationIndex = index;
-    this.isPlaying = true;
+    this.isPlaying = Boolean(autoplay);
     this.dom.animationSelect.value = String(index);
     this.updatePlaybackButton();
     this.renderClipList();
