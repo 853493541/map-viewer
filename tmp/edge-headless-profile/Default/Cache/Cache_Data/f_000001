@@ -1,0 +1,1168 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function basenameFromPath(pathLike) {
+  const normalized = String(pathLike || '').replace(/\\/g, '/');
+  const parts = normalized.split('/').filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : '';
+}
+
+function formatCount(value) {
+  return Number.isFinite(value) ? String(value) : '0';
+}
+
+function formatBodyType(value) {
+  return value ? String(value).toUpperCase() : 'unknown';
+}
+
+function dirnameFromUrl(url) {
+  const normalized = String(url || '');
+  const slash = normalized.lastIndexOf('/');
+  return slash >= 0 ? normalized.slice(0, slash) : normalized;
+}
+
+function buildMeshNameSet(meshPath) {
+  const names = new Set();
+  const baseName = basenameFromPath(meshPath).replace(/\.mesh$/i, '').replace(/\.mdl$/i, '');
+  if (!baseName) return names;
+  names.add(baseName);
+  names.add(`${baseName}mesh`);
+  return names;
+}
+
+class ActorViewerApp {
+  constructor() {
+    this.dom = {
+      canvas: document.getElementById('canvas'),
+      actorSelect: document.getElementById('actor-select'),
+      exportRoot: document.getElementById('export-root'),
+      refreshExports: document.getElementById('refresh-exports'),
+      loadExport: document.getElementById('load-export'),
+      frameActor: document.getElementById('frame-actor'),
+      status: document.getElementById('status'),
+      animationSelect: document.getElementById('animation-select'),
+      togglePlayback: document.getElementById('toggle-playback'),
+      restartAnimation: document.getElementById('restart-animation'),
+      speed: document.getElementById('speed'),
+      speedLabel: document.getElementById('speed-label'),
+      showSkeleton: document.getElementById('show-skeleton'),
+      showGrid: document.getElementById('show-grid'),
+      showFloor: document.getElementById('show-floor'),
+      autoLoadFirst: document.getElementById('auto-load-first'),
+      facts: document.getElementById('facts'),
+      partList: document.getElementById('part-list'),
+      loading: document.getElementById('loading'),
+      loadingText: document.getElementById('loading-text'),
+      loadingFill: document.getElementById('loading-fill'),
+    };
+
+    this.query = new URLSearchParams(window.location.search);
+    this.requestedExportName = this.query.get('name');
+
+    this.renderer = new THREE.WebGLRenderer({
+      canvas: this.dom.canvas,
+      antialias: true,
+      powerPreference: 'high-performance',
+    });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color('#070b10');
+    this.scene.fog = new THREE.FogExp2('#070b10', 0.00035);
+
+    this.camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 50000);
+    this.camera.position.set(180, 120, 360);
+
+    this.controls = new OrbitControls(this.camera, this.dom.canvas);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.08;
+    this.controls.minDistance = 20;
+    this.controls.maxDistance = 12000;
+    this.controls.target.set(0, 100, 0);
+
+    this.clock = new THREE.Clock();
+    this.loader = null;
+    this.textureLoader = new THREE.TextureLoader();
+    this.textureCache = new Map();
+    this.textureAlphaCache = new Map();
+    this.exports = [];
+    this.exportRoot = '';
+    this.current = null;
+    this.currentStats = null;
+    this.currentAnimationIndex = -1;
+    this.playbackRate = 1;
+    this.isPlaying = false;
+    this.hasInitialLoad = false;
+
+    this.stage = new THREE.Group();
+    this.scene.add(this.stage);
+
+    this.setupScene();
+    this.bindEvents();
+    this.updateSpeedLabel();
+    this.setStatus('Scanning MovieEditor exports...', 'warn');
+    this.setFacts(null, null);
+    this.setPartList([]);
+  }
+
+  setupScene() {
+    const hemisphere = new THREE.HemisphereLight('#b2c7e0', '#10161c', 1.2);
+    this.scene.add(hemisphere);
+
+    const ambient = new THREE.AmbientLight('#8ba3ba', 0.5);
+    this.scene.add(ambient);
+
+    this.keyLight = new THREE.DirectionalLight('#fff3dd', 1.8);
+    this.keyLight.position.set(230, 360, 180);
+    this.keyLight.castShadow = true;
+    this.keyLight.shadow.mapSize.set(2048, 2048);
+    this.keyLight.shadow.camera.near = 1;
+    this.keyLight.shadow.camera.far = 3000;
+    this.keyLight.shadow.camera.left = -800;
+    this.keyLight.shadow.camera.right = 800;
+    this.keyLight.shadow.camera.top = 800;
+    this.keyLight.shadow.camera.bottom = -800;
+    this.scene.add(this.keyLight);
+
+    const rimLight = new THREE.DirectionalLight('#4d78b0', 1.1);
+    rimLight.position.set(-260, 160, -220);
+    this.scene.add(rimLight);
+
+    this.floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(12000, 12000),
+      new THREE.MeshStandardMaterial({ color: '#11161d', roughness: 0.95, metalness: 0.04 })
+    );
+    this.floor.rotation.x = -Math.PI / 2;
+    this.floor.receiveShadow = true;
+    this.scene.add(this.floor);
+
+    this.grid = new THREE.GridHelper(2400, 60, '#567da4', '#263546');
+    this.grid.material.opacity = 0.55;
+    this.grid.material.transparent = true;
+    this.scene.add(this.grid);
+  }
+
+  bindEvents() {
+    window.addEventListener('resize', () => this.onResize());
+
+    this.dom.actorSelect.addEventListener('change', () => {
+      if (!this.dom.actorSelect.value) return;
+      this.loadSelectedExport();
+    });
+
+    this.dom.refreshExports.addEventListener('click', () => {
+      this.refreshExports({ preserveSelection: true });
+    });
+
+    this.dom.loadExport.addEventListener('click', () => {
+      this.loadSelectedExport();
+    });
+
+    this.dom.frameActor.addEventListener('click', () => {
+      this.frameCurrentActor();
+    });
+
+    this.dom.animationSelect.addEventListener('change', () => {
+      const index = Number(this.dom.animationSelect.value);
+      if (Number.isFinite(index)) {
+        this.playClip(index);
+      }
+    });
+
+    this.dom.togglePlayback.addEventListener('click', () => {
+      this.togglePlayback();
+    });
+
+    this.dom.restartAnimation.addEventListener('click', () => {
+      this.restartCurrentClip();
+    });
+
+    this.dom.speed.addEventListener('input', () => {
+      this.playbackRate = Number(this.dom.speed.value) || 1;
+      this.updateSpeedLabel();
+    });
+
+    this.dom.showSkeleton.addEventListener('change', () => {
+      if (this.current?.skeletonHelper) {
+        this.current.skeletonHelper.visible = this.dom.showSkeleton.checked;
+      }
+    });
+
+    this.dom.showGrid.addEventListener('change', () => {
+      this.grid.visible = this.dom.showGrid.checked;
+    });
+
+    this.dom.showFloor.addEventListener('change', () => {
+      this.floor.visible = this.dom.showFloor.checked;
+    });
+  }
+
+  async init() {
+    await this.refreshExports({ preserveSelection: false });
+    this.animate();
+  }
+
+  async refreshExports({ preserveSelection }) {
+    const previous = preserveSelection ? this.dom.actorSelect.value : '';
+
+    try {
+      this.setStatus('Scanning MovieEditor export folders...', 'warn');
+      const response = await fetch('/api/actor-exports');
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const payload = await response.json();
+      this.exportRoot = payload.root || '';
+      this.dom.exportRoot.textContent = this.exportRoot
+        ? `Root: ${this.exportRoot}`
+        : 'Root: MovieEditor/source/fbx';
+      this.exports = (Array.isArray(payload.exports) ? payload.exports : []).map((exportInfo) => ({
+        ...exportInfo,
+        textureFileLookup: new Map(
+          (Array.isArray(exportInfo.textureFiles) ? exportInfo.textureFiles : [])
+            .map((name) => [String(name).toLowerCase(), name])
+        ),
+      }));
+      this.populateActorSelect(previous || this.requestedExportName || '');
+
+      if (this.exports.length === 0) {
+        this.setStatus(`No exports found under ${payload.root || 'MovieEditor/source/fbx'}`, 'warn');
+        return;
+      }
+
+      this.setStatus(`Found ${this.exports.length} actor export folder(s)`, 'good');
+
+      const shouldAutoLoad = !this.hasInitialLoad && this.dom.autoLoadFirst.checked;
+      this.hasInitialLoad = true;
+      if (shouldAutoLoad) {
+        await this.loadSelectedExport();
+      }
+    } catch (err) {
+      this.setStatus(`Could not read actor exports: ${err?.message || err}`, 'warn');
+    }
+  }
+
+  populateActorSelect(preferredName) {
+    const select = this.dom.actorSelect;
+    select.innerHTML = '';
+
+    if (!this.exports.length) {
+      const option = document.createElement('option');
+      option.textContent = 'No MovieEditor exports detected';
+      option.value = '';
+      select.appendChild(option);
+      select.disabled = true;
+      this.dom.loadExport.disabled = true;
+      this.dom.frameActor.disabled = true;
+      return;
+    }
+
+    select.disabled = false;
+    this.dom.loadExport.disabled = false;
+    this.dom.frameActor.disabled = false;
+
+    for (const exportInfo of this.exports) {
+      const option = document.createElement('option');
+      option.value = exportInfo.name;
+      option.textContent = `${exportInfo.name} (${exportInfo.fbxFileName || 'no fbx'})`;
+      select.appendChild(option);
+    }
+
+    const preferred = this.exports.find((item) => item.name === preferredName);
+    select.value = preferred?.name || this.exports[0].name;
+  }
+
+  getSelectedExport() {
+    const exportName = this.dom.actorSelect.value;
+    return this.exports.find((item) => item.name === exportName) || null;
+  }
+
+  async loadSelectedExport() {
+    const exportInfo = this.getSelectedExport();
+    if (!exportInfo) {
+      this.setStatus('No actor export selected.', 'warn');
+      return;
+    }
+
+    if (!exportInfo.fbxUrl) {
+      this.setStatus(`Export ${exportInfo.name} has no FBX file.`, 'warn');
+      this.setFacts(exportInfo, null);
+      this.setPartList(this.buildPartItems(exportInfo));
+      return;
+    }
+
+    this.showLoading(`Loading ${exportInfo.fbxFileName}`, 0);
+    this.setStatus(`Loading ${exportInfo.fbxFileName}...`, 'warn');
+
+    const loadState = {
+      failed: false,
+      finished: false,
+      dependenciesReady: false,
+      sceneReady: false,
+    };
+    this.activeLoadState = loadState;
+
+    const finishLoading = () => {
+      if (this.activeLoadState !== loadState) return;
+      if (loadState.failed || loadState.finished) return;
+      if (!loadState.sceneReady || !loadState.dependenciesReady) return;
+      loadState.finished = true;
+      this.hideLoading();
+    };
+
+    const manager = new THREE.LoadingManager();
+    manager.onProgress = (_url, loaded, total) => {
+      if (this.activeLoadState !== loadState || loadState.failed || loadState.finished) return;
+      const ratio = total > 0 ? loaded / total : 0;
+      this.showLoading(`Resolving linked textures ${loaded}/${Math.max(loaded, total)}`, ratio);
+    };
+    manager.onLoad = () => {
+      if (this.activeLoadState !== loadState) return;
+      loadState.dependenciesReady = true;
+      finishLoading();
+    };
+    manager.onError = (url) => {
+      if (this.activeLoadState !== loadState) return;
+      this.setStatus(`Referenced asset missing: ${basenameFromPath(url)}`, 'warn');
+    };
+
+    const loader = new FBXLoader(manager);
+    const resourcePath = this.getTextureBaseUrl(exportInfo);
+    if (resourcePath) {
+      loader.setResourcePath(`${resourcePath.replace(/\/+$/, '')}/`);
+    }
+    loader.load(
+      exportInfo.fbxUrl,
+      (root) => {
+        if (this.activeLoadState !== loadState || loadState.failed) return;
+        Promise.resolve(this.onFbxLoaded(exportInfo, root)).then(() => {
+          if (this.activeLoadState !== loadState || loadState.failed) return;
+          loadState.sceneReady = true;
+          finishLoading();
+        }).catch((err) => {
+          loadState.failed = true;
+          this.hideLoading();
+          this.setStatus(`Post-load setup failed: ${err?.message || err}`, 'warn');
+          console.error('Actor post-load setup failed', err);
+        });
+      },
+      (event) => {
+        if (this.activeLoadState !== loadState || loadState.failed || loadState.finished) return;
+        if (event?.lengthComputable && event.total > 0) {
+          this.showLoading(
+            `Downloading FBX ${Math.round((event.loaded / event.total) * 100)}%`,
+            event.loaded / event.total,
+          );
+        }
+      },
+      (err) => {
+        loadState.failed = true;
+        this.hideLoading();
+        this.setStatus(`FBX load failed: ${err?.message || err}`, 'warn');
+      }
+    );
+  }
+
+  async onFbxLoaded(exportInfo, root) {
+    this.clearCurrentActor();
+    await this.prepareMaterials(exportInfo, root);
+    const partVisibility = this.applyActorPartVisibility(exportInfo, root);
+
+    const placementRoot = new THREE.Group();
+    const orientationRoot = new THREE.Group();
+    orientationRoot.add(root);
+    placementRoot.add(orientationRoot);
+    this.stage.add(placementRoot);
+
+    const stats = this.collectStats(root);
+    this.current = {
+      exportInfo,
+      root,
+      presentation: this.createPresentationState(root, placementRoot, orientationRoot),
+      clips: Array.isArray(root.animations) ? root.animations : [],
+      mixer: Array.isArray(root.animations) && root.animations.length > 0
+        ? new THREE.AnimationMixer(root)
+        : null,
+      activeAction: null,
+      skeletonHelper: null,
+      partVisibility,
+    };
+    this.currentStats = stats;
+
+    this.current.attachments = this.createHeadAttachments(root);
+
+    this.current.skeletonHelper = new THREE.SkeletonHelper(root);
+    this.current.skeletonHelper.visible = this.dom.showSkeleton.checked;
+    this.scene.add(this.current.skeletonHelper);
+
+    this.frameCurrentActor();
+    this.populateAnimationSelect(this.current.clips);
+    this.setFacts(exportInfo, stats);
+    this.setPartList(this.buildPartItems(exportInfo));
+
+    if (this.current.clips.length > 0) {
+      this.playClip(0);
+    } else {
+      this.currentAnimationIndex = -1;
+      this.isPlaying = false;
+      this.updatePlaybackButton();
+      this.setStatus(`Loaded ${exportInfo.name}. Skeleton present; no embedded FBX clips found.`, 'warn');
+    }
+
+    if (this.current.clips.length > 0) {
+      this.setStatus(
+        `Loaded ${exportInfo.name}: ${stats.bones} bones, ${stats.skinnedMeshes} skinned meshes, ${this.current.clips.length} clip(s)${partVisibility.mode === 'head-fallback' ? ' using head mesh fallback for detached face export' : ''}`,
+        'good',
+      );
+    }
+
+  }
+
+  getTextureBaseUrl(exportInfo) {
+    if (exportInfo?.textureBaseUrl) return exportInfo.textureBaseUrl;
+    if (!exportInfo?.fbxUrl) return null;
+    return `${dirnameFromUrl(exportInfo.fbxUrl)}/tex`;
+  }
+
+  findTextureFile(exportInfo, materialName, suffix) {
+    const lookup = exportInfo?.textureFileLookup;
+    if (!(lookup instanceof Map) || !materialName) return null;
+
+    const prefix = `${materialName}${suffix}`.toLowerCase();
+    for (const [lowerName, originalName] of lookup.entries()) {
+      if (lowerName === `${prefix}.png` || lowerName === `${prefix}.tga`) {
+        return originalName;
+      }
+    }
+
+    return null;
+  }
+
+  buildTextureUrl(exportInfo, fileName) {
+    if (!fileName) return null;
+    const baseUrl = this.getTextureBaseUrl(exportInfo);
+    return baseUrl ? `${baseUrl}/${encodeURIComponent(fileName)}` : null;
+  }
+
+  loadTexture(url, colorSpace = null) {
+    if (!url) return Promise.resolve(null);
+
+    const cacheKey = `${url}|${colorSpace || 'none'}`;
+    if (this.textureCache.has(cacheKey)) {
+      return this.textureCache.get(cacheKey);
+    }
+
+    const promise = new Promise((resolve) => {
+      this.textureLoader.load(
+        url,
+        (texture) => {
+          if (colorSpace) texture.colorSpace = colorSpace;
+          resolve(texture);
+        },
+        undefined,
+        () => resolve(null),
+      );
+    });
+
+    this.textureCache.set(cacheKey, promise);
+    return promise;
+  }
+
+  async textureHasAlpha(texture) {
+    const image = texture?.image;
+    const cacheKey = image?.currentSrc || image?.src || texture?.uuid || null;
+    if (!image || !cacheKey) return false;
+
+    if (this.textureAlphaCache.has(cacheKey)) {
+      return this.textureAlphaCache.get(cacheKey);
+    }
+
+    let hasAlpha = false;
+    try {
+      const width = Math.min(64, image.naturalWidth || image.width || 0);
+      const height = Math.min(64, image.naturalHeight || image.height || 0);
+      if (width > 0 && height > 0) {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (ctx) {
+          ctx.drawImage(image, 0, 0, width, height);
+          const pixels = ctx.getImageData(0, 0, width, height).data;
+          for (let index = 3; index < pixels.length; index += 16) {
+            if (pixels[index] < 250) {
+              hasAlpha = true;
+              break;
+            }
+          }
+        }
+      }
+    } catch {
+      hasAlpha = false;
+    }
+
+    this.textureAlphaCache.set(cacheKey, hasAlpha);
+    return hasAlpha;
+  }
+
+  findPrimarySkinnedMesh(root) {
+    let bestMatch = null;
+
+    root.traverse((object) => {
+      if (!object.isSkinnedMesh || !Array.isArray(object.skeleton?.bones) || object.skeleton.bones.length === 0) {
+        return;
+      }
+
+      const bones = object.skeleton.bones;
+      const lowerNames = new Set(bones.map((bone) => String(bone.name || '').toLowerCase()));
+      const score =
+        (lowerNames.has('bip01_pelvis') ? 1000 : 0) +
+        (lowerNames.has('bip01_head') ? 1000 : 0) +
+        bones.length;
+
+      if (!bestMatch || score > bestMatch.score) {
+        bestMatch = { object, score };
+      }
+    });
+
+    return bestMatch?.object || null;
+  }
+
+  createHeadAttachments(root) {
+    const primaryMesh = this.findPrimarySkinnedMesh(root);
+    const anchorBone = primaryMesh?.skeleton?.bones?.find((bone) => bone.name === 'bip01_head') || null;
+    if (!anchorBone) {
+      return { boneLinks: [], rootLinks: [] };
+    }
+
+    const primaryBoneMap = new Map(
+      primaryMesh.skeleton.bones.map((bone) => [String(bone.name || '').toLowerCase(), bone])
+    );
+
+    root.updateMatrixWorld(true);
+
+    const boneLinks = [];
+    const rootLinks = [];
+    root.traverse((object) => {
+      if (!object.isSkinnedMesh || !object.skeleton?.bones?.length) return;
+      if (object === primaryMesh) return;
+      if (!/head|face|bang|plait|hat/i.test(object.name)) return;
+
+      for (const bone of object.skeleton.bones) {
+        const sourceBone = primaryBoneMap.get(String(bone.name || '').toLowerCase());
+        if (!sourceBone || sourceBone === bone) continue;
+
+        boneLinks.push({
+          meshName: object.name,
+          sourceBone,
+          targetBone: bone,
+          parentInverse: new THREE.Matrix4(),
+          targetWorld: new THREE.Matrix4(),
+          localMatrix: new THREE.Matrix4(),
+          position: new THREE.Vector3(),
+          quaternion: new THREE.Quaternion(),
+          scale: new THREE.Vector3(),
+        });
+      }
+
+      const boneSet = new Set(object.skeleton.bones);
+      const roots = object.skeleton.bones.filter((bone) => !boneSet.has(bone.parent));
+      for (const rootBone of roots) {
+        if (primaryBoneMap.has(String(rootBone.name || '').toLowerCase())) continue;
+
+        const localOffset = new THREE.Matrix4()
+          .copy(anchorBone.matrixWorld)
+          .invert()
+          .multiply(rootBone.matrixWorld);
+
+        rootLinks.push({
+          meshName: object.name,
+          rootBone,
+          anchorBone,
+          localOffset,
+          parentInverse: new THREE.Matrix4(),
+          targetWorld: new THREE.Matrix4(),
+          localMatrix: new THREE.Matrix4(),
+          position: new THREE.Vector3(),
+          quaternion: new THREE.Quaternion(),
+          scale: new THREE.Vector3(),
+        });
+      }
+    });
+
+    return { boneLinks, rootLinks };
+  }
+
+  createPresentationState(root, placementRoot, orientationRoot) {
+    const primaryMesh = this.findPrimarySkinnedMesh(root);
+    const lowerNames = new Map(
+      (primaryMesh?.skeleton?.bones || []).map((bone) => [String(bone.name || '').toLowerCase(), bone])
+    );
+
+    return {
+      placementRoot,
+      orientationRoot,
+      pelvisBone: lowerNames.get('bip01_pelvis') || lowerNames.get('pelvis') || null,
+      headBone: lowerNames.get('bip01_head') || lowerNames.get('head') || null,
+      hasPlacement: false,
+      hasUprightCorrection: false,
+      rawBox: new THREE.Box3(),
+      placedBox: new THREE.Box3(),
+      center: new THREE.Vector3(),
+      size: new THREE.Vector3(),
+      pelvisPosition: new THREE.Vector3(),
+      headPosition: new THREE.Vector3(),
+      upVector: new THREE.Vector3(),
+      uprightCorrection: new THREE.Quaternion(),
+    };
+  }
+
+  updateActorPresentation({ recenterCamera = false, recomputePlacement = false, recomputeOrientation = false } = {}) {
+    const presentation = this.current?.presentation;
+    if (!presentation || !this.current?.root) return;
+
+    const {
+      placementRoot,
+      orientationRoot,
+      pelvisBone,
+      headBone,
+      rawBox,
+      placedBox,
+      center,
+      size,
+      pelvisPosition,
+      headPosition,
+      upVector,
+      uprightCorrection,
+      hasUprightCorrection,
+    } = presentation;
+
+    if (recomputeOrientation || !hasUprightCorrection) {
+      orientationRoot.quaternion.identity();
+      this.current.root.updateMatrixWorld(true);
+
+      if (pelvisBone && headBone) {
+        pelvisBone.getWorldPosition(pelvisPosition);
+        headBone.getWorldPosition(headPosition);
+        upVector.subVectors(headPosition, pelvisPosition);
+
+        if (upVector.lengthSq() > 0.0001) {
+          upVector.normalize();
+          if (upVector.y < 0.6) {
+            uprightCorrection.setFromUnitVectors(upVector, new THREE.Vector3(0, 1, 0));
+          } else {
+            uprightCorrection.identity();
+          }
+        } else {
+          uprightCorrection.identity();
+        }
+      } else {
+        uprightCorrection.identity();
+      }
+
+      presentation.hasUprightCorrection = true;
+    }
+
+    orientationRoot.quaternion.copy(uprightCorrection);
+    orientationRoot.updateMatrixWorld(true);
+
+    if (recomputePlacement || !presentation.hasPlacement) {
+      rawBox.setFromObject(orientationRoot);
+      if (rawBox.isEmpty()) return;
+
+      rawBox.getCenter(center);
+      placementRoot.position.set(-center.x, -rawBox.min.y, -center.z);
+      presentation.hasPlacement = true;
+    }
+
+    placementRoot.updateMatrixWorld(true);
+
+    if (!recenterCamera) return;
+
+    placedBox.setFromObject(placementRoot);
+    if (placedBox.isEmpty()) return;
+
+    const adjustedCenter = placedBox.getCenter(new THREE.Vector3());
+    const adjustedSize = placedBox.getSize(size);
+    const maxDim = Math.max(adjustedSize.x, adjustedSize.y, adjustedSize.z, 1);
+    const fitDistance = maxDim / Math.tan(THREE.MathUtils.degToRad(this.camera.fov * 0.5));
+
+    this.camera.near = Math.max(0.1, maxDim / 500);
+    this.camera.far = Math.max(6000, fitDistance * 20);
+    this.camera.position.set(maxDim * 0.28, adjustedSize.y * 0.62 + fitDistance * 0.1, fitDistance * 0.72);
+    this.camera.updateProjectionMatrix();
+
+    this.controls.target.copy(adjustedCenter);
+    this.controls.maxDistance = Math.max(1000, fitDistance * 8);
+    this.controls.update();
+  }
+
+  updateHeadAttachments() {
+    const attachments = this.current?.attachments;
+    if (!attachments) return;
+
+    for (const attachment of attachments.rootLinks || []) {
+      const parent = attachment.rootBone.parent;
+      attachment.targetWorld.multiplyMatrices(attachment.anchorBone.matrixWorld, attachment.localOffset);
+
+      if (parent) {
+        attachment.parentInverse.copy(parent.matrixWorld).invert();
+        attachment.localMatrix.multiplyMatrices(attachment.parentInverse, attachment.targetWorld);
+      } else {
+        attachment.localMatrix.copy(attachment.targetWorld);
+      }
+
+      attachment.localMatrix.decompose(
+        attachment.position,
+        attachment.quaternion,
+        attachment.scale,
+      );
+
+      attachment.rootBone.position.copy(attachment.position);
+      attachment.rootBone.quaternion.copy(attachment.quaternion);
+      attachment.rootBone.scale.copy(attachment.scale);
+    }
+
+    if (this.current?.root) {
+      this.current.root.updateMatrixWorld(true);
+    }
+
+    for (const attachment of attachments.boneLinks || []) {
+      const parent = attachment.targetBone.parent;
+      attachment.targetWorld.copy(attachment.sourceBone.matrixWorld);
+
+      if (parent) {
+        attachment.parentInverse.copy(parent.matrixWorld).invert();
+        attachment.localMatrix.multiplyMatrices(attachment.parentInverse, attachment.targetWorld);
+      } else {
+        attachment.localMatrix.copy(attachment.targetWorld);
+      }
+
+      attachment.localMatrix.decompose(
+        attachment.position,
+        attachment.quaternion,
+        attachment.scale,
+      );
+
+      attachment.targetBone.position.copy(attachment.position);
+      attachment.targetBone.quaternion.copy(attachment.quaternion);
+      attachment.targetBone.scale.copy(attachment.scale);
+    }
+  }
+
+  async applyFallbackMaterialTextures(exportInfo, material) {
+    if (!material?.name) return;
+
+    const materialName = String(material.name).trim();
+    if (!materialName) return;
+
+    let changed = false;
+
+    const diffuseFile = this.findTextureFile(exportInfo, materialName, '_Diffuse');
+    if (diffuseFile) {
+      const diffuseMap = await this.loadTexture(
+        this.buildTextureUrl(exportInfo, diffuseFile),
+        THREE.SRGBColorSpace,
+      );
+      if (diffuseMap) {
+        material.map = diffuseMap;
+        if (material.color) material.color.setHex(0xffffff);
+        changed = true;
+      }
+    } else if (material.map) {
+      material.map.colorSpace = THREE.SRGBColorSpace;
+    }
+
+    const normalFile = this.findTextureFile(exportInfo, materialName, '_TangentSpace_Normal');
+    if (normalFile) {
+      const normalMap = await this.loadTexture(this.buildTextureUrl(exportInfo, normalFile));
+      if (normalMap) {
+        material.normalMap = normalMap;
+        changed = true;
+      }
+    }
+
+    const specularFile = this.findTextureFile(exportInfo, materialName, '_SpecularColor');
+    if (specularFile) {
+      const specularMap = await this.loadTexture(
+        this.buildTextureUrl(exportInfo, specularFile),
+        THREE.SRGBColorSpace,
+      );
+      if (specularMap) {
+        material.specularMap = specularMap;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      material.needsUpdate = true;
+    }
+  }
+
+  async prepareMaterials(exportInfo, root) {
+    const tasks = [];
+
+    root.traverse((object) => {
+      if (!object.isMesh) return;
+
+      object.castShadow = true;
+      object.receiveShadow = true;
+
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      for (const material of materials) {
+        if (!material) continue;
+        tasks.push(this.applyFallbackMaterialTextures(exportInfo, material));
+      }
+    });
+
+    await Promise.all(tasks);
+
+    const alphaTasks = [];
+
+    root.traverse((object) => {
+      if (!object.isMesh) return;
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      for (const material of materials) {
+        if (!material) continue;
+        if (material.map) {
+          material.map.colorSpace = THREE.SRGBColorSpace;
+          alphaTasks.push((async () => {
+            const hasAlpha = await this.textureHasAlpha(material.map);
+            if (hasAlpha) {
+              material.transparent = true;
+              material.alphaTest = Math.max(material.alphaTest || 0, 0.06);
+              material.side = THREE.DoubleSide;
+              material.depthWrite = false;
+            }
+          })());
+        }
+        if (material.emissiveMap) material.emissiveMap.colorSpace = THREE.SRGBColorSpace;
+        material.needsUpdate = true;
+      }
+    });
+
+    await Promise.all(alphaTasks);
+
+    root.traverse((object) => {
+      if (!object.isMesh) return;
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      for (const material of materials) {
+        if (!material) continue;
+        material.needsUpdate = true;
+      }
+    });
+  }
+
+  applyActorPartVisibility(exportInfo, root) {
+    const actorParts = Array.isArray(exportInfo?.sourceActor?.parts) ? exportInfo.sourceActor.parts : [];
+    if (!actorParts.length) {
+      return { mode: 'none' };
+    }
+
+    const headPart = actorParts.find((part) => Number(part.slot) === 1 && part.mesh);
+    const facePart = actorParts.find((part) => Number(part.slot) === 8 && part.mesh);
+    if (!headPart || !facePart) {
+      return { mode: 'none' };
+    }
+
+    const headNames = buildMeshNameSet(headPart.mesh);
+    const faceNames = buildMeshNameSet(facePart.mesh);
+    const faceDefinition = String(exportInfo?.sourceActor?.faceDefinition || '').trim();
+
+    const faceMeshes = [];
+    root.traverse((object) => {
+      if (!object.isSkinnedMesh) return;
+      if (!faceNames.has(object.name)) return;
+      faceMeshes.push(object);
+    });
+
+    const hasDetachedFaceRig = faceMeshes.some((object) => {
+      const bones = object.skeleton?.bones || [];
+      if (!bones.length) return false;
+      const boneSet = new Set(bones);
+      const roots = bones.filter((bone) => !boneSet.has(bone.parent));
+      return roots.length === 1 && String(roots[0].name || '').toLowerCase() === 'faceroot';
+    });
+
+    const hideFaceInsteadOfHead = !faceDefinition && hasDetachedFaceRig;
+    const hiddenNames = hideFaceInsteadOfHead ? faceNames : headNames;
+
+    root.traverse((object) => {
+      if (!object.isMesh) return;
+      if (!hiddenNames.has(object.name)) return;
+      object.visible = false;
+    });
+
+    return {
+      mode: hideFaceInsteadOfHead ? 'head-fallback' : 'face-overlay',
+      hiddenPart: hideFaceInsteadOfHead ? 'face' : 'head',
+      hasDetachedFaceRig,
+      hasFaceDefinition: Boolean(faceDefinition),
+    };
+  }
+
+  collectStats(root) {
+    let bones = 0;
+    let meshes = 0;
+    let skinnedMeshes = 0;
+    const materials = new Set();
+    let texturedMaterials = 0;
+
+    root.traverse((object) => {
+      if (object.isBone) bones += 1;
+      if (object.isMesh) {
+        meshes += 1;
+        const objectMaterials = Array.isArray(object.material) ? object.material : [object.material];
+        for (const material of objectMaterials) {
+          if (material?.uuid) materials.add(material.uuid);
+          if (material?.map) texturedMaterials += 1;
+        }
+      }
+      if (object.isSkinnedMesh) skinnedMeshes += 1;
+    });
+
+    const box = new THREE.Box3().setFromObject(root);
+    const size = box.isEmpty() ? new THREE.Vector3() : box.getSize(new THREE.Vector3());
+
+    return {
+      bones,
+      meshes,
+      skinnedMeshes,
+      materials: materials.size,
+      texturedMaterials,
+      animationCount: Array.isArray(root.animations) ? root.animations.length : 0,
+      size,
+    };
+  }
+
+  frameCurrentActor() {
+    this.updateActorPresentation({
+      recenterCamera: true,
+      recomputePlacement: true,
+      recomputeOrientation: true,
+    });
+  }
+
+  populateAnimationSelect(clips) {
+    const select = this.dom.animationSelect;
+    select.innerHTML = '';
+
+    if (!clips.length) {
+      const option = document.createElement('option');
+      option.value = '-1';
+      option.textContent = 'No embedded FBX clips';
+      select.appendChild(option);
+      select.disabled = true;
+      this.dom.togglePlayback.disabled = true;
+      this.dom.restartAnimation.disabled = true;
+      return;
+    }
+
+    select.disabled = false;
+    this.dom.togglePlayback.disabled = false;
+    this.dom.restartAnimation.disabled = false;
+
+    clips.forEach((clip, index) => {
+      const option = document.createElement('option');
+      option.value = String(index);
+      option.textContent = clip.name || `Clip ${index + 1}`;
+      select.appendChild(option);
+    });
+  }
+
+  playClip(index) {
+    if (!this.current?.mixer || !this.current.clips[index]) return;
+
+    const nextClip = this.current.clips[index];
+    const nextAction = this.current.mixer.clipAction(nextClip);
+
+    if (this.current.activeAction && this.current.activeAction !== nextAction) {
+      this.current.activeAction.fadeOut(0.18);
+    }
+
+    nextAction.reset();
+    nextAction.fadeIn(0.18);
+    nextAction.play();
+
+    this.current.activeAction = nextAction;
+    this.currentAnimationIndex = index;
+    this.isPlaying = true;
+    this.dom.animationSelect.value = String(index);
+    this.updatePlaybackButton();
+  }
+
+  togglePlayback() {
+    if (!this.current?.mixer || !this.current.activeAction) return;
+    this.isPlaying = !this.isPlaying;
+    this.updatePlaybackButton();
+  }
+
+  restartCurrentClip() {
+    if (!this.current?.activeAction) return;
+    this.current.activeAction.reset().play();
+    this.isPlaying = true;
+    this.updatePlaybackButton();
+  }
+
+  updatePlaybackButton() {
+    this.dom.togglePlayback.textContent = this.isPlaying ? 'Pause' : 'Play';
+  }
+
+  updateSpeedLabel() {
+    this.dom.speedLabel.textContent = `Speed ${this.playbackRate.toFixed(1)}x`;
+  }
+
+  buildPartItems(exportInfo) {
+    const actorParts = exportInfo?.sourceActor?.parts;
+    if (Array.isArray(actorParts) && actorParts.length) {
+      return actorParts.map((part) => ({
+        slot: `Part ${part.slot}`,
+        label: basenameFromPath(part.mesh) || part.section,
+        path: part.mesh || part.material || '-',
+      }));
+    }
+
+    return (exportInfo?.exportListEntries || []).map((item, index) => ({
+      slot: `Mesh ${index + 1}`,
+      label: basenameFromPath(item) || `Export ${index + 1}`,
+      path: item,
+    }));
+  }
+
+  setFacts(exportInfo, stats) {
+    const rows = exportInfo ? [
+      ['Export', exportInfo.name],
+      ['FBX', exportInfo.fbxFileName || 'missing'],
+      ['Body type', formatBodyType(exportInfo?.sourceActor?.bodyType)],
+      ['FaceDefIni', exportInfo?.sourceActor?.faceDefinition || 'blank'],
+      ['MetaFaceDef', exportInfo?.sourceActor?.metaFaceDefinition || 'blank'],
+      ['Face mode', this.current?.partVisibility?.mode === 'head-fallback'
+        ? 'head mesh fallback (detached face hidden)'
+        : 'exported face overlay'],
+      ['Actor parts', formatCount(exportInfo?.sourceActor?.partCount)],
+      ['Exported meshes', formatCount(exportInfo?.exportListEntries?.length)],
+      ['Textures', formatCount(exportInfo?.textureCount)],
+      ['Export sounds', formatCount(exportInfo?.soundCount)],
+      ['Bones', formatCount(stats?.bones)],
+      ['Skinned meshes', formatCount(stats?.skinnedMeshes)],
+      ['All meshes', formatCount(stats?.meshes)],
+      ['Materials', formatCount(stats?.materials)],
+      ['Textured mats', formatCount(stats?.texturedMaterials)],
+      ['FBX clips', formatCount(stats?.animationCount)],
+      ['Actions folder', exportInfo?.playerSupport?.actionsDir || 'not found'],
+      ['Player .ani files', formatCount(exportInfo?.playerSupport?.actionFileCount)],
+      ['Actor file', exportInfo?.sourceActorFilePath || 'not found'],
+    ] : [
+      ['Export', 'No actor loaded yet'],
+      ['Body type', '-'],
+      ['Bones', '-'],
+      ['FBX clips', '-'],
+    ];
+
+    this.dom.facts.innerHTML = rows.map(([key, value]) => `
+      <div class="key">${escapeHtml(key)}</div>
+      <div class="val">${escapeHtml(value)}</div>
+    `).join('');
+  }
+
+  setPartList(items) {
+    if (!items.length) {
+      this.dom.partList.innerHTML = '<div class="part-item"><span class="label">No actor parts loaded yet.</span></div>';
+      return;
+    }
+
+    this.dom.partList.innerHTML = items.map((item) => `
+      <div class="part-item">
+        <div><span class="slot">${escapeHtml(item.slot)}</span><span class="label">${escapeHtml(item.label)}</span></div>
+        <div class="path">${escapeHtml(item.path)}</div>
+      </div>
+    `).join('');
+  }
+
+  clearCurrentActor() {
+    if (!this.current) return;
+
+    if (this.current.activeAction) {
+      this.current.activeAction.stop();
+    }
+
+    if (this.current.mixer && this.current.root) {
+      this.current.mixer.stopAllAction();
+      this.current.mixer.uncacheRoot(this.current.root);
+    }
+
+    if (this.current.skeletonHelper) {
+      this.scene.remove(this.current.skeletonHelper);
+    }
+
+    if (this.current.presentation?.placementRoot) {
+      this.stage.remove(this.current.presentation.placementRoot);
+    } else if (this.current.root) {
+      this.stage.remove(this.current.root);
+    }
+
+    this.current = null;
+    this.currentStats = null;
+    this.currentAnimationIndex = -1;
+  }
+
+  setStatus(message, tone = '') {
+    this.dom.status.textContent = message;
+    this.dom.status.className = `status-chip ${tone}`.trim();
+  }
+
+  showLoading(message, progress = null) {
+    this.dom.loading.style.display = 'flex';
+    this.dom.loadingText.textContent = message;
+    const safeProgress = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0;
+    this.dom.loadingFill.style.width = `${Math.round(safeProgress * 100)}%`;
+  }
+
+  hideLoading() {
+    this.dom.loading.style.display = 'none';
+    this.dom.loadingFill.style.width = '0%';
+  }
+
+  onResize() {
+    this.camera.aspect = window.innerWidth / window.innerHeight;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+
+  animate() {
+    requestAnimationFrame(() => this.animate());
+
+    const delta = this.clock.getDelta();
+    if (this.current?.mixer && this.isPlaying) {
+      this.current.mixer.update(delta * this.playbackRate);
+      this.updateHeadAttachments();
+    }
+
+    if (this.current?.root) {
+      this.current.root.updateMatrixWorld(true);
+    }
+
+    this.controls.update();
+    this.renderer.render(this.scene, this.camera);
+  }
+}
+
+const app = new ActorViewerApp();
+app.init();

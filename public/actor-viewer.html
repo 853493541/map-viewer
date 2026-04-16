@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JX3 Actor Viewer</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      --global-header-height: 44px;
+      --global-header-offset: 54px;
+      --panel-bg: rgba(10, 14, 20, 0.88);
+      --panel-border: rgba(154, 184, 218, 0.26);
+      --panel-muted: #8ea2ba;
+      --panel-text: #dce7f4;
+      --panel-accent: #d6b77a;
+      --panel-accent-2: #5f88b7;
+      --panel-good: #8fcb86;
+      --panel-warn: #f0bb67;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: radial-gradient(circle at top, #142031 0%, #070b10 48%, #040507 100%);
+      color: var(--panel-text);
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    #global-header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: var(--global-header-height);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 12px;
+      background: rgba(6, 10, 15, 0.92);
+      border-bottom: 1px solid rgba(130, 170, 220, 0.28);
+      z-index: 110;
+      backdrop-filter: blur(6px);
+    }
+
+    #global-header .gh-title {
+      color: #d8e5f5;
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    #global-header .gh-links {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    #global-header .gh-link {
+      text-decoration: none;
+      color: #d5deea;
+      font-size: 12px;
+      border: 1px solid rgba(130, 170, 220, 0.35);
+      background: rgba(20, 30, 42, 0.85);
+      border-radius: 6px;
+      padding: 4px 10px;
+    }
+
+    #global-header .gh-link:hover {
+      border-color: rgba(180, 215, 250, 0.7);
+      background: rgba(66, 104, 146, 0.5);
+    }
+
+    #global-header .gh-link.current {
+      color: #fff;
+      border-color: rgba(180, 215, 250, 0.78);
+      background: rgba(70, 120, 180, 0.7);
+    }
+
+    #canvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    #sidebar {
+      position: fixed;
+      top: var(--global-header-offset);
+      left: 12px;
+      width: 360px;
+      max-height: calc(100vh - 66px);
+      overflow-y: auto;
+      padding: 12px;
+      background: linear-gradient(180deg, rgba(11, 16, 23, 0.95), rgba(9, 12, 18, 0.9));
+      border: 1px solid var(--panel-border);
+      border-radius: 16px;
+      box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+      backdrop-filter: blur(12px);
+      z-index: 40;
+    }
+
+    #resource-sidebar {
+      position: fixed;
+      top: var(--global-header-offset);
+      right: 12px;
+      width: 420px;
+      max-height: calc(100vh - 66px);
+      overflow-y: auto;
+      padding: 12px;
+      background: linear-gradient(180deg, rgba(14, 17, 22, 0.96), rgba(9, 12, 18, 0.92));
+      border: 1px solid rgba(229, 195, 120, 0.28);
+      border-radius: 18px;
+      box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+      backdrop-filter: blur(12px);
+      z-index: 40;
+    }
+
+    .panel {
+      margin-bottom: 12px;
+      padding: 12px;
+      border: 1px solid rgba(160, 188, 220, 0.12);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .panel:last-child { margin-bottom: 0; }
+
+    .panel h2 {
+      margin: 0 0 10px;
+      font-size: 13px;
+      letter-spacing: 0.3px;
+      color: var(--panel-accent);
+      text-transform: uppercase;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .panel-header h2 {
+      margin: 0;
+    }
+
+    .panel-action {
+      flex: 0 0 auto;
+      min-width: 112px;
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .row:last-child { margin-bottom: 0; }
+
+    .row.wrap { flex-wrap: wrap; }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .field-grid:last-child { margin-bottom: 0; }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .field label {
+      color: var(--panel-muted);
+      font-size: 10px;
+      letter-spacing: 0.35px;
+      text-transform: uppercase;
+    }
+
+    .panel-subtle {
+      margin-bottom: 10px;
+      color: var(--panel-muted);
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    .subpanel {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(124, 149, 181, 0.14);
+    }
+
+    .subpanel-title {
+      margin-bottom: 8px;
+      color: var(--panel-muted);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.35px;
+      text-transform: uppercase;
+    }
+
+    .compact-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+
+    select,
+    button,
+    input[type="range"],
+    input[type="number"] {
+      border-radius: 8px;
+      border: 1px solid rgba(134, 165, 200, 0.32);
+      background: rgba(15, 22, 31, 0.96);
+      color: var(--panel-text);
+      font: inherit;
+    }
+
+    select,
+    button {
+      height: 34px;
+    }
+
+    input[type="number"] {
+      width: 100%;
+      height: 34px;
+      padding: 0 10px;
+    }
+
+    select {
+      width: 100%;
+      padding: 0 10px;
+    }
+
+    button {
+      padding: 0 12px;
+      cursor: pointer;
+      transition: border-color 0.14s, background 0.14s;
+    }
+
+    button:hover {
+      border-color: rgba(191, 215, 245, 0.62);
+      background: rgba(52, 76, 106, 0.7);
+    }
+
+    button.secondary {
+      background: rgba(28, 37, 50, 0.9);
+      color: var(--panel-muted);
+    }
+
+    button.primary {
+      background: linear-gradient(180deg, rgba(83, 119, 170, 0.92), rgba(51, 80, 121, 0.96));
+      border-color: rgba(149, 186, 232, 0.66);
+      color: #fff;
+      font-weight: 600;
+    }
+
+    button.primary:hover {
+      background: linear-gradient(180deg, rgba(98, 141, 201, 0.96), rgba(58, 91, 138, 1));
+    }
+
+    .button-grow { flex: 1; }
+
+    .status-chip {
+      min-height: 34px;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(124, 149, 181, 0.22);
+      background: rgba(12, 18, 25, 0.76);
+      color: var(--panel-muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .status-chip.good { color: var(--panel-good); }
+    .status-chip.warn { color: var(--panel-warn); }
+
+    .check-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .check {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      background: rgba(16, 22, 30, 0.85);
+      border: 1px solid rgba(124, 149, 181, 0.18);
+      font-size: 12px;
+      color: var(--panel-muted);
+    }
+
+    .check input { margin: 0; }
+
+    .facts {
+      display: grid;
+      grid-template-columns: minmax(110px, 130px) 1fr;
+      gap: 7px 10px;
+      font-size: 12px;
+    }
+
+    .facts .key {
+      color: var(--panel-muted);
+    }
+
+    .facts .val {
+      color: var(--panel-text);
+      word-break: break-word;
+    }
+
+    .note {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: rgba(214, 183, 122, 0.08);
+      border: 1px solid rgba(214, 183, 122, 0.18);
+      color: #d8c49a;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .part-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+
+    .part-item {
+      padding: 8px 10px;
+      border-radius: 10px;
+      background: rgba(16, 22, 30, 0.85);
+      border: 1px solid rgba(124, 149, 181, 0.16);
+      font-size: 12px;
+    }
+
+    .part-item .slot {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 42px;
+      margin-right: 8px;
+      border-radius: 999px;
+      background: rgba(95, 136, 183, 0.18);
+      color: #b8d5f2;
+      font-size: 11px;
+      padding: 3px 8px;
+    }
+
+    .part-item .label {
+      color: #edf4ff;
+      font-weight: 600;
+    }
+
+    .part-item .path {
+      margin-top: 5px;
+      color: var(--panel-muted);
+      font-size: 11px;
+      line-height: 1.45;
+      word-break: break-all;
+    }
+
+    .selection-block {
+      margin-bottom: 10px;
+    }
+
+    .selection-block:last-child {
+      margin-bottom: 0;
+    }
+
+    .selection-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 220px;
+      overflow-y: auto;
+      padding-right: 2px;
+    }
+
+    .selection-list.compact {
+      max-height: 168px;
+    }
+
+    .selection-item {
+      width: 100%;
+      min-height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(124, 149, 181, 0.16);
+      background: rgba(16, 22, 30, 0.84);
+      color: #dce8f5;
+      text-align: left;
+    }
+
+    .selection-item:hover {
+      border-color: rgba(191, 215, 245, 0.42);
+      background: rgba(30, 43, 58, 0.9);
+    }
+
+    .selection-item.active {
+      border-color: rgba(255, 213, 92, 0.72);
+      background: rgba(56, 45, 18, 0.9);
+      color: #fff4cb;
+    }
+
+    .selection-item-title {
+      min-width: 0;
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .selection-item-meta {
+      flex: 0 0 auto;
+      color: var(--panel-muted);
+      font-size: 11px;
+    }
+
+    .selection-empty {
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px dashed rgba(124, 149, 181, 0.16);
+      background: rgba(15, 20, 27, 0.74);
+      color: var(--panel-muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .resource-toolbar {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .resource-summary {
+      margin-bottom: 10px;
+    }
+
+    .resource-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: calc(100vh - 190px);
+      overflow-y: auto;
+      padding-right: 2px;
+    }
+
+    .resource-item {
+      border-radius: 14px;
+      background: rgba(13, 18, 25, 0.92);
+      border: 1px solid rgba(124, 149, 181, 0.16);
+      overflow: hidden;
+      transition: border-color 0.14s, background 0.14s;
+    }
+
+    .resource-item.selected {
+      border-color: rgba(126, 213, 147, 0.72);
+      box-shadow: inset 0 0 0 1px rgba(126, 213, 147, 0.18);
+      background: rgba(16, 28, 21, 0.96);
+    }
+
+    .resource-item.hidden-item {
+      opacity: 0.92;
+    }
+
+    .resource-header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 8px;
+      align-items: center;
+      padding: 10px;
+      cursor: default;
+    }
+
+    .resource-item.selected .resource-header {
+      background: rgba(39, 88, 56, 0.42);
+    }
+
+    .resource-main {
+      width: 100%;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 2px;
+      text-align: left;
+      color: inherit;
+    }
+
+    .resource-title-wrap {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .resource-detail-toggle {
+      width: 30px;
+      height: 30px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      border: 1px solid rgba(124, 149, 181, 0.18);
+      background: rgba(18, 28, 36, 0.96);
+      color: #dbe7f3;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 0;
+    }
+
+    .resource-detail-toggle:hover {
+      border-color: rgba(191, 215, 245, 0.42);
+      background: rgba(38, 56, 74, 0.96);
+    }
+
+    .resource-title {
+      min-width: 0;
+      color: #edf4ff;
+      font-size: 14px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .resource-badge {
+      flex: 0 0 auto;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: rgba(255, 213, 92, 0.14);
+      border: 1px solid rgba(255, 213, 92, 0.24);
+      color: #ffd55c;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.25px;
+      text-transform: uppercase;
+    }
+
+    .resource-caret {
+      color: #b4c6da;
+      font-size: 12px;
+      line-height: 1;
+    }
+
+    .resource-row-checkbox {
+      width: 18px;
+      height: 18px;
+      margin: 0;
+      accent-color: #82d497;
+      cursor: pointer;
+    }
+
+    .resource-details {
+      padding: 0 10px 10px;
+      border-top: 1px solid rgba(124, 149, 181, 0.12);
+      background: rgba(9, 14, 20, 0.72);
+      max-height: none;
+      overflow: visible;
+    }
+
+    .resource-section {
+      margin-top: 10px;
+    }
+
+    .resource-section-head {
+      display: flex;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .resource-section-title {
+      color: var(--panel-muted);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.28px;
+      text-transform: uppercase;
+    }
+
+    .resource-components {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .resource-toggle-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .resource-component-row,
+    .resource-toggle-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      padding: 8px;
+      border-radius: 10px;
+      background: rgba(16, 22, 30, 0.78);
+      border: 1px solid rgba(124, 149, 181, 0.12);
+    }
+
+    .resource-component-name {
+      min-width: 0;
+      color: #dce8f5;
+      font-size: 12px;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+
+    .resource-toggle-name {
+      min-width: 0;
+      color: #dce8f5;
+      font-size: 12px;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+
+    .resource-item.selected .resource-title,
+    .resource-item.selected .resource-component-name,
+    .resource-item.selected .resource-toggle-name {
+      color: #f2fff4;
+    }
+
+    .resource-empty {
+      color: #8195ad;
+      font-size: 11px;
+    }
+
+    #hud {
+      position: fixed;
+      right: 12px;
+      bottom: 12px;
+      max-width: 340px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(8, 12, 18, 0.84);
+      border: 1px solid rgba(130, 170, 220, 0.22);
+      color: #9eb2ca;
+      font-size: 11px;
+      line-height: 1.55;
+      z-index: 35;
+      backdrop-filter: blur(6px);
+    }
+
+    #loading {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      background: rgba(0, 0, 0, 0.72);
+      z-index: 100;
+    }
+
+    #loading h1 {
+      margin: 0;
+      font-size: 24px;
+      color: #d7c28d;
+      letter-spacing: 1px;
+    }
+
+    #loading p {
+      margin: 8px 0 0;
+      color: #b8c6d6;
+      font-size: 13px;
+    }
+
+    #loading .bar {
+      margin-top: 12px;
+      width: 420px;
+      max-width: calc(100vw - 40px);
+      height: 6px;
+      background: rgba(255, 255, 255, 0.16);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    #loading .fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #5f88b7, #d6b77a);
+      transition: width 0.15s;
+    }
+
+    @media (max-width: 980px) {
+      #sidebar {
+        width: calc(100vw - 24px);
+        max-height: min(50vh, 540px);
+      }
+
+      #resource-sidebar {
+        left: 12px;
+        right: 12px;
+        top: auto;
+        bottom: 72px;
+        width: auto;
+        max-height: min(42vh, 420px);
+      }
+
+      .check-grid {
+        grid-template-columns: 1fr;
+      }
+
+      #hud {
+        left: 12px;
+        right: 12px;
+        max-width: none;
+      }
+    }
+
+    @media (max-width: 720px) {
+      #global-header {
+        height: auto;
+        min-height: var(--global-header-height);
+        padding-top: 6px;
+        padding-bottom: 6px;
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      #sidebar {
+        top: 78px;
+        max-height: calc(100vh - 170px);
+      }
+
+      #resource-sidebar {
+        bottom: 12px;
+        max-height: min(42vh, 360px);
+      }
+    }
+  </style>
+</head>
+<body>
+  <header id="global-header">
+    <div class="gh-title">JX3 Tool Pages</div>
+    <nav class="gh-links">
+      <a class="gh-link" href="index.html">Editor</a>
+      <a class="gh-link" href="export-reader.html">Export Reader</a>
+      <a class="gh-link current" href="actor-viewer.html" aria-current="page">Actor Viewer</a>
+      <a class="gh-link" href="mesh-inspector.html">Mesh Inspector</a>
+      <a class="gh-link" href="collision-test-mode.html">Collision Test</a>
+    </nav>
+  </header>
+
+  <canvas id="canvas"></canvas>
+
+  <aside id="sidebar">
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Avatars</h2>
+        <button class="secondary panel-action" id="open-export-folder" type="button">Open Folder</button>
+      </div>
+      <div class="row">
+        <div class="status-chip" id="export-root">Root: C:\SeasunGame\MovieEditor\source\fbx</div>
+      </div>
+      <div class="selection-block">
+        <div class="selection-list" id="actor-export-list"></div>
+      </div>
+      <div class="row">
+        <div class="status-chip" id="status">Waiting for MovieEditor exports...</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Clips</h2>
+      </div>
+      <div class="selection-block">
+        <div class="subpanel-title">Clip Sources</div>
+        <div class="selection-list compact" id="clip-source-list"></div>
+      </div>
+      <div class="selection-block">
+        <div class="subpanel-title">Clips</div>
+        <div class="selection-list compact" id="clip-list"></div>
+      </div>
+      <div class="row wrap">
+        <button class="primary button-grow" id="toggle-playback" type="button">Play</button>
+        <button class="secondary" id="restart-animation" type="button">Restart</button>
+      </div>
+      <div class="row">
+        <input id="speed" type="range" min="0.1" max="2.5" step="0.1" value="1">
+        <div class="status-chip" id="speed-label">Speed 1.0x</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Actor Facts</h2>
+      <div class="facts" id="facts"></div>
+      <div class="note" id="round2-note">
+        Round 2 target: replace placeholder avatars with MovieEditor-authored actors that carry the game body setup, real bones, and usable animation data.
+      </div>
+    </section>
+  </aside>
+
+  <aside id="resource-sidebar">
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Resources</h2>
+      </div>
+      <div class="row resource-summary">
+        <div class="status-chip" id="resource-status">Load an actor to inspect every mesh piece and manage groups.</div>
+      </div>
+      <div class="row resource-summary" hidden>
+        <div class="status-chip" id="resource-selection-summary">No resource selected.</div>
+      </div>
+      <div class="resource-list" id="resource-list"></div>
+    </section>
+  </aside>
+
+  <div id="hud">
+    Orbit camera with left mouse drag, zoom with the wheel, and pan with right mouse drag.<br>
+    The Resource Manager lives on the right side.<br>
+    Use the arrow to open each part, then use the checkboxes to hide or show parts, materials, and textures.<br>
+    This page is for actor export validation: skeleton presence, skinned mesh coverage, and embedded FBX clip playback.
+  </div>
+
+  <div hidden aria-hidden="true">
+    <select id="actor-select"></select>
+    <button id="refresh-exports" type="button"></button>
+    <button id="load-export" type="button"></button>
+    <button id="frame-actor" type="button"></button>
+    <select id="clip-source-select"></select>
+    <select id="animation-select"></select>
+    <input id="show-skeleton" type="checkbox">
+    <input id="show-grid" type="checkbox" checked>
+    <input id="show-floor" type="checkbox" checked>
+    <input id="auto-load-first" type="checkbox" checked>
+    <button id="resource-gizmo-translate" type="button"></button>
+    <button id="resource-gizmo-rotate" type="button"></button>
+    <button id="resource-gizmo-off" type="button"></button>
+    <div id="attachment-status"></div>
+    <input id="attachment-offset-x" type="number" value="0">
+    <input id="attachment-offset-y" type="number" value="0">
+    <input id="attachment-offset-z" type="number" value="0">
+    <input id="attachment-rot-x" type="number" value="0">
+    <input id="attachment-rot-y" type="number" value="0">
+    <input id="attachment-rot-z" type="number" value="0">
+    <input id="attachment-show-detached-head" type="checkbox" checked>
+    <input id="attachment-show-original-head" type="checkbox" checked>
+    <button id="attachment-reset" type="button"></button>
+    <button id="attachment-reset-pose" type="button"></button>
+    <button id="attachment-start-test" type="button"></button>
+    <button id="attachment-mode-neck" type="button"></button>
+    <button id="attachment-mode-replace" type="button"></button>
+    <button id="attachment-gizmo-translate" type="button"></button>
+    <button id="attachment-gizmo-rotate" type="button"></button>
+    <button id="attachment-gizmo-off" type="button"></button>
+    <div id="part-list"></div>
+  </div>
+
+  <div id="loading">
+    <h1>Loading Actor Export</h1>
+    <p id="loading-text">Preparing MovieEditor asset...</p>
+    <div class="bar"><div class="fill" id="loading-fill"></div></div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./lib/three.module.js",
+      "three/addons/": "./lib/three-addons/"
+    }
+  }
+  </script>
+  <script type="module" src="js/actor-viewer.js"></script>
+</body>
+</html>

@@ -24,6 +24,12 @@ This file records what we found, what mistakes we made, and what worked.
 - Cross-page access is important; global header links reduced friction.
 - Full Viewer runtime UI is currently paused to reduce maintenance burden.
 
+## 1.5 Actor pipeline facts
+- MovieEditor actors are part-based assemblies driven by `.actor` definitions, not single merged avatar meshes.
+- The local actor export notes confirm skin export is matched onto a standard body-type skeleton (`F1`, `F2`, `M1`, `M2`).
+- Current MovieEditor notes say only the bip skeleton skin data is exported; physical bones and facial bones are not fully exported.
+- The inspected local install exposes `.ani` action files under the editor-tool MovieEditor source tree; no `.tani` files were found in the inspected local SeaSun install.
+
 ## 2. Mistakes We Made
 
 ## 2.1 Technical mistakes
