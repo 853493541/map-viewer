@@ -4,9 +4,16 @@ This is the single internal instruction file for the repository.
 
 ## 1. Current Product State
 
+## 1.1 Round 2 Actor Goal
+
+- Replace placeholder avatar swaps with the actual game-authored actor pipeline.
+- Use MovieEditor actor exports as the validation path for assembled body parts, real skeleton binding, and usable animation playback.
+- Target future runtime support for avatar movement, walking, jumping, and animation-state selection on top of that actor data instead of static mesh replacement.
+
 The project is now focused on these active pages:
 - Editor: public/index.html
 - Export Reader (main runtime validation page): public/export-reader.html
+- Actor Viewer (MovieEditor actor export validator): public/actor-viewer.html
 - Mesh Inspector: public/mesh-inspector.html
 - Collision Test (single-mesh validator): public/collision-test-mode.html
 - Full Viewer is intentionally paused: public/full-viewer.html
@@ -69,10 +76,12 @@ node server.js
 ## 4. Main APIs
 
 - GET /api/full-exports
+- GET /api/actor-exports
 - POST /api/export-full
 - POST /api/export-full-with-collision
 - POST /api/export-regional-with-collision
 - GET/HEAD /full-exports/<package>/...
+- GET/HEAD /movie-editor-assets/<path>
 
 Note: export-full-with-collision and export-regional-with-collision are sidecar-only export routes.
 
@@ -81,11 +90,13 @@ Note: export-full-with-collision and export-regional-with-collision are sidecar-
 - public/
   - index.html
   - export-reader.html
+  - actor-viewer.html
   - mesh-inspector.html
   - collision-test-mode.html
   - full-viewer.html
   - js/
     - app.js
+    - actor-viewer.js
     - export-reader.js
     - collision-test-mode.js
     - full-viewer.js
@@ -116,12 +127,25 @@ If any other guide is reintroduced, it must not conflict with these files.
 ## 8. Change Discipline
 
 Before shipping major changes:
+0. Before editing any file, read the current on-disk file content first so edits are based on the newest version, not stale cached context.
 1. Confirm sidecar-only collision behavior is still enforced.
 2. Confirm page header navigation still links all active pages.
 3. Confirm local startup command still works.
 4. Keep docs synchronized with actual behavior.
 
-## 9. Git Tracking Policy (standalone runtime, no large assets)
+## 9. Reporting Format Requirement
+
+For this repository's task reports and final user-facing summaries:
+- When the user asks multiple numbered questions or points, answer each one separately.
+- Prefer chart/table style over long paragraphs whenever the task includes multiple findings or debugging results.
+- For each major point, include three parts when applicable:
+  - Answer
+  - What was done
+  - What to test
+- Do not collapse multiple user questions into one blended explanation.
+- Final reports should be easy to scan quickly and should favor structured comparison tables when there are multiple findings, hypotheses, or fixes.
+
+## 10. Git Tracking Policy (standalone runtime, no large assets)
 
 Track these:
 - App/server source: `public/*.html`, `public/js/**`, `server.js`, `serve.py`, `tools/**`
