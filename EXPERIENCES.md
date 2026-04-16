@@ -30,6 +30,12 @@ This file records what we found, what mistakes we made, and what worked.
 - Current MovieEditor notes say only the bip skeleton skin data is exported; physical bones and facial bones are not fully exported.
 - The inspected local install exposes `.ani` action files under the editor-tool MovieEditor source tree; no `.tani` files were found in the inspected local SeaSun install.
 
+## 1.6 VERY IMPORTANT: detached face and hat follow root cause
+- The face and hat follow system in `public/js/actor-viewer.js` already existed, but it stayed inactive until attachment state was initialized during actor load.
+- The real fix was to set `this.current.attachments = this.createHeadAttachments(exportInfo, root)` inside `onFbxLoaded()` and run `this.updateHeadAttachments()` once immediately.
+- We should not assume a missing external MovieEditor rule first when detached parts look frozen; first verify that runtime attachment initialization is actually wired.
+- MovieEditor import/export docs describe body bip-skeleton action import/export, and face has separate face-animation assets/tables, but we did not find a separate hat-follow instruction file.
+
 ## 2. Mistakes We Made
 
 ## 2.1 Technical mistakes
@@ -37,6 +43,7 @@ This file records what we found, what mistakes we made, and what worked.
 - Tried aggressive normal recompute paths that damaged hard edges.
 - Mixed fallback collision paths, causing inconsistent movement and validation results.
 - Relied on stale assumptions in docs after code moved to sidecar-only policy.
+- Spent time searching for an external fix for detached face and hat movement before confirming that the existing viewer attachment system was never initialized on load.
 
 ## 2.2 Documentation mistakes
 - Kept multiple overlapping guides with conflicting statements.
@@ -58,6 +65,7 @@ This file records what we found, what mistakes we made, and what worked.
 - Running diagnostics after each patch reduced regressions.
 - Consolidating docs reduced confusion and maintenance overhead.
 - Keeping one canonical instruction file plus one external guide made handoff easier.
+- Reading the current on-disk file before editing avoided patching stale or inactive code paths.
 
 ## 4. Current Best Practices
 
@@ -66,6 +74,7 @@ This file records what we found, what mistakes we made, and what worked.
 3. Prefer removing unstable fallback paths over hiding them.
 4. Keep startup flow simple: one command from repo root.
 5. If behavior is paused, say so explicitly in UI and docs.
+6. When detached actor parts look frozen, check load-time attachment initialization before hunting for missing asset instructions.
 
 ## 5. Known Remaining Risks
 
