@@ -1,0 +1,118 @@
+115
+BoneSysParent  Faceroot
+Faceroot  Face
+Face  a_L_Cheek1  a_L_Ear  a_L_InfraorbitalFurrow2  a_L_InfraorbitalFurrow1  a_L_orbicularis_D  a_L_orbicularis_U2  a_L_orbicularis_U1  a_L_orbicularis_U  a_M_Chin  a_M_orbicularis_D  a_M_RootOfTheNose  a_OralCavity  a_R_Cheek1  a_R_Ear  a_R_InfraorbitalFurrow2  a_R_InfraorbitalFurrow1  a_R_orbicularis_D  a_R_orbicularis_U2  a_R_orbicularis_U1  a_R_orbicularis_U  b_L_Cheek  b_L_EyebrowGrp  b_L_EyeGrp  b_L_FrontalRegion  b_L_InfraorbitalFurrow  b_L_InfraorbitalTriangel  b_M_BridgeOfTheNose  b_M_Glabella  b_NoseTipGrp  b_R_Cheek  b_R_EyebrowGrp  b_R_EyeGrp  b_R_FrontalRegion  b_R_InfraorbitalFurrow  b_R_InfraorbitalTriangel  b_UpperMouthGrp  b_UpperTeeth  b_L_Temple  b_R_Temple
+a_L_Cheek1
+a_L_Ear
+a_L_InfraorbitalFurrow2
+a_L_InfraorbitalFurrow1
+a_L_orbicularis_D
+a_L_orbicularis_U2
+a_L_orbicularis_U1
+a_L_orbicularis_U
+a_M_Chin  a_M_ChinBottom  a_M_Tongue  b_L_Chin  b_L_ChinEdge  b_LowerMouthGrp  b_M_Chin  b_R_Chin  b_R_ChinEdge  b_LowerTeeth
+a_M_orbicularis_D
+a_M_RootOfTheNose
+a_OralCavity
+a_R_Cheek1
+a_R_Ear
+a_R_InfraorbitalFurrow2
+a_R_InfraorbitalFurrow1
+a_R_orbicularis_D
+a_R_orbicularis_U2
+a_R_orbicularis_U1
+a_R_orbicularis_U
+b_L_Cheek
+b_L_EyebrowGrp  b_L_SupraorbitalArea3  b_L_SupraorbitalArea2  b_L_SupraorbitalArea1  b_L_SupraorbitalArea
+b_L_EyeGrp  b_L_EyeEdge  b_L_LowerEyelid2  b_L_LowerEyelid1  b_L_LowerEyelid  b_L_TearTrough  b_L_UpperEyelid2  b_L_UpperEyelid1  b_L_UpperEyelid  Eye_L
+b_L_FrontalRegion
+b_L_InfraorbitalFurrow
+b_L_InfraorbitalTriangel
+b_M_BridgeOfTheNose
+b_M_Glabella
+b_NoseTipGrp  b_L_NoseEdge  b_M_NoseBottom  b_M_TipOfTheNose  b_R_NoseEdge
+b_R_Cheek
+b_R_EyebrowGrp  b_R_SupraorbitalArea3  b_R_SupraorbitalArea2  b_R_SupraorbitalArea1  b_R_SupraorbitalArea
+b_R_EyeGrp  b_R_EyeEdge  b_R_LowerEyelid2  b_R_LowerEyelid1  b_R_LowerEyelid  b_R_TearTrough  b_R_UpperEyelid2  b_R_UpperEyelid1  b_R_UpperEyelid  Eye_R
+b_R_FrontalRegion
+b_R_InfraorbitalFurrow
+b_R_InfraorbitalTriangel
+b_UpperMouthGrp  b_L_modiolus  b_L_Mouth_U1  b_L_Mouth_U  b_L_VermilionBorder_U  b_M_Mouth_U  b_M_philtrum  b_R_modiolus  b_R_Mouth_U1  b_R_Mouth_U  b_R_VermilionBorder_U
+b_UpperTeeth
+b_L_Temple
+b_R_Temple
+a_M_ChinBottom
+a_M_Tongue  a_M_Tongue1
+b_L_Chin
+b_L_ChinEdge
+b_LowerMouthGrp  b_L_Mouth_D1  b_L_Mouth_D  b_L_VermilionBorder_D  b_M_Mouth_D  b_M_VermilionBorder_D  b_R_Mouth_D1  b_R_Mouth_D  b_R_VermilionBorder_D
+b_M_Chin
+b_R_Chin
+b_R_ChinEdge
+b_LowerTeeth
+b_L_SupraorbitalArea3
+b_L_SupraorbitalArea2
+b_L_SupraorbitalArea1
+b_L_SupraorbitalArea
+b_L_EyeEdge
+b_L_LowerEyelid2  b_L_LowerEyeLash2
+b_L_LowerEyelid1  b_L_LowerEyeLash1
+b_L_LowerEyelid  b_L_LowerEyeLash
+b_L_TearTrough
+b_L_UpperEyelid2  b_L_UpperEyeLash2
+b_L_UpperEyelid1  b_L_UpperEyeLash1
+b_L_UpperEyelid  b_L_UpperEyeLash
+Eye_L  b_L_Pupil
+b_L_NoseEdge
+b_M_NoseBottom
+b_M_TipOfTheNose
+b_R_NoseEdge
+b_R_SupraorbitalArea3
+b_R_SupraorbitalArea2
+b_R_SupraorbitalArea1
+b_R_SupraorbitalArea
+b_R_EyeEdge
+b_R_LowerEyelid2  b_R_LowerEyeLash2
+b_R_LowerEyelid1  b_R_LowerEyeLash1
+b_R_LowerEyelid  b_R_LowerEyeLash
+b_R_TearTrough
+b_R_UpperEyelid2  b_R_UpperEyeLash2
+b_R_UpperEyelid1  b_R_UpperEyeLash1
+b_R_UpperEyelid  b_R_UpperEyeLash
+Eye_R  b_R_Pupil
+b_L_modiolus
+b_L_Mouth_U1
+b_L_Mouth_U
+b_L_VermilionBorder_U
+b_M_Mouth_U
+b_M_philtrum
+b_R_modiolus
+b_R_Mouth_U1
+b_R_Mouth_U
+b_R_VermilionBorder_U
+a_M_Tongue1  a_M_Tongue2
+b_L_Mouth_D1
+b_L_Mouth_D
+b_L_VermilionBorder_D
+b_M_Mouth_D
+b_M_VermilionBorder_D
+b_R_Mouth_D1
+b_R_Mouth_D
+b_R_VermilionBorder_D
+b_L_LowerEyeLash2
+b_L_LowerEyeLash1
+b_L_LowerEyeLash
+b_L_UpperEyeLash2
+b_L_UpperEyeLash1
+b_L_UpperEyeLash
+b_L_Pupil
+b_R_LowerEyeLash2
+b_R_LowerEyeLash1
+b_R_LowerEyeLash
+b_R_UpperEyeLash2
+b_R_UpperEyeLash1
+b_R_UpperEyeLash
+b_R_Pupil
+a_M_Tongue2
+1
+0

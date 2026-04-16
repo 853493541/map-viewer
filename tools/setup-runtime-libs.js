@@ -79,6 +79,31 @@ function main() {
     join(PUBLIC_LIB, 'three-addons', 'controls', 'TransformControls.js')
   );
 
+  copyFileChecked(
+    join(THREE_ROOT, 'examples', 'jsm', 'controls', 'OrbitControls.js'),
+    join(PUBLIC_LIB, 'three-addons', 'controls', 'OrbitControls.js')
+  );
+
+  copyFileChecked(
+    join(THREE_ROOT, 'examples', 'jsm', 'loaders', 'FBXLoader.js'),
+    join(PUBLIC_LIB, 'three-addons', 'loaders', 'FBXLoader.js')
+  );
+
+  copyFileChecked(
+    join(THREE_ROOT, 'examples', 'jsm', 'libs', 'fflate.module.js'),
+    join(PUBLIC_LIB, 'three-addons', 'libs', 'fflate.module.js')
+  );
+
+  copyFileChecked(
+    join(THREE_ROOT, 'examples', 'jsm', 'curves', 'NURBSCurve.js'),
+    join(PUBLIC_LIB, 'three-addons', 'curves', 'NURBSCurve.js')
+  );
+
+  copyFileChecked(
+    join(THREE_ROOT, 'examples', 'jsm', 'curves', 'NURBSUtils.js'),
+    join(PUBLIC_LIB, 'three-addons', 'curves', 'NURBSUtils.js')
+  );
+
   copyDirChecked(
     join(BVH_ROOT, 'src'),
     join(PUBLIC_LIB, 'three-mesh-bvh', 'src')

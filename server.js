@@ -20,7 +20,7 @@ import {
   readdirSync,
 } from 'fs';
 import { spawn } from 'child_process';
-import { join, extname, dirname, resolve, basename } from 'path';
+import { join, extname, dirname, resolve, basename, relative } from 'path';
 import { fileURLToPath } from 'url';
 import os from 'os';
 import { generateCollisionDataForExport } from './tools/collision-generator.js';
@@ -29,6 +29,10 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const PUBLIC_DIR = resolve(join(__dirname, 'public'));
 const PORT = Number(process.env.PORT) || 3015;
 const DESKTOP_EXPORT_ROOT = resolve(join(os.homedir(), 'Desktop', 'JX3FullExports'));
+const MOVIE_EDITOR_ROOT = resolve('C:/SeasunGame/MovieEditor');
+const MOVIE_EDITOR_SOURCE_ROOT = join(MOVIE_EDITOR_ROOT, 'source');
+const MOVIE_EDITOR_EXPORT_ROOT = join(MOVIE_EDITOR_SOURCE_ROOT, 'fbx');
+const RESOURCE_GROUPS_FILE = resolve(join(__dirname, 'tools', 'actor-resource-groups.json'));
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -37,13 +41,18 @@ const MIME_TYPES = {
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.bin': 'application/octet-stream',
+  '.fbx': 'application/octet-stream',
   '.glb': 'model/gltf-binary',
   '.gltf': 'model/gltf+json',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.dds': 'application/octet-stream',
+  '.ani': 'application/octet-stream',
+  '.actor': 'text/plain; charset=utf-8',
+  '.actmtl': 'application/octet-stream',
   '.ico': 'image/x-icon',
+  '.lua': 'text/plain; charset=utf-8',
   '.txt': 'text/plain; charset=utf-8',
 };
 
@@ -58,6 +67,217 @@ function safePathUnder(root, relPath) {
   return abs;
 }
 
+function encodeUrlPathSegments(pathLike) {
+  return String(pathLike || '')
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+}
+
+function readTextUtf8(filePath, fallback = '') {
+  if (!existsSync(filePath)) return fallback;
+  return readFileSync(filePath, 'utf8');
+}
+
+function listDirectoryFileNames(dirPath) {
+  if (!dirPath || !existsSync(dirPath) || !statSync(dirPath).isDirectory()) return [];
+  return readdirSync(dirPath, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
+function listFilesRecursive(dirPath, allowedExtensions = null, prefix = '') {
+  if (!dirPath || !existsSync(dirPath) || !statSync(dirPath).isDirectory()) return [];
+
+  const out = [];
+  const normalizedAllowed = allowedExtensions instanceof Set
+    ? new Set([...allowedExtensions].map((ext) => String(ext).toLowerCase()))
+    : null;
+
+  for (const entry of readdirSync(dirPath, { withFileTypes: true })) {
+    const relPath = prefix ? `${prefix}/${entry.name}` : entry.name;
+    const absPath = join(dirPath, entry.name);
+
+    if (entry.isDirectory()) {
+      out.push(...listFilesRecursive(absPath, normalizedAllowed, relPath));
+      continue;
+    }
+
+    if (!entry.isFile()) continue;
+    const ext = extname(entry.name).toLowerCase();
+    if (normalizedAllowed && !normalizedAllowed.has(ext)) continue;
+    out.push(relPath.replace(/\\/g, '/'));
+  }
+
+  return out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
+function parseIniSections(text) {
+  const sections = new Map();
+  let currentSection = null;
+
+  for (const rawLine of String(text || '').split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith(';') || line.startsWith('#')) continue;
+
+    const sectionMatch = /^\[(.+)\]$/.exec(line);
+    if (sectionMatch) {
+      currentSection = sectionMatch[1].trim();
+      if (!sections.has(currentSection)) sections.set(currentSection, {});
+      continue;
+    }
+
+    const eqIndex = line.indexOf('=');
+    if (eqIndex < 0) continue;
+
+    const key = line.slice(0, eqIndex).trim();
+    const value = line.slice(eqIndex + 1).trim();
+    const targetSection = currentSection || 'ROOT';
+    if (!sections.has(targetSection)) sections.set(targetSection, {});
+    sections.get(targetSection)[key] = value;
+  }
+
+  return sections;
+}
+
+function inferPlayerBodyType(dependModel) {
+  const match = /source[\\/]+player[\\/]+(f1|f2|m1|m2)[\\/]/i.exec(String(dependModel || ''));
+  return match ? match[1].toUpperCase() : null;
+}
+
+function parseActorFileSummary(actorText) {
+  const sections = parseIniSections(actorText);
+  const root = sections.get('ROOT') || {};
+  const parts = [];
+
+  for (const [sectionName, values] of sections.entries()) {
+    if (!/^Part\d+$/i.test(sectionName)) continue;
+    if (String(values.Have || '0') !== '1') continue;
+
+    parts.push({
+      slot: Number(sectionName.replace(/\D+/g, '')) || 0,
+      section: sectionName,
+      mesh: values.Mesh || '',
+      material: values.Mtl || '',
+      detail: values.Detail || '',
+    });
+  }
+
+  parts.sort((a, b) => a.slot - b.slot);
+
+  return {
+    dependModel: root.DependModel || '',
+    faceDefinition: root.FaceDefIni || '',
+    metaFaceDefinition: root.MetaFaceDefJson || '',
+    reDress: String(root.bReDress || '0') === '1',
+    declaredPartSlots: Number(root.PartNum) || parts.length,
+    declaredBindSlots: Number(root.BindNum) || 0,
+    bodyType: inferPlayerBodyType(root.DependModel),
+    partCount: parts.length,
+    parts,
+  };
+}
+
+function findMovieEditorActorFile(exportName) {
+  const candidates = [
+    join(MOVIE_EDITOR_SOURCE_ROOT, `${exportName}.actor`),
+    join(MOVIE_EDITOR_SOURCE_ROOT, 'Actor', `${exportName}.actor`),
+  ];
+
+  for (const filePath of candidates) {
+    if (existsSync(filePath) && statSync(filePath).isFile()) {
+      return filePath;
+    }
+  }
+
+  return null;
+}
+
+function buildMovieEditorPlayerSupport(bodyType) {
+  const normalized = String(bodyType || '').trim().toUpperCase();
+  if (!/^[FM][12]$/.test(normalized)) return null;
+
+  const lower = normalized.toLowerCase();
+  const playerDir = join(MOVIE_EDITOR_SOURCE_ROOT, 'player', normalized);
+  const actionsDir = join(playerDir, '动作');
+
+  return {
+    bodyType: normalized,
+    playerDir,
+    exportSkeletonPath: existsSync(join(playerDir, `${lower}.fbx`))
+      ? join(playerDir, `${lower}.fbx`)
+      : null,
+    standardSkeletonPath: existsSync(join(playerDir, `${normalized}-标准骨骼.FBX`))
+      ? join(playerDir, `${normalized}-标准骨骼.FBX`)
+      : null,
+    importTestPath: existsSync(join(playerDir, `${normalized}动作导入测试.FBX`))
+      ? join(playerDir, `${normalized}动作导入测试.FBX`)
+      : null,
+    actionsDir: existsSync(actionsDir) ? actionsDir : null,
+    actionFileCount: listDirectoryFileNames(actionsDir)
+      .filter((name) => name.toLowerCase().endsWith('.ani'))
+      .length,
+  };
+}
+
+function buildMovieEditorAssetUrl(absPath) {
+  return `/movie-editor-assets/${encodeUrlPathSegments(relative(MOVIE_EDITOR_ROOT, absPath))}`;
+}
+
+function listMovieEditorActorExports() {
+  if (!existsSync(MOVIE_EDITOR_EXPORT_ROOT) || !statSync(MOVIE_EDITOR_EXPORT_ROOT).isDirectory()) {
+    return [];
+  }
+
+  const exportDirs = readdirSync(MOVIE_EDITOR_EXPORT_ROOT, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+  return exportDirs.map((folderName) => {
+    const exportDir = join(MOVIE_EDITOR_EXPORT_ROOT, folderName);
+    const files = listDirectoryFileNames(exportDir);
+    const fbxFileName = files.find((name) => name.toLowerCase().endsWith('.fbx')) || null;
+    const exportListPath = join(exportDir, 'export_list.txt');
+    const exportListEntries = readTextUtf8(exportListPath, '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const textureDir = join(exportDir, 'tex');
+    const textureFiles = listDirectoryFileNames(textureDir);
+    const soundFiles = listFilesRecursive(exportDir, new Set(['.wav', '.mp3', '.ogg', '.wem', '.bnk', '.fsb', '.cue']));
+    const actorFilePath = findMovieEditorActorFile(folderName);
+    const actMtlPath = join(MOVIE_EDITOR_SOURCE_ROOT, `${folderName}.ActMtl`);
+    const sourceActor = actorFilePath
+      ? parseActorFileSummary(readTextUtf8(actorFilePath, ''))
+      : null;
+
+    return {
+      name: folderName,
+      exportDir,
+      fbxFileName,
+      fbxUrl: fbxFileName ? buildMovieEditorAssetUrl(join(exportDir, fbxFileName)) : null,
+      exportListPath: existsSync(exportListPath) ? exportListPath : null,
+      exportListUrl: existsSync(exportListPath) ? buildMovieEditorAssetUrl(exportListPath) : null,
+      exportListEntries,
+      textureDir: existsSync(textureDir) ? textureDir : null,
+      textureBaseUrl: existsSync(textureDir) ? buildMovieEditorAssetUrl(textureDir) : null,
+      textureCount: textureFiles.length,
+      textureFiles,
+      soundCount: soundFiles.length,
+      soundFiles,
+      sourceActorFilePath: actorFilePath,
+      sourceActor,
+      hasActMtl: existsSync(actMtlPath),
+      actMtlPath: existsSync(actMtlPath) ? actMtlPath : null,
+      playerSupport: sourceActor ? buildMovieEditorPlayerSupport(sourceActor.bodyType) : null,
+    };
+  });
+}
+
 function readJsonUtf8(filePath, fallback = null) {
   if (!existsSync(filePath)) return fallback;
   return JSON.parse(readFileSync(filePath, 'utf8'));
@@ -66,6 +286,57 @@ function readJsonUtf8(filePath, fallback = null) {
 function writeJson(filePath, obj) {
   ensureDir(dirname(filePath));
   writeFileSync(filePath, JSON.stringify(obj, null, 2), 'utf8');
+}
+
+function readResourceGroupStore() {
+  const store = readJsonUtf8(RESOURCE_GROUPS_FILE, { actors: {} });
+  if (!store || typeof store !== 'object') return { actors: {} };
+  if (!store.actors || typeof store.actors !== 'object') return { actors: {} };
+  return store;
+}
+
+function sanitizeResourceGroupsPayload(payload) {
+  return (Array.isArray(payload?.groups) ? payload.groups : [])
+    .map((group, index) => {
+      const members = [...new Set((Array.isArray(group?.members) ? group.members : [])
+        .map((member) => String(member || '').trim())
+        .filter(Boolean))];
+
+      return {
+        id: String(group?.id || `group-${index + 1}`),
+        name: String(group?.name || `Group ${index + 1}`),
+        members,
+      };
+    })
+    .filter((group) => group.members.length >= 2);
+}
+
+function readActorResourceGroups(actorName) {
+  const actor = String(actorName || '').trim();
+  if (!actor) return [];
+  const store = readResourceGroupStore();
+  return Array.isArray(store.actors?.[actor]) ? store.actors[actor] : [];
+}
+
+function writeActorResourceGroups(actorName, payload) {
+  const actor = String(actorName || '').trim();
+  if (!actor) {
+    throw new Error('Actor name is required');
+  }
+
+  const store = readResourceGroupStore();
+  if (!store.actors || typeof store.actors !== 'object') {
+    store.actors = {};
+  }
+
+  store.actors[actor] = sanitizeResourceGroupsPayload(payload);
+  writeJson(RESOURCE_GROUPS_FILE, store);
+
+  return {
+    actor,
+    groups: store.actors[actor],
+    filePath: RESOURCE_GROUPS_FILE,
+  };
 }
 
 function sanitizeName(name, fallback = 'full-map') {
@@ -883,6 +1154,79 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  // API: enumerate MovieEditor actor exports.
+  if (method === 'GET' && urlPath === '/api/actor-exports') {
+    try {
+      sendJson(res, 200, {
+        available: existsSync(MOVIE_EDITOR_EXPORT_ROOT) && statSync(MOVIE_EDITOR_EXPORT_ROOT).isDirectory(),
+        root: MOVIE_EDITOR_EXPORT_ROOT,
+        exports: listMovieEditorActorExports(),
+      });
+    } catch (err) {
+      sendJson(res, 500, { error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'GET' && urlPath === '/api/open-actor-export-folder') {
+    try {
+      const exportName = String(reqUrl.searchParams.get('name') || '').trim();
+      const exportInfo = exportName
+        ? listMovieEditorActorExports().find((entry) => entry.name === exportName)
+        : null;
+      const folderPath = exportInfo?.exportDir || MOVIE_EDITOR_EXPORT_ROOT;
+
+      if (!folderPath || !existsSync(folderPath) || !statSync(folderPath).isDirectory()) {
+        sendJson(res, 404, { ok: false, error: 'Actor export folder not found' });
+        return;
+      }
+
+      const child = spawn('explorer.exe', [folderPath], { detached: true, stdio: 'ignore' });
+      child.unref();
+      sendJson(res, 200, { ok: true, opened: folderPath, exportName: exportInfo?.name || '' });
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'GET' && urlPath === '/api/resource-groups') {
+    try {
+      const actor = String(reqUrl.searchParams.get('actor') || '').trim();
+      if (!actor) {
+        sendJson(res, 400, { ok: false, error: 'actor is required' });
+        return;
+      }
+
+      sendJson(res, 200, {
+        ok: true,
+        actor,
+        filePath: RESOURCE_GROUPS_FILE,
+        groups: readActorResourceGroups(actor),
+      });
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'POST' && urlPath === '/api/resource-groups') {
+    try {
+      const actor = String(reqUrl.searchParams.get('actor') || '').trim();
+      if (!actor) {
+        sendJson(res, 400, { ok: false, error: 'actor is required' });
+        return;
+      }
+
+      const payload = await readBodyJson(req);
+      const saved = writeActorResourceGroups(actor, payload);
+      sendJson(res, 200, { ok: true, ...saved });
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
   // API: mesh inspector list meshes for a selected data root.
   if (method === 'GET' && urlPath === '/api/meshes') {
     try {
@@ -1049,6 +1393,23 @@ const server = createServer(async (req, res) => {
   }
 
   if (urlPath.startsWith('/full-exports/')) {
+    sendText(res, 405, 'Method not allowed');
+    return;
+  }
+
+  // Serve external MovieEditor assets under /movie-editor-assets/...
+  if ((method === 'GET' || method === 'HEAD') && urlPath.startsWith('/movie-editor-assets/')) {
+    const rel = urlPath.replace('/movie-editor-assets/', '');
+    const abs = safePathUnder(MOVIE_EDITOR_ROOT, rel);
+    if (!abs) {
+      sendText(res, 403, 'Forbidden');
+      return;
+    }
+    serveFile(res, abs, method === 'HEAD');
+    return;
+  }
+
+  if (urlPath.startsWith('/movie-editor-assets/')) {
     sendText(res, 405, 'Method not allowed');
     return;
   }
