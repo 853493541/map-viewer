@@ -142,6 +142,8 @@ class ActorViewerApp {
       loadExport: document.getElementById('load-export'),
       frameActor: document.getElementById('frame-actor'),
       status: document.getElementById('status'),
+      clipSourceTabExports: document.getElementById('clip-source-tab-exports'),
+      clipSourceTabRepo: document.getElementById('clip-source-tab-repo'),
       clipSourceSelect: document.getElementById('clip-source-select'),
       clipSourceList: document.getElementById('clip-source-list'),
       animationSelect: document.getElementById('animation-select'),
@@ -229,7 +231,10 @@ class ActorViewerApp {
     this.isPlaying = false;
     this.hasInitialLoad = false;
     this.activeLoadState = null;
+    this.repoClipSources = [];
     this.sharedClipLibraries = new Map();
+    this.activeClipSourceTab = 'exports';
+    this.currentClipSourceTab = 'exports';
     this.currentClipSourceName = '';
     this.isScanningClipSources = false;
     this.clipSourceScanToken = 0;
@@ -260,6 +265,7 @@ class ActorViewerApp {
 
     this.setupScene();
     this.bindEvents();
+    this.updateClipSourceTabButtons();
     this.updateSpeedLabel();
     this.setStatus('Scanning MovieEditor exports...', 'warn');
     this.setFacts(null, null);
@@ -340,6 +346,14 @@ class ActorViewerApp {
       this.frameCurrentActor();
     });
 
+    this.dom.clipSourceTabExports.addEventListener('click', () => {
+      this.setClipSourceTab('exports');
+    });
+
+    this.dom.clipSourceTabRepo.addEventListener('click', () => {
+      this.setClipSourceTab('repoclips');
+    });
+
     this.dom.animationSelect.addEventListener('change', () => {
       const index = Number(this.dom.animationSelect.value);
       if (Number.isFinite(index)) {
@@ -355,12 +369,12 @@ class ActorViewerApp {
 
     if (this.dom.clipSourceList && this.dom.clipSourceSelect) {
       this.dom.clipSourceList.addEventListener('click', (event) => {
-        const button = event.target.closest('[data-clip-source-name]');
+        const button = event.target.closest('[data-clip-source-value]');
         if (!button) return;
 
-        const exportName = String(button.getAttribute('data-clip-source-name') || '');
-        if (!exportName || exportName === this.dom.clipSourceSelect.value) return;
-        this.dom.clipSourceSelect.value = exportName;
+        const clipSourceValue = String(button.getAttribute('data-clip-source-value') || '');
+        if (!clipSourceValue || clipSourceValue === this.dom.clipSourceSelect.value) return;
+        this.dom.clipSourceSelect.value = clipSourceValue;
         this.renderClipSourceList();
         this.applySelectedClipSource({ preserveCurrentIndex: false });
       });
@@ -1649,8 +1663,30 @@ function formatCount(value) {
 
 */
   async init() {
+    await this.refreshRepoClips();
     await this.refreshExports({ preserveSelection: false });
     this.animate();
+  }
+
+  async refreshRepoClips() {
+    try {
+      const response = await fetch('/api/repo-clips');
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const payload = await response.json();
+      this.repoClipSources = (Array.isArray(payload.clips) ? payload.clips : []).map((clipInfo) => ({
+        ...clipInfo,
+        clipSourceType: 'repoclips',
+      }));
+    } catch (err) {
+      this.repoClipSources = [];
+      console.warn('Could not read repo clips', err);
+    }
+
+    this.populateClipSourceSelect(this.currentClipSourceTab === this.activeClipSourceTab ? this.currentClipSourceName : '');
+    this.renderClipSourceList();
   }
 
   async refreshExports({ preserveSelection }) {
@@ -1672,13 +1708,18 @@ function formatCount(value) {
         : 'Root: MovieEditor/source/fbx';
       this.exports = (Array.isArray(payload.exports) ? payload.exports : []).map((exportInfo) => ({
         ...exportInfo,
+        clipSourceType: 'exports',
         textureFileLookup: new Map(
           (Array.isArray(exportInfo.textureFiles) ? exportInfo.textureFiles : [])
             .map((name) => [String(name).toLowerCase(), name])
         ),
       }));
       this.populateActorSelect(previous || this.requestedExportName || '');
-      this.populateClipSourceSelect(this.currentClipSourceName || previous || this.requestedExportName || '');
+      this.populateClipSourceSelect(
+        this.currentClipSourceTab === this.activeClipSourceTab
+          ? (this.currentClipSourceName || previous || this.requestedExportName || '')
+          : (previous || this.requestedExportName || '')
+      );
 
       if (this.exports.length === 0) {
         this.setStatus(`No exports found under ${payload.root || 'MovieEditor/source/fbx'}`, 'warn');
@@ -1695,8 +1736,68 @@ function formatCount(value) {
 
       this.renderClipSourceList();
       this.renderClipList();
+      this.scanClipSourcesInBackground();
     } catch (err) {
       this.setStatus(`Could not read actor exports: ${err?.message || err}`, 'warn');
+    }
+  }
+
+  getClipSourceEntriesForTab(tab = this.activeClipSourceTab) {
+    return tab === 'repoclips' ? this.repoClipSources : this.exports;
+  }
+
+  getClipSourceLibraryKey(sourceInfo) {
+    if (!sourceInfo) return '';
+    if (sourceInfo.clipSourceType === 'repoclips') {
+      return `repoclips:${String(sourceInfo.relativePath || sourceInfo.name || '')}`;
+    }
+
+    return `exports:${String(sourceInfo.name || '')}`;
+  }
+
+  getClipSourceDisplayName(sourceInfo) {
+    return String(sourceInfo?.name || sourceInfo?.fbxFileName || 'Unnamed clip source');
+  }
+
+  getClipSourceSelectValue(sourceInfo) {
+    return this.getClipSourceLibraryKey(sourceInfo);
+  }
+
+  resolvePreferredClipSource(preferredValueOrName = '', tab = this.activeClipSourceTab) {
+    const entries = this.getClipSourceEntriesForTab(tab);
+    if (!entries.length) return null;
+
+    const preferred = String(preferredValueOrName || '').trim();
+    return entries.find((entry) => this.getClipSourceSelectValue(entry) === preferred)
+      || entries.find((entry) => entry.name === preferred)
+      || ((this.currentClipSourceTab === tab && this.currentClipSourceName)
+        ? entries.find((entry) => entry.name === this.currentClipSourceName)
+        : null)
+      || (tab === 'exports'
+        ? entries.find((entry) => entry.name === this.dom.actorSelect.value)
+        : null)
+      || entries[0];
+  }
+
+  updateClipSourceTabButtons() {
+    this.dom.clipSourceTabExports.className = `${this.activeClipSourceTab === 'exports' ? 'primary' : 'secondary'} button-grow`;
+    this.dom.clipSourceTabRepo.className = `${this.activeClipSourceTab === 'repoclips' ? 'primary' : 'secondary'} button-grow`;
+  }
+
+  setClipSourceTab(tab) {
+    const nextTab = tab === 'repoclips' ? 'repoclips' : 'exports';
+    if (this.activeClipSourceTab === nextTab) return;
+
+    this.activeClipSourceTab = nextTab;
+    this.updateClipSourceTabButtons();
+    this.populateClipSourceSelect(this.currentClipSourceTab === nextTab ? this.currentClipSourceName : '');
+    this.renderClipSourceList();
+    this.scanClipSourcesInBackground();
+
+    if (this.current) {
+      this.applySelectedClipSource({ preserveCurrentIndex: true });
+    } else {
+      this.renderClipList();
     }
   }
 
@@ -1738,14 +1839,12 @@ function formatCount(value) {
     const select = this.dom.clipSourceSelect;
     select.innerHTML = '';
 
-    const matchingExport = this.current?.exportInfo
-      || this.exports.find((item) => item.name === preferredName)
-      || this.exports.find((item) => item.name === this.dom.actorSelect.value)
-      || this.exports[0];
-
-    if (!matchingExport) {
+    const sources = this.getClipSourceEntriesForTab();
+    if (!sources.length) {
       const option = document.createElement('option');
-      option.textContent = 'No matching clip source';
+      option.textContent = this.activeClipSourceTab === 'repoclips'
+        ? 'No RepoClips sources detected'
+        : 'No clip sources detected';
       option.value = '';
       select.appendChild(option);
       select.disabled = true;
@@ -1753,12 +1852,20 @@ function formatCount(value) {
       return;
     }
 
-    const option = document.createElement('option');
-    option.value = matchingExport.name;
-    option.textContent = `${matchingExport.name} • matching clips`;
-    select.appendChild(option);
-    select.value = matchingExport.name;
-    select.disabled = true;
+    select.disabled = false;
+
+    for (const sourceInfo of sources) {
+      const option = document.createElement('option');
+      const cached = this.sharedClipLibraries.get(this.getClipSourceLibraryKey(sourceInfo));
+      const suffix = cached?.loaded ? ` • ${cached.clips.length} clip${cached.clips.length === 1 ? '' : 's'}` : '';
+      option.value = this.getClipSourceSelectValue(sourceInfo);
+      option.textContent = `${this.getClipSourceDisplayName(sourceInfo)}${suffix}`;
+      select.appendChild(option);
+    }
+
+    const preferred = this.resolvePreferredClipSource(preferredName);
+
+    select.value = preferred ? this.getClipSourceSelectValue(preferred) : '';
     this.renderClipSourceList();
   }
 
@@ -1783,24 +1890,36 @@ function formatCount(value) {
     `).join('');
   }
 
-  getVisibleClipSourceExports() {
-    const matchingExport = this.current?.exportInfo || this.getSelectedExport();
-    return matchingExport ? [matchingExport] : [];
+  getVisibleClipSourceEntries() {
+    return this.getClipSourceEntriesForTab().filter((sourceInfo) => {
+      const cached = this.sharedClipLibraries.get(this.getClipSourceLibraryKey(sourceInfo));
+      return cached?.loaded && Array.isArray(cached.clips) && cached.clips.length > 0;
+    });
   }
 
   renderClipSourceList() {
     const container = this.dom.clipSourceList;
     if (!container) return;
 
-    const matchingExport = this.current?.exportInfo || this.getSelectedExport();
-    if (!matchingExport) {
-      container.innerHTML = '<div class="selection-empty">Load an actor to use its matching clips.</div>';
+    const visibleSources = this.getVisibleClipSourceEntries();
+    if (!visibleSources.length) {
+      const emptyMessage = this.activeClipSourceTab === 'repoclips'
+        ? 'No RepoClips sources with clips found yet.'
+        : 'No clip exports found yet.';
+      container.innerHTML = `<div class="selection-empty">${this.isScanningClipSources ? 'Scanning clip sources...' : emptyMessage}</div>`;
       return;
     }
 
-    container.innerHTML = `
-      <div class="selection-empty">Using matching clips from ${escapeHtml(matchingExport.name)}.</div>
-    `;
+    const selectedValue = this.dom.clipSourceSelect.value;
+    container.innerHTML = visibleSources.map((sourceInfo) => `
+      <button
+        class="selection-item ${this.getClipSourceSelectValue(sourceInfo) === selectedValue ? 'active' : ''}"
+        data-clip-source-value="${escapeHtml(this.getClipSourceSelectValue(sourceInfo))}"
+        type="button"
+      >
+        <div class="selection-item-title">${escapeHtml(this.getClipSourceDisplayName(sourceInfo))}</div>
+      </button>
+    `).join('');
   }
 
   renderClipList() {
@@ -1809,9 +1928,7 @@ function formatCount(value) {
 
     const clips = Array.isArray(this.current?.clips) ? this.current.clips : [];
     if (!clips.length) {
-      container.innerHTML = this.current?.exportInfo
-        ? `<div class="selection-empty">${escapeHtml(this.current.exportInfo.name)} has no embedded clips.</div>`
-        : '<div class="selection-empty">Load an actor to see its matching clips.</div>';
+      container.innerHTML = '<div class="selection-empty">Choose a clip source to see its clips.</div>';
       return;
     }
 
@@ -1828,8 +1945,9 @@ function formatCount(value) {
 
   async scanClipSourcesInBackground() {
     const scanToken = ++this.clipSourceScanToken;
+    const sources = this.getClipSourceEntriesForTab();
 
-    if (!this.exports.length) {
+    if (!sources.length) {
       this.isScanningClipSources = false;
       this.renderClipSourceList();
       return;
@@ -1838,13 +1956,13 @@ function formatCount(value) {
     this.isScanningClipSources = true;
     this.renderClipSourceList();
 
-    for (const exportInfo of this.exports) {
+    for (const sourceInfo of sources) {
       if (scanToken !== this.clipSourceScanToken) return;
 
-      const cached = this.sharedClipLibraries.get(exportInfo.name);
+      const cached = this.sharedClipLibraries.get(this.getClipSourceLibraryKey(sourceInfo));
       if (!cached?.loaded) {
         try {
-          await this.ensureClipSourceLoaded(exportInfo);
+          await this.ensureClipSourceLoaded(sourceInfo);
         } catch {
           // Ignore clip scan failures here; interactive loading will surface the error if needed.
         }
@@ -1913,9 +2031,9 @@ function formatCount(value) {
     return this.exports.find((item) => item.name === exportName) || null;
   }
 
-  getSelectedClipSourceExport() {
-    const exportName = this.dom.clipSourceSelect.value;
-    return this.exports.find((item) => item.name === exportName) || null;
+  getSelectedClipSourceEntry() {
+    const selectedValue = this.dom.clipSourceSelect.value;
+    return this.getClipSourceEntriesForTab().find((item) => this.getClipSourceSelectValue(item) === selectedValue) || null;
   }
 
   normalizeAnimationTrackName(trackName) {
@@ -1949,26 +2067,26 @@ function formatCount(value) {
   }
 
   storeClipLibrary(exportInfo, clips, { prepared = false } = {}) {
+    const clipSourceKey = this.getClipSourceLibraryKey(exportInfo);
     const entry = {
       exportInfo,
       clips: prepared ? (Array.isArray(clips) ? clips : []) : this.prepareClipLibraryClips(clips),
       loaded: true,
     };
-    this.sharedClipLibraries.set(exportInfo.name, entry);
+    this.sharedClipLibraries.set(clipSourceKey, entry);
     this.renderClipSourceList();
     return entry;
   }
 
   async ensureClipSourceLoaded(exportInfoOrName) {
-    const exportInfo = typeof exportInfoOrName === 'string'
-      ? this.exports.find((item) => item.name === exportInfoOrName)
-      : exportInfoOrName;
+    const exportInfo = exportInfoOrName;
 
     if (!exportInfo) {
       throw new Error('Clip source export not found.');
     }
 
-    const cached = this.sharedClipLibraries.get(exportInfo.name);
+    const clipSourceKey = this.getClipSourceLibraryKey(exportInfo);
+    const cached = this.sharedClipLibraries.get(clipSourceKey);
     if (cached?.loaded) return cached;
     if (cached?.promise) return cached.promise;
 
@@ -1993,13 +2111,13 @@ function formatCount(value) {
         undefined,
         (err) => {
           restoreWarn();
-          this.sharedClipLibraries.delete(exportInfo.name);
+          this.sharedClipLibraries.delete(clipSourceKey);
           reject(err);
         },
       );
     });
 
-    this.sharedClipLibraries.set(exportInfo.name, {
+    this.sharedClipLibraries.set(clipSourceKey, {
       exportInfo,
       clips: [],
       loaded: false,
@@ -2145,10 +2263,13 @@ function formatCount(value) {
     }
 
     this.storeClipLibrary(exportInfo, embeddedClips, { prepared: true });
-    this.populateClipSourceSelect(this.currentClipSourceName || exportInfo.name);
-    if (!this.currentClipSourceName || !this.exports.find((item) => item.name === this.currentClipSourceName)) {
+    this.populateClipSourceSelect(
+      this.currentClipSourceTab === this.activeClipSourceTab ? (this.currentClipSourceName || exportInfo.name) : exportInfo.name
+    );
+    if (this.activeClipSourceTab === 'exports' && (!this.currentClipSourceName || !this.exports.find((item) => item.name === this.currentClipSourceName))) {
+      this.currentClipSourceTab = 'exports';
       this.currentClipSourceName = exportInfo.name;
-      this.dom.clipSourceSelect.value = exportInfo.name;
+      this.dom.clipSourceSelect.value = this.getClipSourceSelectValue(exportInfo);
     }
     await this.applySelectedClipSource({ preserveCurrentIndex: false });
     this.setFacts(exportInfo, stats);
@@ -2158,12 +2279,12 @@ function formatCount(value) {
       this.currentAnimationIndex = -1;
       this.isPlaying = false;
       this.updatePlaybackButton();
-      this.setStatus(`Loaded ${exportInfo.name}. This export has no matching embedded clips.`, 'warn');
+      this.setStatus(`Loaded ${exportInfo.name}. Select a clip source to test shared animation playback.`, 'warn');
     }
 
     if (this.current.clips.length > 0) {
       this.setStatus(
-        `Loaded ${exportInfo.name}: ${stats.bones} bones, ${stats.skinnedMeshes} skinned meshes, using ${this.current.clips.length} matching clip(s).`,
+        `Loaded ${exportInfo.name}: ${stats.bones} bones, ${stats.skinnedMeshes} skinned meshes, using ${this.current.clips.length} clip(s) from ${this.current.clipSourceName}.`,
         'good',
       );
     }
@@ -3358,7 +3479,7 @@ function formatCount(value) {
   async applySelectedClipSource({ preserveCurrentIndex = false } = {}) {
     if (!this.current) return;
 
-    const clipSourceExport = this.current.exportInfo;
+    const clipSourceExport = this.getSelectedClipSourceEntry();
     if (!clipSourceExport) {
       this.current.clips = [];
       this.current.clipSourceName = '';
@@ -3367,34 +3488,55 @@ function formatCount(value) {
       return;
     }
 
-    const requestedSourceName = clipSourceExport.name;
+    const requestedSourceName = this.getClipSourceDisplayName(clipSourceExport);
+    const requestedSourceValue = this.getClipSourceSelectValue(clipSourceExport);
     const preferredIndex = preserveCurrentIndex
       ? Math.max(0, toFiniteNumber(this.dom.animationSelect.value, 0))
       : 0;
 
-    const entry = {
-      exportInfo: clipSourceExport,
-      clips: this.current.embeddedClips,
-      loaded: true,
-    };
+    this.dom.clipSourceSelect.disabled = true;
+    this.setStatus(`Loading clips from ${requestedSourceName}...`, 'warn');
 
-    this.currentClipSourceName = requestedSourceName;
-    this.current.clipSourceName = requestedSourceName;
-    this.current.clips = entry.clips;
-    this.populateClipSourceSelect(requestedSourceName);
-    this.stopCurrentAnimationPlayback();
-    this.populateAnimationSelect(entry.clips, requestedSourceName);
+    try {
+      const entry = clipSourceExport.clipSourceType === 'exports' && clipSourceExport.name === this.current.exportInfo.name
+        ? {
+            exportInfo: clipSourceExport,
+            clips: this.current.embeddedClips,
+            loaded: true,
+          }
+        : await this.ensureClipSourceLoaded(clipSourceExport);
+      if (!this.current || this.dom.clipSourceSelect.value !== requestedSourceValue) return;
 
-    if (entry.clips.length) {
-      const nextIndex = Math.min(preferredIndex, entry.clips.length - 1);
-      const autoRunAnimation = this.shouldAutoRunAnimation();
-      this.playClip(nextIndex, { autoplay: autoRunAnimation });
-      this.setStatus(
-        `Using ${entry.clips.length} matching clip(s) from ${requestedSourceName}${autoRunAnimation ? '.' : ' with auto-run disabled.'}`,
-        'good',
-      );
-    } else {
-      this.setStatus(`${requestedSourceName} has no embedded clips.`, 'warn');
+      this.currentClipSourceTab = this.activeClipSourceTab;
+      this.currentClipSourceName = requestedSourceName;
+      this.current.clipSourceName = requestedSourceName;
+      this.current.clips = entry.clips;
+      this.populateClipSourceSelect(requestedSourceValue);
+      this.stopCurrentAnimationPlayback();
+      this.populateAnimationSelect(entry.clips, requestedSourceName);
+
+      if (entry.clips.length) {
+        const nextIndex = Math.min(preferredIndex, entry.clips.length - 1);
+        const autoRunAnimation = this.shouldAutoRunAnimation();
+        this.playClip(nextIndex, { autoplay: autoRunAnimation });
+        this.setStatus(
+          `Using ${entry.clips.length} clip(s) from ${requestedSourceName} on ${this.current.exportInfo.name}${autoRunAnimation ? '.' : ' with auto-run disabled.'}`,
+          'good',
+        );
+      } else {
+        this.setStatus(`${requestedSourceName} has no clips to share with ${this.current.exportInfo.name}.`, 'warn');
+      }
+    } catch (err) {
+      if (!this.current || this.dom.clipSourceSelect.value !== requestedSourceValue) return;
+      this.current.clips = [];
+      this.current.clipSourceName = requestedSourceName;
+      this.populateAnimationSelect([], requestedSourceName);
+      this.stopCurrentAnimationPlayback();
+      this.setStatus(`Could not load clips from ${requestedSourceName}: ${err?.message || err}`, 'warn');
+    } finally {
+      if (this.dom.clipSourceSelect.value === requestedSourceValue) {
+        this.dom.clipSourceSelect.disabled = false;
+      }
     }
   }
 

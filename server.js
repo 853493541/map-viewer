@@ -32,6 +32,7 @@ const DESKTOP_EXPORT_ROOT = resolve(join(os.homedir(), 'Desktop', 'JX3FullExport
 const MOVIE_EDITOR_ROOT = resolve('C:/SeasunGame/MovieEditor');
 const MOVIE_EDITOR_SOURCE_ROOT = join(MOVIE_EDITOR_ROOT, 'source');
 const MOVIE_EDITOR_EXPORT_ROOT = join(MOVIE_EDITOR_SOURCE_ROOT, 'fbx');
+const REPO_CLIPS_ROOT = resolve(join(PUBLIC_DIR, 'repo-clips'));
 const RESOURCE_GROUPS_FILE = resolve(join(__dirname, 'tools', 'actor-resource-groups.json'));
 
 const MIME_TYPES = {
@@ -276,6 +277,24 @@ function listMovieEditorActorExports() {
       playerSupport: sourceActor ? buildMovieEditorPlayerSupport(sourceActor.bodyType) : null,
     };
   });
+}
+
+function listRepoClipSources() {
+  if (!existsSync(REPO_CLIPS_ROOT) || !statSync(REPO_CLIPS_ROOT).isDirectory()) {
+    return [];
+  }
+
+  return listFilesRecursive(REPO_CLIPS_ROOT, new Set(['.fbx']))
+    .map((relativePath) => {
+      const normalizedPath = String(relativePath || '').replace(/\\/g, '/');
+      return {
+        name: normalizedPath.replace(/\.fbx$/i, ''),
+        relativePath: normalizedPath,
+        fbxFileName: basename(normalizedPath),
+        fbxUrl: `/repo-clips/${encodeUrlPathSegments(normalizedPath)}`,
+      };
+    })
+    .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }));
 }
 
 function readJsonUtf8(filePath, fallback = null) {
@@ -1161,6 +1180,19 @@ const server = createServer(async (req, res) => {
         available: existsSync(MOVIE_EDITOR_EXPORT_ROOT) && statSync(MOVIE_EDITOR_EXPORT_ROOT).isDirectory(),
         root: MOVIE_EDITOR_EXPORT_ROOT,
         exports: listMovieEditorActorExports(),
+      });
+    } catch (err) {
+      sendJson(res, 500, { error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'GET' && urlPath === '/api/repo-clips') {
+    try {
+      sendJson(res, 200, {
+        available: existsSync(REPO_CLIPS_ROOT) && statSync(REPO_CLIPS_ROOT).isDirectory(),
+        root: REPO_CLIPS_ROOT,
+        clips: listRepoClipSources(),
       });
     } catch (err) {
       sendJson(res, 500, { error: err?.message || String(err) });

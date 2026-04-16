@@ -792,6 +792,14 @@
       <div class="panel-header">
         <h2>Clips</h2>
       </div>
+      <div class="row wrap">
+        <button class="primary button-grow" id="clip-source-tab-exports" type="button">MovieEditor</button>
+        <button class="secondary button-grow" id="clip-source-tab-repo" type="button">RepoClips</button>
+      </div>
+      <div class="selection-block">
+        <div class="subpanel-title">Clip Sources</div>
+        <div class="selection-list compact" id="clip-source-list"></div>
+      </div>
       <div class="selection-block">
         <div class="subpanel-title">Clips</div>
         <div class="selection-list compact" id="clip-list"></div>
@@ -840,7 +848,7 @@
     Orbit camera with left mouse drag, zoom with the wheel, and pan with right mouse drag.<br>
     The Resource Manager lives on the right side.<br>
     Use the arrow to open each part, then use the checkboxes to hide or show parts, materials, and textures.<br>
-    This page is for actor export validation: skeleton presence, skinned mesh coverage, and embedded FBX clip playback.
+    This page is for actor export validation: skeleton presence, skinned mesh coverage, and shared FBX clip playback across exports or copied RepoClips.
   </div>
 
   <div hidden aria-hidden="true">
