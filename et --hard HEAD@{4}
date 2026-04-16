@@ -1,0 +1,22 @@
+[33m73134cf[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mcleanup[m[33m, [m[1;31morigin/cleanup[m[33m)[m HEAD@{0}: reset: moving to 73134cf
+[33m81fbbd7[m HEAD@{1}: reset: moving to 81fbbd7
+[33m2f99382[m HEAD@{2}: checkout: moving from master to cleanup
+[33me81e7e6[m[33m ([m[1;31morigin/master[m[33m, [m[1;32mmaster[m[33m)[m HEAD@{3}: checkout: moving from cleanup to master
+[33m2f99382[m HEAD@{4}: commit: x
+[33m19f6fa0[m HEAD@{5}: commit: clean up
+[33m81fbbd7[m HEAD@{6}: commit: avatar first version
+[33mc171659[m HEAD@{7}: commit: clean up and reworked
+[33m97dc102[m HEAD@{8}: commit: clean up
+[33me81e7e6[m[33m ([m[1;31morigin/master[m[33m, [m[1;32mmaster[m[33m)[m HEAD@{9}: checkout: moving from master to cleanup
+[33me81e7e6[m[33m ([m[1;31morigin/master[m[33m, [m[1;32mmaster[m[33m)[m HEAD@{10}: commit: feat(reader): enforce new export contract and parity guide
+[33m73134cf[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mcleanup[m[33m, [m[1;31morigin/cleanup[m[33m)[m HEAD@{11}: commit: feat(reader): match hitbox width to avatar and unify full guide
+[33m06dac34[m HEAD@{12}: commit: full export
+[33mc7c693d[m HEAD@{13}: commit: feat(reader): refine controls, indoor collision, and add next-repo guide
+[33m1281273[m HEAD@{14}: commit: docs: add quick guide usage narrative
+[33m34f1284[m HEAD@{15}: commit: feat: add regional collision export mode and full reader guide
+[33m7c04e1d[m HEAD@{16}: commit: feat: add collision walk test mode and sidecar collision export workflow
+[33m039e3dd[m HEAD@{17}: commit: full export
+[33mad126ea[m HEAD@{18}: commit: add 玉门关竞技场 arena assets: 48 GLBs, 159 textures, texture-map subset (118 MB total)
+[33m7b4f992[m HEAD@{19}: commit: Add all map-data runtime files: entities, mesh-map, mesh-list, minimap, landscape-info
+[33m5806188[m HEAD@{20}: commit: Add heightmap .bin tiles for 龙门寻宝 (64 files, 64 MB)
+[33m80f6067[m HEAD@{21}: commit (initial): Initial commit: JX3 map editor - clean history
