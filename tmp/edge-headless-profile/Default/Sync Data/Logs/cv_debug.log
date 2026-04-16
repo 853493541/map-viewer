@@ -1,4 +1,0 @@
-{"logTime": "0416/070328", "correlationVector":"","action":"Microsoft.Sync.State.UserActionableError.30Sec", "result":"Error:7"}
-{"logTime": "0416/070328", "correlationVector":"","action":"Microsoft.Sync.State.Sign.In.UserActionableError.30Sec", "result":"Error:7"}
-{"logTime": "0416/070358", "correlationVector":"","action":"Microsoft.Sync.State.UserActionableError.1Min", "result":"Error:7"}
-{"logTime": "0416/070358", "correlationVector":"","action":"Microsoft.Sync.State.Sign.In.UserActionableError.1Min", "result":"Error:7"}
