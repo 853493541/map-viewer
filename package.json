@@ -15,10 +15,22 @@
     "local": "node server.js",
     "start": "node server.js",
     "dev:py": "python tools/serve.py",
-    "build": "node tools/build-map-data.js"
+    "build": "node tools/build-map-data.js",
+    "audit:pss-proxy": "node tools/pss-proxy-audit.mjs",
+    "pss:debug:auto": "node tools/pss-auto-debug-log.mjs",
+    "sidecar:build": "dotnet build -c Release tools/pss-renderer-cli",
+    "sidecar:probe": "tools/pss-renderer-cli/bin/Release/PssRendererCli.exe probe"
   },
   "dependencies": {
+    "fzstd": "^0.1.1",
+    "iconv-lite": "^0.7.2",
+    "koffi": "^2.16.0",
     "three": "^0.170.0",
-    "three-mesh-bvh": "^0.9.9"
+    "three-mesh-bvh": "^0.9.9",
+    "zstd-napi": "^0.0.12"
+  },
+  "devDependencies": {
+    "lz4js": "^0.2.0",
+    "playwright": "^1.59.1"
   }
 }
