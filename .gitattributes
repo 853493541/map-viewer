@@ -1,0 +1,2 @@
+public/map-data/heightmap/*.bin filter=lfs diff=lfs merge=lfs -text
+public/map-data/meshes/*.glb filter=lfs diff=lfs merge=lfs -text
