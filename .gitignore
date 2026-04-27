@@ -27,3 +27,25 @@ Thumbs.db
 
 # Local temporary browser/test artifacts
 tmp/
+
+# === Generated / runtime artifacts ===
+log/
+*.log
+analyze-output.json
+verify-output.json
+tmp-*.json
+.tmp_*
+
+# === Extracted caches (regenerable from PAK files) ===
+cache-extraction/
+tools/pss-cache/
+public/map-data/sfx-pak-extract/
+public/map-data/sfx-extracted/
+
+# === Large binary game assets (must be hosted elsewhere or via LFS) ===
+public/map-data/arena-assets/
+public/map-data/terrain-textures/
+
+# === Backups ===
+*.bak
+*.bak2
