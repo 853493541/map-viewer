@@ -162,6 +162,33 @@ function Normalize-LogicalPath {
   return $PathLike.Replace('\\', '/').Trim().ToLowerInvariant()
 }
 
+function Read-SharedBytes {
+  param([string]$Path)
+
+  $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+  try {
+    $buffer = New-Object byte[] $stream.Length
+    $offset = 0
+    while ($offset -lt $buffer.Length) {
+      $read = $stream.Read($buffer, $offset, $buffer.Length - $offset)
+      if ($read -le 0) {
+        throw "Expected $($buffer.Length) bytes from $Path but read $offset"
+      }
+      $offset += $read
+    }
+    return $buffer
+  }
+  finally {
+    $stream.Dispose()
+  }
+}
+
+function Open-SharedReadStream {
+  param([string]$Path)
+
+  return [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+}
+
 function Resolve-H1FromFn {
   param(
     [string]$Root,
@@ -170,7 +197,7 @@ function Resolve-H1FromFn {
 
   $fnFiles = Get-ChildItem -Path $Root -File -Filter 'fn*.1' | Sort-Object Name
   foreach ($fnFile in $fnFiles) {
-    $bytes = [System.IO.File]::ReadAllBytes($fnFile.FullName)
+    $bytes = Read-SharedBytes $fnFile.FullName
     for ($offset = 4; $offset + 20 -le $bytes.Length; $offset += 20) {
       $entryH1 = [BitConverter]::ToUInt64($bytes, $offset)
       $entryH2 = [BitConverter]::ToUInt64($bytes, $offset + 8)
@@ -198,7 +225,7 @@ function Resolve-IdxEntry {
   )
 
   $idxPath = Join-Path $Root '0.idx'
-  $bytes = [System.IO.File]::ReadAllBytes($idxPath)
+  $bytes = Read-SharedBytes $idxPath
   for ($offset = 36; $offset + 36 -le $bytes.Length; $offset += 36) {
     $entryH1 = [BitConverter]::ToUInt64($bytes, $offset)
     if ($entryH1 -ne $H1) {
@@ -236,7 +263,7 @@ function Read-DatEntryBytes {
   }
 
   $buffer = New-Object byte[] $IndexEntry.CompressedSize
-  $stream = [System.IO.File]::OpenRead($datPath)
+  $stream = Open-SharedReadStream $datPath
   try {
     $null = $stream.Seek([int64]$IndexEntry.Offset, [System.IO.SeekOrigin]::Begin)
     $read = $stream.Read($buffer, 0, $buffer.Length)

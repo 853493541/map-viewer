@@ -7,6 +7,8 @@ This repository contains the current web tooling for inspecting, editing, and va
 - `public/index.html` — Editor / map manager landing page
 - `public/export-reader.html` — Main export package validation page
 - `public/actor-viewer.html` — MovieEditor actor export viewer for skeleton and animation validation
+- `public/resource-manager.html` — MovieEditor effect catalog and socket trace
+- `public/special-effects.html` — Live cache-backed SFX viewer (synthetic fallback for uncached rows)
 - `public/mesh-inspector.html` — Regional mesh approval and denial workflow
 - `public/collision-test-mode.html` — Single-mesh sidecar collision walk test
 
@@ -82,6 +84,8 @@ jx3-web-map-viewer/
 │   ├── index.html
 │   ├── export-reader.html
 │   ├── actor-viewer.html
+│   ├── resource-manager.html
+│   ├── special-effects.html
 │   ├── mesh-inspector.html
 │   ├── collision-test-mode.html
 │   ├── full-viewer.html
@@ -92,14 +96,12 @@ jx3-web-map-viewer/
 ├── package.json
 ├── start-localhost.cmd
 ├── INSTRUCTIONS.md
-├── PIPELINE.md
 ├── EXPERIENCES.md
 └── EXTERNAL_EXPORT_READER_GUIDE.md
 ```
 
 ## Canonical Docs
 
-- [INSTRUCTIONS.md](INSTRUCTIONS.md) — current repo behavior and working rules
-- [PIPELINE.md](PIPELINE.md) — quick startup commands
+- [INSTRUCTIONS.md](INSTRUCTIONS.md) — current repo behavior, working rules, and reporting format
 - [EXPERIENCES.md](EXPERIENCES.md) — lessons learned and pitfalls
 - [EXTERNAL_EXPORT_READER_GUIDE.md](EXTERNAL_EXPORT_READER_GUIDE.md) — export-reader integration contract
