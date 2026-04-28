@@ -14,8 +14,6 @@ The project is now focused on these active pages:
 - Editor: public/index.html
 - Export Reader (main runtime validation page): public/export-reader.html
 - Actor Viewer (MovieEditor actor export validator): public/actor-viewer.html
-- Resource Manager (MovieEditor effect catalog and socket trace): public/resource-manager.html
-- Special Effects Preview (live cache-backed viewer with synthetic fallback for uncached rows): public/special-effects.html
 - Mesh Inspector: public/mesh-inspector.html
 - Collision Test (single-mesh validator): public/collision-test-mode.html
 - Full Viewer is intentionally paused: public/full-viewer.html
@@ -79,9 +77,6 @@ node server.js
 
 - GET /api/full-exports
 - GET /api/actor-exports
-- GET /api/special-effects
-- GET /api/special-effects-preview
-- `/api/special-effects-preview` searches the full SFX catalog, marks real cache hits, and provides metadata-driven synthetic fallback info for uncached rows.
 - GET /api/cache-entry/preview
 - GET /api/cache-entry/raw
 - POST /api/export-full
@@ -98,16 +93,12 @@ Note: export-full-with-collision and export-regional-with-collision are sidecar-
   - index.html
   - export-reader.html
   - actor-viewer.html
-  - resource-manager.html
-  - special-effects.html
   - mesh-inspector.html
   - collision-test-mode.html
   - full-viewer.html
   - js/
     - app.js
     - actor-viewer.js
-    - special-effects.js
-    - sfx-preview.js
     - export-reader.js
     - collision-test-mode.js
     - full-viewer.js

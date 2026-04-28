@@ -134,11 +134,7 @@
     <a class="gh-link" href="index.html">Editor</a>
     <a class="gh-link" href="export-reader.html">Export Reader</a>
     <a class="gh-link" href="actor-viewer.html">Actor Viewer</a>
-    <a class="gh-link" href="special-effects.html">SFX (unused)</a>
-    <a class="gh-link" href="pss-effects.html">PSS Effects</a>
-    <a class="gh-link" href="pss-atlas.html">PSS Atlas</a>
     <a class="gh-link current" href="mesh-inspector.html" aria-current="page">Mesh Inspector</a>
-    <a class="gh-link" href="actor-animation-player.html">Animation Player</a>
     <a class="gh-link" href="actor-animation-player.html">Animation Player</a>
     <a class="gh-link" href="collision-test-mode.html">Collision Test</a>
   </nav>
@@ -239,19 +235,39 @@ async function fetchJsonChecked(url) {
   return await res.json();
 }
 
+async function probeMeshCount(candidatePath) {
+  try {
+    const rows = await fetchJsonChecked(`/api/meshes?dataPath=${encodeURIComponent(candidatePath)}`);
+    return Array.isArray(rows) ? rows.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
 async function resolvePreferredDefaultPath() {
+  // Always prefer the local working map-data when it has meshes, since
+  // sidecar full-export packages can be cleaned up while still appearing in
+  // /api/full-exports stats. Only fall back to a generated package when the
+  // local map-data is empty or unreachable.
+  const localCount = await probeMeshCount(defaultDataPath);
+  if (localCount > 0) {
+    return defaultDataPath;
+  }
+
   try {
     const exportInfo = await fetchJsonChecked('/api/full-exports');
     const exportsList = Array.isArray(exportInfo?.exports) ? exportInfo.exports.slice() : [];
     exportsList.sort((a, b) => Number(b?.createdAt || 0) - Number(a?.createdAt || 0));
 
-    const preferred = exportsList.find((entry) => {
+    for (const entry of exportsList) {
       const stats = entry?.stats || {};
-      return stats.meshCollisionComplete === true || Number(stats.meshCollisionAttached || 0) > 0;
-    });
-
-    if (preferred?.packageName) {
-      return `/full-exports/${encodeURIComponent(preferred.packageName)}/map-data`;
+      const ok = stats.meshCollisionComplete === true || Number(stats.meshCollisionAttached || 0) > 0;
+      if (!ok || !entry?.packageName) continue;
+      const candidate = `/full-exports/${encodeURIComponent(entry.packageName)}/map-data`;
+      // Verify the package's data is actually reachable before adopting it.
+      if (await probeMeshCount(candidate) > 0) {
+        return candidate;
+      }
     }
   } catch {
     // Fall back to local map-data when no generated sidecar export is available.
