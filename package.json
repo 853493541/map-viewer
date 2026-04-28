@@ -19,7 +19,10 @@
     "audit:pss-proxy": "node tools/pss-proxy-audit.mjs",
     "pss:debug:auto": "node tools/pss-auto-debug-log.mjs",
     "sidecar:build": "dotnet build -c Release tools/pss-renderer-cli",
-    "sidecar:probe": "tools/pss-renderer-cli/bin/Release/PssRendererCli.exe probe"
+    "sidecar:probe": "tools/pss-renderer-cli/bin/Release/PssRendererCli.exe probe",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed"
   },
   "dependencies": {
     "fzstd": "^0.1.1",
@@ -30,6 +33,7 @@
     "zstd-napi": "^0.0.12"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "lz4js": "^0.2.0",
     "playwright": "^1.59.1"
   }

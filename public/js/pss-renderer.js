@@ -59,6 +59,7 @@ const state = {
   loadToken: 0,
   debugLog: [],
   debugTextures: [],
+  meshBindingAudit: null,
   globalDuration: 5,
 };
 
@@ -110,6 +111,18 @@ function buildCopyableLog() {
         lines.push(`  [${em.index}] mesh`);
       else if (em.type === 'track')
         lines.push(`  [${em.index}] track`);
+    }
+  }
+
+  const audit = state.meshBindingAudit;
+  if (audit && audit.total) {
+    lines.push('');
+    lines.push(`--- Mesh Material Binding (${audit.ok}/${audit.total} matched, ${audit.miss} missing) ---`);
+    for (const it of audit.items) {
+      const ok = it.texCount > 0 && it.resolvedOk === it.texCount;
+      const idxStr = it.materialIndex == null ? 'n/a' : `#${it.materialIndex}`;
+      const ref = it.refPath ? it.refPath.split(/[\\/]/).pop() : '-';
+      lines.push(`  [${ok?'OK':'MISS'}] [${it.index}] ${it.mesh} <- mat${idxStr} ${ref} (${it.resolvedOk}/${it.texCount}) ${it.textureSource} :: ${it.textures.join(', ') || '(no .tga)'}`);
     }
   }
 
@@ -171,6 +184,23 @@ function updateDebugOverlay() {
     for (const em of sprEm) {
       const b = em.blendMode==='additive'?'\u2726':'\u25FC';
       html += `<div>${b} [${em.index}] ${esc(em.materialName)} \u2192 ${em.textures.map(t=>esc(t)).join(' + ')}</div>`;
+    }
+    html += '</div>';
+  }
+
+  // Mesh emitter material-binding audit
+  const audit = state.meshBindingAudit;
+  if (audit && audit.total) {
+    const headColor = audit.miss === 0 ? '#7f7' : '#fd8';
+    html += `<div style="margin-top:8px;font-weight:700;font-size:12px;color:${headColor}">Mesh Material Binding: ${audit.ok}/${audit.total} matched${audit.miss?` (${audit.miss} missing)`:''}</div>`;
+    html += '<div style="font-size:10px;line-height:1.5;max-height:140px;overflow-y:auto;color:#8ea2ba">';
+    for (const it of audit.items) {
+      const ok = it.texCount > 0 && it.resolvedOk === it.texCount;
+      const icon = ok ? '\u2705' : '\u26A0\uFE0F';
+      const idxStr = it.materialIndex == null ? 'n/a' : `#${it.materialIndex}`;
+      const ref = it.refPath ? it.refPath.split(/[\\/]/).pop() : '—';
+      const texs = it.textures.length ? it.textures.map(esc).join(', ') : '<span style="color:#f66">no .tga</span>';
+      html += `<div>${icon} [${it.index}] ${esc(it.mesh)} \u2190 mat${idxStr} <span style="color:#aaf">${esc(ref)}</span> (${it.resolvedOk}/${it.texCount}) <span style="color:#789">${esc(it.textureSource)}</span><div style="padding-left:14px;color:#9ab">${texs}</div></div>`;
     }
     html += '</div>';
   }
@@ -245,6 +275,7 @@ async function selectPss(pss) {
   const token = state.loadToken;
   state.debugLog = [];
   state.debugTextures = [];
+  state.meshBindingAudit = null;
   renderCatalogList();
 
   dom.toolbarTitle.textContent = pss.name;
@@ -274,6 +305,41 @@ async function selectPss(pss) {
 
     dbg(`Analyzed in ${elapsed}ms — ${sprC} sprite + ${(data.emitters||[]).length - sprC} other emitters, ${data.totalTextures} tex`);
     dbg(`Source: ${data.source}, duration: ${state.globalDuration.toFixed(1)}s`);
+
+    // ── Mesh emitter texture-binding audit ────────────────
+    // Verify every mesh emitter that has a .Mesh actually got matched textures
+    // (via launcher.nMaterialIndex → PSS embedded KE3D_MT_PARTICLE_MATERIAL).
+    const meshEms = (data.emitters || []).filter(e => e.type === 'mesh' && Array.isArray(e.meshes) && e.meshes.length > 0);
+    if (meshEms.length) {
+      let okCount = 0, missCount = 0;
+      for (const em of meshEms) {
+        const meshName = em.meshes[0].split(/[\\/]/).pop();
+        const texCount = (em.texturePaths || []).length;
+        const resolvedOk = (em.resolvedTextures || []).filter(t => t && t.existsInCache).length;
+        const idxStr = (em.materialIndex == null) ? 'n/a' : `#${em.materialIndex}`;
+        const src = em.textureSource || 'unbound';
+        const refTail = em.materialRefPath ? em.materialRefPath.split(/[\\/]/).pop() : '';
+        if (texCount > 0 && resolvedOk === texCount) {
+          okCount++;
+          dbg(`✅ mesh[${em.index}] ${meshName} ← mat${idxStr} ${refTail} (${resolvedOk}/${texCount} tex, ${src})`);
+        } else {
+          missCount++;
+          dbg(`⚠️ mesh[${em.index}] ${meshName} ← mat${idxStr} (${resolvedOk}/${texCount} tex, ${src})`, 'warn');
+        }
+      }
+      const lvl = missCount === 0 ? 'info' : 'warn';
+      dbg(`Mesh-emitter binding coverage: ${okCount}/${meshEms.length} fully matched`, lvl);
+      state.meshBindingAudit = { ok: okCount, total: meshEms.length, miss: missCount, items: meshEms.map(em => ({
+        index: em.index, mesh: em.meshes[0].split(/[\\/]/).pop(),
+        materialIndex: em.materialIndex ?? null, refPath: em.materialRefPath || null,
+        textureSource: em.textureSource || 'unbound',
+        texCount: (em.texturePaths || []).length,
+        resolvedOk: (em.resolvedTextures || []).filter(t => t && t.existsInCache).length,
+        textures: (em.texturePaths || []).map(p => p.split(/[\\/]/).pop()),
+      })) };
+    } else {
+      state.meshBindingAudit = { ok: 0, total: 0, miss: 0, items: [] };
+    }
 
     for (const t of data.textures || []) {
       const name = t.texturePath.split('/').pop();

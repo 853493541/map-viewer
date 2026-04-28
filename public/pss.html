@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JX3 Player Animation Browser</title>
+  <title>JX3 PSS Renderer</title>
   <style>
     * { box-sizing: border-box; }
     :root {
@@ -308,6 +308,40 @@
     #issues-panel.hidden { display: none; }
     /* When debug panel is hidden, snap issues panel to the right edge. */
     #debug-panel.hidden ~ #issues-panel { right: 0; }
+    /* ── Load Trace panel (sibling of #debug-panel and #issues-panel) ── */
+    #trace-panel {
+      position: absolute; top: 40px; bottom: 0; width: 460px;
+      right: 720px;
+      background: rgba(6, 10, 15, 0.94); border-left: 1px solid rgba(130, 170, 220, 0.25);
+      z-index: 18; display: flex; flex-direction: column; backdrop-filter: blur(6px);
+    }
+    #trace-panel.hidden { display: none; }
+    /* When debug-panel hidden, slide trace-panel left so we don't leave a gap */
+    #debug-panel.hidden ~ #trace-panel { right: 380px; }
+    /* When BOTH right siblings hidden, trace-panel snaps to the right edge */
+    #debug-panel.hidden ~ #issues-panel.hidden ~ #trace-panel { right: 0; }
+    .trace-row {
+      display: grid; grid-template-columns: 56px 52px 1fr;
+      gap: 8px; padding: 2px 4px; line-height: 1.45;
+      border-bottom: 1px dotted rgba(130, 170, 220, 0.12);
+      font-family: "Cascadia Code", "Consolas", monospace; font-size: 10px;
+    }
+    .trace-row .trace-dt { color: var(--panel-muted); text-align: right; }
+    .trace-row .trace-lvl {
+      text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px;
+      text-align: center; border-radius: 3px; padding: 0 2px; align-self: start;
+    }
+    .trace-row .trace-detail { color: var(--panel-text); word-break: break-word; }
+    .trace-row .trace-detail .trace-step {
+      color: var(--panel-accent); margin-right: 6px; font-weight: 700;
+    }
+    .trace-row.lvl-info .trace-lvl { color: var(--panel-muted); background: rgba(60, 80, 110, 0.25); }
+    .trace-row.lvl-ok   .trace-lvl { color: var(--panel-good); background: rgba(60, 130, 75, 0.25); }
+    .trace-row.lvl-warn .trace-lvl { color: var(--panel-warn); background: rgba(150, 110, 40, 0.30); }
+    .trace-row.lvl-error .trace-lvl { color: var(--panel-error); background: rgba(160, 50, 50, 0.30); }
+    .trace-row.lvl-error .trace-detail { color: #ffb19a; }
+    .trace-row.lvl-warn  .trace-detail { color: #ffd58a; }
+    .trace-empty { color: var(--panel-muted); padding: 12px 4px; font-style: italic; }
     .issues-buttons {
       display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;
       padding: 6px 10px; border-bottom: 1px solid rgba(130, 170, 220, 0.18); flex: 0 0 auto;
@@ -386,7 +420,7 @@
     .dbg-fold.warn > summary { color: var(--panel-warn); }
   </style>
 </head>
-<body>
+<body data-page-mode="pss-only">
 
 <header id="global-header">
   <div class="gh-title">JX3 Tool Pages</div>
@@ -399,8 +433,8 @@
   <nav class="gh-links" style="flex-basis:100%;margin-top:2px;padding-top:6px;border-top:1px dashed rgba(130,170,220,0.22);">
     <span style="font-size:11px;color:#8ea2ba;align-self:center;letter-spacing:0.5px;">Actor pipeline</span>
     <a class="gh-link" href="actor-viewer.html">Actor Viewer</a>
-    <a class="gh-link current" href="actor-animation-player.html" aria-current="page">Animation Player</a>
-    <a class="gh-link" href="pss.html">PSS</a>
+    <a class="gh-link" href="actor-animation-player.html">Animation Player</a>
+    <a class="gh-link current" href="pss.html" aria-current="page">PSS</a>
   </nav>
 </header>
 
@@ -441,10 +475,11 @@
       <button class="vp-btn" id="btn-hide-bones" title="No player model in scene — bones not available" disabled style="opacity:0.4;cursor:default;">Bones</button>
       <button class="vp-btn" id="btn-debug" title="Toggle debug log panel">Debug</button>
       <button class="vp-btn" id="btn-issues" title="Toggle PSS Debug Logs panel">PSS Debug Logs</button>
+      <button class="vp-btn" id="btn-trace" title="Toggle Load Trace panel (timestamped per-step log)">Trace</button>
     </div>
     <canvas id="viewport-canvas"></canvas>
     <div id="viewport-overlay">
-      <div class="empty-msg">Select a .tani animation from the left panel<br>to preview its PSS visual effects</div>
+      <div class="empty-msg">Pick a .pss file from the left panel<br>to render its emitters in isolation</div>
     </div>
     <div id="pss-selector"></div>
     <div id="timeline-bar" class="hidden">
@@ -488,6 +523,20 @@
       <div class="issues-buttons" id="issues-buttons"></div>
       <div class="dbg-body" id="issues-body"></div>
     </div>
+    <!-- Load Trace panel: timestamped step-by-step log of the most recent
+         PSS load. Two tabs (Errors default, All Steps); copy button on each. -->
+    <div id="trace-panel" class="hidden">
+      <div class="dbg-header">
+        <span class="dbg-title">Load Trace</span>
+        <button class="dbg-copy" id="btn-trace-copy">Copy</button>
+        <button class="dbg-close" id="btn-trace-close">✕</button>
+      </div>
+      <div class="dbg-tabs">
+        <button class="dbg-tab active" data-trace-tab="errors" type="button">Errors</button>
+        <button class="dbg-tab" data-trace-tab="all" type="button">All Steps</button>
+      </div>
+      <div class="dbg-body" id="trace-body"></div>
+    </div>
   </div>
   <div id="info-panel">
     <div class="info-header">
@@ -515,6 +564,6 @@
   }
 }
 </script>
-<script type="module" src="js/actor-animation-player.js"></script>
+<script type="module" src="js/actor-animation-player.js?v=20260428h"></script>
 </body>
 </html>

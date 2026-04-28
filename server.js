@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Static + export API server for the map viewer.
  *
  * Adds:
@@ -2094,6 +2094,18 @@ function parsePssEffectScene(buffer, options = {}) {
   const allMeshPaths = new Set();
   const allAniPaths = new Set();
   const allTrackPaths = new Set();
+  // Each type-1 block is one KE3D_MT_PARTICLE_MATERIAL record (the engine's
+  // per-PSS shared material array). Type-2 launcher blocks reference these
+  // by index (u32 at offset +260 inside the launcher block — verified by
+  // sweeping every PSS in the cache: launcher #N's +260 == N which maps
+  // into materialEntries[N]). This is the engine's authoritative mapping
+  // from launcher → material — no name-match heuristics required.
+  // See: kproxyfor3dengine_consolex64.dll exports
+  //   KE3DMaterialsManager::AddMaterial / ResetAllMaterialIndex
+  //   pi3DEmitter->SetMaterialIndex(i)
+  //   m_em3DModuleType == KE3D_MT_PARTICLE_MATERIAL
+  // and /memories/repo/pss-embedded-material-architecture.md.
+  const materialEntries = [];
 
   for (let i = 0; i < toc.length; i++) {
     const entry = toc[i];
@@ -2111,6 +2123,15 @@ function parsePssEffectScene(buffer, options = {}) {
       }
       const texPaths = findPaths(blockStart, blockEnd, /tga|dds|png/i);
       texPaths.forEach(p => allTexPaths.add(p));
+      // Record the material entry for downstream launcher → material wiring.
+      // The index of this push is the material index — type-2 launcher
+      // blocks reference it via u32 at launcher+260.
+      materialEntries.push({
+        materialIndex: materialEntries.length,
+        blockTocIndex: i,
+        refPath: matPath || null,
+        texturePaths: texPaths.slice(),
+      });
 
       // Derive blend mode — try reading RenderState.BlendMode from the .jsondef
       // first (authoritative). When the .jsondef is not in the shipped archive
@@ -2490,8 +2511,16 @@ function parsePssEffectScene(buffer, options = {}) {
       });
       const meshes = findPaths(blockStart, blockEnd, /mesh/i);
       const anis = findPaths(blockStart, blockEnd, /ani/i);
+      // Type-2 mesh-emitter blocks embed their texture references inline
+      // (verified by sweeping L_龙王_龙牙烈风拳_红02.pss — block #11 carries
+      // `data\source\other\特效\贴图\qt_其他\g_丐帮龙头02_hd.tga` directly
+      // before the .Mesh path). Extract them here so the client can bind
+      // the correct base-color texture even when no JsonInspack companion
+      // exists for the .Mesh asset.
+      const meshTexPaths = findPaths(blockStart, blockEnd, /tga|dds|png/i);
       meshes.forEach(p => allMeshPaths.add(p));
       anis.forEach(p => allAniPaths.add(p));
+      meshTexPaths.forEach(p => allTexPaths.add(p));
       const resolvedSubType = subType(moduleName, meshes.length > 0);
       const meshFields = (function readMeshFields() {
         if (entry.size < 320) return null;
@@ -2597,11 +2626,25 @@ function parsePssEffectScene(buffer, options = {}) {
         };
         const launcherClass = launcherClassKey ? (LAUNCHER_CLASS_MAP[launcherClassKey] || null) : null;
 
-        // +292: observed to be a sequential slot index across all type-2
-        // blocks (0..N incrementing), 0xFFFFFFFF for trails/mesh-ref.
-        // It is NOT a class-ID — renaming to spawnPoolIndex honestly.
-        const launcherRaw = readU32(292);
-        const spawnPoolIndex = (launcherRaw === 0xFFFFFFFF) ? null : launcherRaw;
+        // +260: u32 = launcher ordinal (sequential 0..N-1 across all
+        // type-2 blocks). NOT a material index — it is the launcher's
+        // own slot in the spawn-pool. Verified Apr 2026 across
+        // T_天策龙牙.pss (23 launchers), red01 (22), red02 (9): every
+        // launcher's +260 == its 0-based ordinal among type-2 blocks.
+        // Earlier code mistakenly used this as nMaterialIndex; binding
+        // worked only by coincidence in files where ordinal happened
+        // to alias to a valid material index.
+        const spawnPoolIndex = readU32(260);
+
+        // +292: u32 = nMaterialIndex — the real engine-authoritative
+        // pointer into materialEntries (type-1 blocks). 0xFFFFFFFF means
+        // "no material" (used by ribbon/trail-mesh launchers that draw
+        // via a different path). Discovered by probing T_天策龙牙.pss:
+        // some launchers have +260 != +292 (e.g. ord=14 → +292=12),
+        // and 4 launchers have +292 = 0xFFFFFFFF — exactly the ribbon
+        // meshes that have no material slot.
+        const materialRaw = readU32(292);
+        const materialIndex = (materialRaw === 0xFFFFFFFF) ? -1 : materialRaw;
 
         // +308 still appears to be a scale multiplier — values 0.35..2.0
         // correlate with visual emitter size across subTypes. Keep.
@@ -2613,12 +2656,13 @@ function parsePssEffectScene(buffer, options = {}) {
           launcherClassKey,
           launcherClassBytes: [classByte0, classByte1, classByte2, classByte3],
           classFlags,
+          materialIndex,
           spawnPoolIndex,
           emitterScale,
           secondaryScale,
         };
       })();
-      emitters.push({ index: i, type: 'mesh', subType: resolvedSubType, subTypeName: moduleName, meshes, animations: anis, meshFields });
+      emitters.push({ index: i, type: 'mesh', subType: resolvedSubType, subTypeName: moduleName, meshes, animations: anis, meshFields, texturePaths: meshTexPaths, textures: meshTexPaths.map(p => p.split('/').pop()) });
     } else if (entry.type === 3) {
       // Track emitter
       const tracks = findPaths(blockStart, blockEnd, /track/i);
@@ -2805,6 +2849,9 @@ function parsePssEffectScene(buffer, options = {}) {
     } else if (em.type === 'mesh') {
       em.resolvedMeshes = em.meshes.map(p => meshAssetLookup.get(p)).filter(Boolean);
       em.resolvedAnimations = em.animations.map(p => animationAssetLookup.get(p)).filter(Boolean);
+      // Resolved base-color textures embedded directly in the mesh-emitter
+      // type-2 block (used when no JsonInspack companion is available).
+      em.resolvedTextures = (em.texturePaths || []).map(p => texLookup.get(p)).filter(Boolean);
 
       // Sibling .Ani fallback: if the PSS block did not enumerate an .Ani
       // path but a .Mesh is present, derive the sibling .Ani path by
@@ -2827,6 +2874,85 @@ function parsePssEffectScene(buffer, options = {}) {
     } else if (em.type === 'track') {
       em.resolvedTracks = em.tracks.map((path) => trackAssetLookup.get(path)).filter(Boolean);
     }
+  }
+
+  // ── Mesh-emitter texture binding via launcher.materialIndex (+292) ──
+  // ENGINE-AUTHORITATIVE binding: launcher+292 holds u32 nMaterialIndex
+  // (sentinel 0xFFFFFFFF = no material). meshFields.materialIndex above
+  // is -1 for the sentinel. Launchers with -1 (ribbon/trail meshes)
+  // skip this binding and fall through to the name-match heuristic.
+  for (const em of emitters) {
+    if (em.type !== 'mesh') continue;
+    if (!Array.isArray(em.meshes) || em.meshes.length === 0) continue;
+    if (Array.isArray(em.texturePaths) && em.texturePaths.length > 0) continue;
+    const mi = em.meshFields?.materialIndex;
+    if (mi == null || mi < 0) continue; // -1 sentinel = no material slot
+    if (mi >= materialEntries.length) continue;
+    const matEntry = materialEntries[mi];
+    if (!matEntry || !Array.isArray(matEntry.texturePaths) || matEntry.texturePaths.length === 0) continue;
+    em.texturePaths = matEntry.texturePaths.slice();
+    em.textures = em.texturePaths.map((p) => String(p).split('/').pop());
+    em.textureSource = 'material-index';
+    em.materialIndex = mi;
+    em.materialRefPath = matEntry.refPath || null;
+    em.resolvedTextures = em.texturePaths.map((p) => texLookup.get(p)).filter(Boolean);
+  }
+
+  // ── Mesh-emitter texture pairing by basename match (fallback) ──
+  // PSS particle meshes (.Mesh) ship without a JsonInspack companion in
+  // PakV4, so the renderer cannot read the authoritative texture slot.
+  // The JX3 art-team naming convention pairs each mesh with a texture
+  // sharing the same Chinese/ASCII stem (verified against
+  // L_龙王_龙牙烈风拳_红02.pss: mesh `G_丐帮龙头_hd.Mesh` ↔ texture
+  // `g_丐帮龙头02_hd.tga` in the same PSS, both basename-stem
+  // `丐帮龙头`). When no texture path was found inside the mesh-emitter's
+  // own type-2 block, we scan `allTexPaths` (collected from sibling
+  // sprite emitters in the same PSS) for a basename containing the
+  // mesh's stem and adopt that as the mesh-emitter's `texturePaths`.
+  // Marked `textureSource: 'name-match'` so callers can distinguish
+  // authoritative inline references from this heuristic.
+  const allTexPathsArr = [...allTexPaths];
+  for (const em of emitters) {
+    if (em.type !== 'mesh') continue;
+    if (!Array.isArray(em.meshes) || em.meshes.length === 0) continue;
+    if (Array.isArray(em.texturePaths) && em.texturePaths.length > 0) continue;
+
+    const meshBase = String(em.meshes[0]).split(/[\\/]/).pop().replace(/\.[^.]+$/i, '').toLowerCase();
+    // Build a list of progressively-relaxed stems so we can pair mesh
+    // emitters with textures even when naming drops digits, single-letter
+    // prefixes, or `_hd`/`_lod\d+` suffixes. Examples seen in catalog:
+    //   pl_水冲刺03.Mesh ↔ 水冲刺_hd.tga
+    //   G_丐帮龙头_hd.Mesh ↔ g_丐帮龙头02_hd.tga
+    const candidates = new Set();
+    const add = (s) => { if (s && s.length >= 2) candidates.add(s); };
+    let s = meshBase;
+    add(s);
+    s = s.replace(/(_hd|_lod\d+)+$/i, ''); add(s);
+    s = s.replace(/\d+$/, ''); add(s);                        // trim trailing digits
+    s = s.replace(/(_hd|_lod\d+)+$/i, ''); add(s);
+    s = s.replace(/^[a-z]{1,3}_/i, ''); add(s);               // strip e.g. `pl_`, `g_`, `p_`
+    s = s.replace(/(_hd|_lod\d+)+$/i, ''); add(s);
+    s = s.replace(/\d+$/, ''); add(s);
+    // Last-resort: leading Chinese-character run (≥2 chars)
+    const cjk = meshBase.match(/[\u4e00-\u9fff]{2,}/);
+    if (cjk) add(cjk[0]);
+
+    let matches = [];
+    let matchedStem = null;
+    for (const stem of candidates) {
+      const found = allTexPathsArr.filter((p) => {
+        const base = String(p).split(/[\\/]/).pop().toLowerCase();
+        return base.includes(stem);
+      });
+      if (found.length > 0) { matches = found; matchedStem = stem; break; }
+    }
+    if (matches.length === 0) continue;
+
+    em.texturePaths = matches;
+    em.textures = matches.map((p) => String(p).split('/').pop());
+    em.textureSource = 'name-match';
+    em.textureMatchStem = matchedStem;
+    em.resolvedTextures = matches.map((p) => texLookup.get(p)).filter(Boolean);
   }
 
   // ── Bind orphan track emitters to ribbon-intent mesh emitters ──
@@ -3502,6 +3628,22 @@ function resolvePssPakv4Asset(resourcePath) {
 
   const expectedPath = join(PSS_ASSET_EXTRACT_DIR, normalizedPath.replace(/\//g, '\\'));
   if (!existsSync(expectedPath)) {
+    // Try JX3 cache (PakV5) first — it covers companion files like
+    // .JsonInspack that are missing from the PakV4 dataset.
+    const resolvedCache = tryResolveCacheLogicalPath(normalizedPath);
+    if (resolvedCache) {
+      try {
+        const { output } = getJx3CacheReader().readEntry(resolvedCache.resolvedPath);
+        if (output && output.length) {
+          ensureDir(dirname(expectedPath));
+          writeFileSync(expectedPath, output);
+        }
+      } catch {
+        // fall through to PakV4
+      }
+    }
+  }
+  if (!existsSync(expectedPath)) {
     if (!existsSync(PAKV4_EXTRACT_EXE)) return null;
     const extracted = extractFromPakV4(normalizedPath, PSS_ASSET_EXTRACT_DIR);
     if (!extracted) return null;
@@ -3762,6 +3904,27 @@ function resolvePssMeshGlbAsset(resourcePath, options = {}) {
 /**
  * Analyze a PSS file: try cache first, then PakV4 extraction.
  */
+// Result cache for buildPssAnalyzeResponse. PSS bytes are immutable per
+// session; the parse + finalize pipeline is expensive (~2 s for a 150 KB
+// file with 46 emitters). Caching the JSON-shape result turns repeat
+// /api/pss/analyze and /api/pss/debug-dump calls into microseconds.
+const PSS_ANALYZE_CACHE = new Map();
+const PSS_ANALYZE_CACHE_MAX = 64;
+function getPssAnalyzeCached(sourcePathRaw) {
+  const key = String(sourcePathRaw || '');
+  const cached = PSS_ANALYZE_CACHE.get(key);
+  if (cached) return cached;
+  const t0 = Date.now();
+  const result = buildPssAnalyzeResponse(sourcePathRaw);
+  result.__buildMs = Date.now() - t0;
+  if (PSS_ANALYZE_CACHE.size >= PSS_ANALYZE_CACHE_MAX) {
+    // FIFO eviction (sufficient for a small set; no hot-cold tracking).
+    const firstKey = PSS_ANALYZE_CACHE.keys().next().value;
+    if (firstKey !== undefined) PSS_ANALYZE_CACHE.delete(firstKey);
+  }
+  PSS_ANALYZE_CACHE.set(key, result);
+  return result;
+}
 function buildPssAnalyzeResponse(sourcePathRaw) {
   const sourcePath = normalizeLogicalResourcePath(sourcePathRaw);
   if (!sourcePath) throw new Error('sourcePath is required');
@@ -7068,7 +7231,7 @@ const server = createServer(async (req, res) => {
 
       // Run the full analyzer so the debug endpoint sees exactly what the
       // renderer sees (sibling inference, runtime params, etc.).
-      const analyzed = buildPssAnalyzeResponse(sourcePath);
+      const analyzed = getPssAnalyzeCached(sourcePath);
       const emittersFromAnalyzer = Array.isArray(analyzed?.emitters) ? analyzed.emitters : [];
 
       const emitterCount = buf.readUInt32LE(12);
@@ -8104,6 +8267,7 @@ const server = createServer(async (req, res) => {
             launcherClassBytes: mf?.launcherClassBytes ?? null,
             classFlags: mf?.classFlags ?? null,
             spawnPoolIndex: mf?.spawnPoolIndex ?? null,
+            materialIndex: mf?.materialIndex ?? null,
             emitterScale: mf?.emitterScale ?? null,
             secondaryScale: mf?.secondaryScale ?? null,
             nMaxParticles,
@@ -8114,7 +8278,8 @@ const server = createServer(async (req, res) => {
             'animations (path scan)',
             'launcherClass @+264..+267 (4 bytes identify launcher family: Sprite/MeshQuote/Trail/Cloth/Flame/Particle/etc — verified by sweeping every type-2 block in T_天策龙牙.pss; see tools/pss-type2-sweep.mjs)',
             'classFlags @+268 (bit 0x100=hasTrackCurve, 0x400=hasSiblingTrack, 0x800=isRibbon, 0x002=isCloth, 0x004=isFlame; loopFlag heuristic REMOVED)',
-            'spawnPoolIndex @+292 (sequential 0..N pool slot; 0xFFFFFFFF for ribbon/trail launchers — not a class ID)',
+            'spawnPoolIndex @+260 (launcher\'s 0..N-1 ordinal among type-2 blocks — verified across T_天策龙牙/red01/red02 Apr 2026)',
+            'materialIndex @+292 (u32 nMaterialIndex into materialEntries; 0xFFFFFFFF/-1 = no material slot, used by ribbon/trail-mesh launchers)',
             'emitterScale @+308 (f32)',
             'secondaryScale @+312 (f32)',
           ];
@@ -8350,6 +8515,63 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  // API: list PSS files known to the server (pakv4 extract cache + tracked
+  // source/ tree). Used by the PSS-only viewer page to search and pick
+  // individual PSS files for isolated rendering.
+  if (method === 'GET' && urlPath === '/api/pss/find') {
+    try {
+      const query = String(reqUrl.searchParams.get('q') || '').trim().toLowerCase();
+      const limit = Math.max(1, Math.min(500, parseInt(reqUrl.searchParams.get('limit') || '200', 10) || 200));
+      // PSS files live in three places:
+      //   1) PakV4 extract cache: tools/pss-cache/data/... (logical paths
+      //      already start with "data/source/...").
+      //   2) tools/pss-cache/_assets (legacy mirror).
+      //   3) tracked source/ tree (paths re-prefixed with "data/source/").
+      const roots = [
+        { absRoot: resolve(join(__dirname, 'tools', 'pss-cache', 'data')), logicalPrefix: 'data' },
+        { absRoot: PSS_ASSET_EXTRACT_DIR, logicalPrefix: '' },
+        { absRoot: resolve(join(__dirname, 'source')), logicalPrefix: 'data/source' },
+      ];
+      const seen = new Set();
+      const results = [];
+      const walk = (dir, logicalRel) => {
+        let entries;
+        try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+        for (const e of entries) {
+          const next = join(dir, e.name);
+          const nextLogical = logicalRel ? `${logicalRel}/${e.name}` : e.name;
+          if (e.isDirectory()) { walk(next, nextLogical); continue; }
+          if (!/\.pss$/i.test(e.name)) continue;
+          // Filter out "_悟" variants — these are alternate-stance pss files
+          // not relevant to the effect inspection workflow.
+          if (/_悟\.pss$/i.test(e.name)) continue;
+          const lower = nextLogical.toLowerCase();
+          if (query && !lower.includes(query)) continue;
+          if (seen.has(lower)) continue;
+          seen.add(lower);
+          let size = 0;
+          try { size = statSync(next).size; } catch {}
+          results.push({
+            sourcePath: nextLogical.replace(/\\/g, '/'),
+            fileName: e.name,
+            byteLength: size,
+          });
+          if (results.length >= limit) return;
+        }
+      };
+      for (const r of roots) {
+        if (results.length >= limit) break;
+        if (!existsSync(r.absRoot)) continue;
+        walk(r.absRoot, r.logicalPrefix);
+      }
+      results.sort((a, b) => a.sourcePath.localeCompare(b.sourcePath));
+      sendJson(res, 200, { ok: true, query, count: results.length, items: results });
+    } catch (err) {
+      sendJson(res, 500, { error: err?.message || String(err) });
+    }
+    return;
+  }
+
   // API: PSS effect analysis — parse binary, return textures + meshes
   if (method === 'GET' && urlPath === '/api/pss/analyze') {
     try {
@@ -8358,7 +8580,7 @@ const server = createServer(async (req, res) => {
         sendJson(res, 400, { error: 'sourcePath is required' });
         return;
       }
-      sendJson(res, 200, buildPssAnalyzeResponse(sourcePath));
+      sendJson(res, 200, getPssAnalyzeCached(sourcePath));
     } catch (err) {
       sendJson(res, 500, { error: err?.message || String(err) });
     }

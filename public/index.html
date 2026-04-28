@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -7,8 +7,8 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     :root {
-      --global-header-height: 44px;
-      --global-header-offset: 54px;
+      --global-header-height: 78px;
+      --global-header-offset: 88px;
     }
     body { overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; color: #eee; }
     #canvas { width: 100vw; height: 100vh; display: block; }
@@ -20,8 +20,10 @@
       right: 0;
       height: var(--global-header-height);
       display: flex;
+      flex-wrap: wrap;
+      align-content: center;
       align-items: center;
-      gap: 14px;
+      gap: 6px 14px;
       padding: 0 12px;
       background: rgba(8, 10, 14, 0.92);
       border-bottom: 1px solid rgba(180, 210, 255, 0.24);
@@ -477,10 +479,14 @@
     <nav class="gh-links">
       <a class="gh-link current" href="index.html" aria-current="page">Editor</a>
       <a class="gh-link" href="export-reader.html">Export Reader</a>
-      <a class="gh-link" href="actor-viewer.html">Actor Viewer</a>
       <a class="gh-link" href="mesh-inspector.html">Mesh Inspector</a>
-      <a class="gh-link" href="actor-animation-player.html">Animation Player</a>
       <a class="gh-link" href="collision-test-mode.html">Collision Test</a>
+    </nav>
+    <nav class="gh-links" style="flex-basis:100%;margin-top:2px;padding-top:6px;border-top:1px dashed rgba(130,170,220,0.22);">
+      <span style="font-size:11px;color:#8ea2ba;align-self:center;letter-spacing:0.5px;">Actor pipeline</span>
+      <a class="gh-link" href="actor-viewer.html">Actor Viewer</a>
+      <a class="gh-link" href="actor-animation-player.html">Animation Player</a>
+    <a class="gh-link" href="pss.html">PSS</a>
     </nav>
   </header>
 
