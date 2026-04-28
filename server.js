@@ -8470,31 +8470,6 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  if (method === 'GET' && urlPath === '/api/special-effects') {
-    try {
-      sendJson(res, 200, buildMovieEditorSpecialEffectsResponse(
-        reqUrl.searchParams.get('q'),
-        reqUrl.searchParams.get('limit'),
-      ));
-    } catch (err) {
-      sendJson(res, 500, { error: err?.message || String(err) });
-    }
-    return;
-  }
-
-  if (method === 'GET' && urlPath === '/api/special-effects-preview') {
-    try {
-      sendJson(res, 200, buildSpecialEffectsPreviewResponse(
-        reqUrl.searchParams.get('q'),
-        reqUrl.searchParams.get('limit'),
-        { includeAll: reqUrl.searchParams.get('all') === '1' },
-      ));
-    } catch (err) {
-      sendJson(res, 500, { error: err?.message || String(err) });
-    }
-    return;
-  }
-
   if (method === 'GET' && urlPath === '/api/cache-entry/preview') {
     try {
       sendJson(res, 200, buildCacheEntryPreviewResponse(reqUrl.searchParams.get('logicalPath')));

@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JX3 Player Animation Browser</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      --global-header-height: 44px;
+      --global-header-offset: 54px;
+      --panel-bg: rgba(10, 14, 20, 0.88);
+      --panel-border: rgba(154, 184, 218, 0.26);
+      --panel-muted: #8ea2ba;
+      --panel-text: #dce7f4;
+      --panel-accent: #d6b77a;
+      --panel-accent-2: #5f88b7;
+      --panel-good: #8fcb86;
+      --panel-warn: #f0bb67;
+      --panel-error: #e87070;
+    }
+
+    html, body {
+      margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
+      background: radial-gradient(circle at top, #142031 0%, #070b10 48%, #040507 100%);
+      color: var(--panel-text);
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    /* ── Global header ── */
+    #global-header {
+      position: fixed; top: 0; left: 0; right: 0;
+      height: var(--global-header-height);
+      display: flex; align-items: center; gap: 12px; padding: 0 12px;
+      background: rgba(6, 10, 15, 0.92);
+      border-bottom: 1px solid rgba(130, 170, 220, 0.28);
+      z-index: 110; backdrop-filter: blur(6px);
+    }
+    #global-header .gh-title { color: #d8e5f5; font-size: 13px; font-weight: 700; white-space: nowrap; }
+    .gh-links { display: flex; gap: 8px; flex-wrap: wrap; }
+    .gh-link {
+      text-decoration: none; color: #d5deea; font-size: 12px;
+      border: 1px solid rgba(130, 170, 220, 0.35);
+      background: rgba(20, 30, 42, 0.85); border-radius: 6px; padding: 4px 10px;
+    }
+    .gh-link:hover { border-color: rgba(180, 215, 250, 0.7); background: rgba(66, 104, 146, 0.5); }
+    .gh-link.current { color: #fff; border-color: rgba(180, 215, 250, 0.78); background: rgba(70, 120, 180, 0.7); }
+
+    /* ── Main layout: sidebar left | right area (viewport + info) ── */
+    #sidebar {
+      position: fixed; top: var(--global-header-offset); left: 12px;
+      width: 360px; bottom: 40px;
+      display: flex; flex-direction: column;
+      background: linear-gradient(180deg, rgba(11, 16, 23, 0.95), rgba(9, 12, 18, 0.9));
+      border: 1px solid var(--panel-border); border-radius: 16px;
+      box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+      backdrop-filter: blur(12px); z-index: 40; overflow: hidden;
+    }
+
+    #right-area {
+      position: fixed; top: var(--global-header-offset);
+      left: 384px; right: 12px; bottom: 40px;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+
+    /* ── 3D Viewport ── */
+    #viewport-panel {
+      flex: 1; min-height: 200px;
+      background: linear-gradient(180deg, rgba(14, 17, 22, 0.96), rgba(9, 12, 18, 0.92));
+      border: 1px solid var(--panel-border); border-radius: 16px;
+      box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+      position: relative; overflow: hidden;
+    }
+    #viewport-canvas { width: 100%; height: 100%; display: block; }
+    #viewport-overlay {
+      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      display: flex; align-items: center; justify-content: center;
+      pointer-events: none; z-index: 5;
+    }
+    #viewport-overlay .empty-msg { color: var(--panel-muted); font-size: 13px; text-align: center; }
+    #viewport-overlay.hidden { display: none; }
+
+    #viewport-toolbar {
+      position: absolute; top: 8px; left: 10px; right: 10px; z-index: 10;
+      display: flex; align-items: center; gap: 6px;
+    }
+    #viewport-toolbar .vp-label {
+      font-size: 11px; color: var(--panel-accent);
+      background: rgba(6, 10, 15, 0.85); padding: 3px 10px;
+      border-radius: 4px; white-space: nowrap; overflow: hidden;
+      text-overflow: ellipsis; max-width: 50%;
+    }
+    #viewport-toolbar .vp-stats {
+      font-size: 10px; color: var(--panel-muted);
+      background: rgba(6, 10, 15, 0.75); padding: 2px 8px; border-radius: 4px;
+    }
+    .vp-btn {
+      padding: 3px 10px; font-size: 10px; border-radius: 4px;
+      cursor: pointer; border: 1px solid rgba(130, 170, 220, 0.35);
+      background: rgba(6, 10, 15, 0.85); color: var(--panel-text); white-space: nowrap;
+    }
+    .vp-btn:hover { background: rgba(60, 90, 130, 0.7); }
+    .vp-btn.active { border-color: var(--panel-accent); color: var(--panel-accent); }
+
+    #pss-selector {
+      position: absolute; bottom: 46px; left: 10px; right: 10px; z-index: 10;
+      display: flex; gap: 4px; flex-wrap: wrap;
+    }
+    #pss-selector:empty { display: none; }
+
+    /* ── Timeline bar ── */
+    #timeline-bar {
+      position: absolute; bottom: 8px; left: 10px; right: 10px; z-index: 12;
+      display: flex; align-items: center; gap: 6px;
+      background: rgba(6, 10, 15, 0.90); border: 1px solid rgba(130, 170, 220, 0.28);
+      border-radius: 8px; padding: 5px 8px; backdrop-filter: blur(4px);
+    }
+    #timeline-bar.hidden { display: none; }
+    .tl-btn {
+      padding: 3px 7px; font-size: 12px; border-radius: 4px; cursor: pointer;
+      border: 1px solid rgba(130, 170, 220, 0.35); background: rgba(20, 30, 42, 0.8);
+      color: var(--panel-text); line-height: 1; min-width: 28px; text-align: center;
+    }
+    .tl-btn:hover { background: rgba(60, 90, 130, 0.7); }
+    .tl-btn.active { border-color: var(--panel-accent); color: var(--panel-accent); }
+    .tl-track-wrap {
+      flex: 1; position: relative; height: 20px; display: flex; align-items: center;
+    }
+    #tl-scrubber {
+      width: 100%; cursor: pointer; accent-color: var(--panel-accent);
+      background: transparent;
+    }
+    .tl-markers {
+      position: absolute; top: 50%; left: 0; right: 0; height: 0;
+      pointer-events: none;
+    }
+    .tl-marker {
+      position: absolute; width: 2px; height: 14px; background: var(--panel-accent-2);
+      top: -7px; transform: translateX(-50%); border-radius: 1px; opacity: 0.85;
+    }
+    .tl-time {
+      font-size: 10px; color: var(--panel-muted); white-space: nowrap;
+      font-family: "Cascadia Code", monospace; min-width: 86px; text-align: right;
+    }
+    #tl-speed {
+      font-size: 10px; background: rgba(20, 30, 42, 0.8);
+      border: 1px solid rgba(130, 170, 220, 0.3); color: var(--panel-text);
+      border-radius: 4px; padding: 2px 2px; cursor: pointer;
+    }
+    .pss-chip {
+      padding: 4px 10px; font-size: 10px; border-radius: 6px;
+      cursor: pointer; border: 1px solid rgba(214, 183, 122, 0.3);
+      background: rgba(140, 100, 40, 0.15); color: var(--panel-accent);
+      transition: all 0.15s;
+    }
+    .pss-chip:hover { background: rgba(140, 100, 40, 0.35); border-color: var(--panel-accent); }
+    .pss-chip.active {
+      background: rgba(40, 180, 90, 0.45);
+      border-color: #3ae87a;
+      color: #eaffef;
+      box-shadow: 0 0 0 1px #3ae87a inset, 0 0 10px rgba(58, 232, 122, 0.35);
+    }
+
+    /* ── Info panel (smaller, below viewport) ── */
+    #info-panel {
+      flex: 0 0 auto; height: 200px; min-height: 120px; max-height: 300px;
+      background: linear-gradient(180deg, rgba(14, 17, 22, 0.96), rgba(9, 12, 18, 0.92));
+      border: 1px solid var(--panel-border); border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+      overflow-y: auto; padding: 10px 14px;
+    }
+    #info-panel .info-header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+    #info-panel .info-title { font-size: 13px; font-weight: 700; color: var(--panel-text); margin: 0; }
+    #info-panel .info-subtitle { font-size: 10px; color: var(--panel-muted); }
+    #info-panel .info-body { font-size: 11px; }
+
+    /* ── Body type selector ── */
+    .body-type-bar {
+      display: flex; gap: 6px; padding: 10px 12px;
+      border-bottom: 1px solid rgba(130, 170, 220, 0.18); flex: 0 0 auto;
+    }
+    .bt-btn {
+      flex: 1; padding: 8px 6px; text-align: center;
+      font-size: 12px; font-weight: 700; color: var(--panel-muted);
+      cursor: pointer; border: 1px solid rgba(130, 170, 220, 0.25);
+      border-radius: 8px; background: rgba(20, 30, 42, 0.6); transition: all 0.15s;
+    }
+    .bt-btn:hover { border-color: rgba(180, 215, 250, 0.5); background: rgba(50, 80, 120, 0.4); }
+    .bt-btn.active { color: #fff; border-color: var(--panel-accent); background: rgba(140, 100, 40, 0.4); }
+    .bt-btn .bt-count { display: block; font-size: 9px; font-weight: 400; color: var(--panel-muted); margin-top: 2px; }
+
+    /* ── Sidebar tabs ── */
+    .sidebar-tabs {
+      display: flex; flex: 0 0 auto; border-bottom: 1px solid rgba(130, 170, 220, 0.18);
+    }
+    .sidebar-tab {
+      flex: 1; padding: 8px 6px; text-align: center;
+      font-size: 11px; font-weight: 600; color: var(--panel-muted);
+      cursor: pointer; border-bottom: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+      background: none; border-top: none; border-left: none; border-right: none;
+    }
+    .sidebar-tab:hover { color: var(--panel-text); background: rgba(100, 150, 200, 0.06); }
+    .sidebar-tab.active { color: var(--panel-accent); border-bottom-color: var(--panel-accent); }
+    .sidebar-tab .tab-badge {
+      display: inline-block; min-width: 16px; padding: 1px 4px; margin-left: 4px;
+      font-size: 9px; font-weight: 700; border-radius: 8px;
+      background: rgba(214, 183, 122, 0.25); color: var(--panel-accent);
+    }
+
+    .tab-content { flex: 1; overflow-y: auto; padding: 10px 12px; }
+    .tab-content[hidden] { display: none; }
+
+    /* ── Shared list styles ── */
+    .item-list { list-style: none; padding: 0; margin: 0; }
+    .item-list li {
+      padding: 6px 10px; margin-bottom: 2px; border-radius: 6px;
+      cursor: pointer; font-size: 11px; color: var(--panel-text);
+      transition: background 0.15s; display: flex; align-items: center; gap: 6px;
+    }
+    .item-list li:hover { background: rgba(100, 150, 200, 0.15); }
+    .item-list li.active { background: rgba(70, 120, 180, 0.4); color: #fff; }
+    .item-list li .ani-id { color: var(--panel-accent-2); font-family: "Cascadia Code", monospace; font-size: 10px; min-width: 44px; }
+    .item-list li .ani-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .item-list li .ani-meta { font-size: 9px; color: var(--panel-muted); white-space: nowrap; }
+    .item-list li.is-tani { border-left: 3px solid var(--panel-accent); }
+    .item-list li.is-ani { border-left: 3px solid var(--panel-accent-2); }
+    .item-list li.is-placeholder { border-left: 3px solid var(--panel-muted); opacity: 0.5; }
+
+    .search-box {
+      background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(130, 170, 220, 0.3);
+      color: var(--panel-text); padding: 6px 10px; border-radius: 6px;
+      font-size: 12px; width: 100%; margin-bottom: 8px;
+    }
+    .search-box:focus { border-color: rgba(180, 215, 250, 0.7); outline: none; }
+
+    .pagination {
+      display: flex; align-items: center; gap: 8px; padding: 8px 0;
+      font-size: 11px; color: var(--panel-muted);
+    }
+    .pagination button {
+      padding: 3px 10px; border-radius: 4px; cursor: pointer;
+      border: 1px solid rgba(130, 170, 220, 0.3); background: rgba(20, 30, 42, 0.6);
+      color: var(--panel-text); font-size: 11px;
+    }
+    .pagination button:hover { background: rgba(60, 90, 130, 0.5); }
+    .pagination button:disabled { opacity: 0.3; cursor: default; }
+
+    .empty-state { text-align: center; padding: 20px; color: var(--panel-muted); font-size: 12px; }
+
+    /* ── Info panel detail styles ── */
+    .detail-section { margin-bottom: 10px; }
+    .detail-section h3 {
+      margin: 0 0 4px; font-size: 11px; color: var(--panel-accent);
+      border-bottom: 1px solid rgba(214, 183, 122, 0.15); padding-bottom: 2px;
+    }
+    .detail-grid {
+      display: grid; grid-template-columns: 110px 1fr; gap: 2px 10px; font-size: 10px;
+    }
+    .detail-grid .label { color: var(--panel-muted); }
+    .detail-grid .value { color: var(--panel-text); font-family: "Cascadia Code", monospace; font-size: 10px; word-break: break-all; }
+    .detail-grid .value.accent { color: var(--panel-accent); }
+    .detail-grid .value.file-path { color: var(--panel-accent-2); }
+
+    .serial-matches { display: flex; flex-wrap: wrap; gap: 3px; }
+    .serial-chip {
+      display: inline-block; padding: 2px 6px; border-radius: 3px;
+      font-size: 9px; background: rgba(140, 100, 40, 0.2);
+      border: 1px solid rgba(214, 183, 122, 0.3); color: var(--panel-accent);
+    }
+
+    .loading-detail {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px; color: var(--panel-muted); font-size: 11px;
+    }
+    .loading-detail::before {
+      content: ''; width: 12px; height: 12px; border: 2px solid var(--panel-muted);
+      border-top-color: var(--panel-accent); border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .status-bar {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      height: 28px; padding: 0 16px;
+      background: rgba(6, 10, 15, 0.95);
+      border-top: 1px solid rgba(130, 170, 220, 0.18);
+      display: flex; align-items: center; gap: 16px;
+      font-size: 10px; color: var(--panel-muted); z-index: 100;
+    }
+    .status-bar .status-item { white-space: nowrap; }
+    .status-bar .status-ok { color: var(--panel-good); }
+    .status-bar .status-err { color: var(--panel-error); }
+
+    /* ── Debug panel ── */
+    #debug-panel {
+      position: absolute; top: 40px; right: 0; bottom: 0; width: 340px;
+      background: rgba(6, 10, 15, 0.94); border-left: 1px solid rgba(130, 170, 220, 0.25);
+      z-index: 20; display: flex; flex-direction: column; backdrop-filter: blur(6px);
+    }
+    #debug-panel.hidden { display: none; }
+    /* ── Issues panel (sibling of #debug-panel) ── */
+    #issues-panel {
+      position: absolute; top: 40px; right: 340px; bottom: 0; width: 380px;
+      background: rgba(6, 10, 15, 0.94); border-left: 1px solid rgba(130, 170, 220, 0.25);
+      z-index: 19; display: flex; flex-direction: column; backdrop-filter: blur(6px);
+    }
+    #issues-panel.hidden { display: none; }
+    /* When debug panel is hidden, snap issues panel to the right edge. */
+    #debug-panel.hidden ~ #issues-panel { right: 0; }
+    .issues-buttons {
+      display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;
+      padding: 6px 10px; border-bottom: 1px solid rgba(130, 170, 220, 0.18); flex: 0 0 auto;
+    }
+    .issue-btn {
+      background: rgba(40, 18, 18, 0.85); border: 1px solid rgba(255, 138, 101, 0.45);
+      color: #ffb19a; cursor: pointer; font-size: 10px; font-weight: 700;
+      padding: 6px 4px; border-radius: 3px; text-align: center;
+    }
+    .issue-btn.solved { background: rgba(18, 40, 22, 0.85); border-color: rgba(127, 220, 127, 0.55); color: #9ee49e; }
+    .issue-btn.active { outline: 2px solid rgba(180, 215, 250, 0.7); }
+    .issue-btn:hover { filter: brightness(1.25); }
+    .dbg-header {
+      display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+      border-bottom: 1px solid rgba(130, 170, 220, 0.18); flex: 0 0 auto;
+    }
+    .dbg-title { font-size: 11px; font-weight: 700; color: var(--panel-accent); flex: 1; }
+    .dbg-close {
+      background: none; border: none; color: var(--panel-muted); cursor: pointer; font-size: 12px;
+      padding: 2px 6px; border-radius: 3px;
+    }
+    .dbg-close:hover { color: var(--panel-text); background: rgba(100, 150, 200, 0.15); }
+    .dbg-copy {
+      background: rgba(20, 30, 42, 0.8); border: 1px solid rgba(130, 170, 220, 0.3);
+      color: var(--panel-muted); cursor: pointer; font-size: 10px;
+      padding: 2px 8px; border-radius: 3px;
+    }
+    .dbg-copy:hover { color: var(--panel-text); border-color: rgba(180, 215, 250, 0.6); }
+    .dbg-copy.copied { color: var(--panel-good); border-color: var(--panel-good); }
+    .dbg-tabs {
+      display: flex; gap: 6px; padding: 6px 10px;
+      border-bottom: 1px solid rgba(130, 170, 220, 0.12); flex: 0 0 auto;
+    }
+    .dbg-tab {
+      background: rgba(20, 30, 42, 0.65); border: 1px solid rgba(130, 170, 220, 0.22);
+      color: var(--panel-muted); cursor: pointer; font-size: 10px; font-weight: 700;
+      padding: 3px 10px; border-radius: 999px;
+    }
+    .dbg-tab:hover { color: var(--panel-text); border-color: rgba(180, 215, 250, 0.45); }
+    .dbg-tab.active {
+      color: var(--panel-text); background: rgba(57, 102, 142, 0.38);
+      border-color: rgba(180, 215, 250, 0.55);
+    }
+    .dbg-body {
+      flex: 1; overflow-y: auto; padding: 8px 10px;
+      font-family: "Cascadia Code", "Consolas", monospace; font-size: 10px; line-height: 1.6;
+    }
+    .dbg-section { margin-bottom: 10px; }
+    .dbg-section-title { color: var(--panel-accent); margin-bottom: 3px; font-size: 10px; font-weight: 700; }
+    .dbg-row { display: flex; gap: 6px; padding: 1px 0; }
+    .dbg-row .dbg-k { color: var(--panel-muted); min-width: 90px; flex: 0 0 auto; }
+    .dbg-row .dbg-v { color: var(--panel-text); word-break: break-all; }
+    .dbg-row .dbg-ok { color: var(--panel-good); }
+    .dbg-row .dbg-err { color: var(--panel-error); }
+    .dbg-row .dbg-warn { color: var(--panel-warn); }
+    .dbg-emitter { border-left: 2px solid rgba(130, 170, 220, 0.2); padding-left: 6px; margin-bottom: 3px; }
+    .dbg-emitter.sprite { border-color: rgba(95, 136, 183, 0.6); }
+    .dbg-emitter.mesh { border-color: rgba(214, 183, 122, 0.6); }
+    .dbg-emitter.track { border-color: rgba(143, 203, 134, 0.6); }
+    .dbg-fold { margin: 2px 0 4px; padding: 0; border-left: 2px solid rgba(120, 140, 170, 0.25); padding-left: 6px; }
+    .dbg-fold > summary {
+      cursor: pointer; list-style: none; padding: 1px 0;
+      display: flex; gap: 6px; align-items: baseline;
+      color: var(--panel-muted); font-size: 10px;
+    }
+    .dbg-fold > summary::-webkit-details-marker { display: none; }
+    .dbg-fold > summary::before {
+      content: '▶'; font-size: 8px; color: var(--panel-muted);
+      transition: transform 120ms ease; display: inline-block;
+    }
+    .dbg-fold[open] > summary::before { transform: rotate(90deg); }
+    .dbg-fold .dbg-fold-label { color: var(--panel-muted); min-width: 84px; flex: 0 0 auto; }
+    .dbg-fold .dbg-fold-meta { color: var(--panel-text); }
+    .dbg-fold.ok { border-left-color: rgba(95, 223, 112, 0.4); }
+    .dbg-fold.warn { border-left-color: rgba(255, 179, 71, 0.6); }
+    .dbg-fold.warn > summary { color: var(--panel-warn); }
+  </style>
+</head>
+<body>
+
+<header id="global-header">
+  <div class="gh-title">JX3 Tool Pages</div>
+  <nav class="gh-links">
+    <a class="gh-link" href="index.html">Editor</a>
+    <a class="gh-link" href="export-reader.html">Export Reader</a>
+    <a class="gh-link" href="actor-viewer.html">Actor Viewer</a>
+    <a class="gh-link" href="special-effects.html">SFX (unused)</a>
+    <a class="gh-link" href="pss-effects.html">PSS Effects</a>
+    <a class="gh-link" href="pss-atlas.html">PSS Atlas</a>
+    <a class="gh-link" href="mesh-inspector.html">Mesh Inspector</a>
+    <a class="gh-link current" href="actor-animation-player.html" aria-current="page">Animation Player</a>
+    <a class="gh-link" href="collision-test-mode.html">Collision Test</a>
+  </nav>
+</header>
+
+<!-- Left sidebar -->
+<aside id="sidebar">
+  <div class="body-type-bar" id="body-type-bar"></div>
+  <div class="sidebar-tabs">
+    <button class="sidebar-tab active" data-tab="tab-anim-table">Anim Table <span class="tab-badge" id="anim-table-badge">0</span></button>
+    <button class="sidebar-tab" data-tab="tab-tani-catalog">Tani Catalog <span class="tab-badge" id="tani-catalog-badge">0</span></button>
+    <button class="sidebar-tab" data-tab="tab-serial">Serial <span class="tab-badge" id="serial-badge">0</span></button>
+  </div>
+  <div class="tab-content" id="tab-anim-table">
+    <input type="text" class="search-box" id="anim-search" placeholder="Search by filename or ID...">
+    <div class="pagination" id="anim-pagination"></div>
+    <ul class="item-list" id="anim-list"></ul>
+  </div>
+  <div class="tab-content" id="tab-tani-catalog" hidden>
+    <input type="text" class="search-box" id="tani-search" placeholder="Search tani catalog...">
+    <div class="pagination" id="tani-pagination"></div>
+    <ul class="item-list" id="tani-list"></ul>
+  </div>
+  <div class="tab-content" id="tab-serial" hidden>
+    <input type="text" class="search-box" id="serial-search" placeholder="Search serial animations...">
+    <ul class="item-list" id="serial-list"></ul>
+  </div>
+</aside>
+
+<!-- Right area: viewport + info -->
+<div id="right-area">
+  <div id="viewport-panel">
+    <div id="viewport-toolbar">
+      <span class="vp-label" id="vp-label">No effect loaded</span>
+      <span class="vp-stats" id="vp-stats"></span>
+      <span class="spacer" style="flex:1"></span>
+      <button class="vp-btn" id="btn-reset-camera" title="Reset camera">Reset</button>
+      <button class="vp-btn" id="btn-restart" title="Restart effect">Replay</button>
+      <button class="vp-btn" id="btn-grid" title="Toggle grid">Grid</button>
+      <button class="vp-btn" id="btn-hide-bones" title="No player model in scene — bones not available" disabled style="opacity:0.4;cursor:default;">Bones</button>
+      <button class="vp-btn" id="btn-debug" title="Toggle debug log panel">Debug</button>
+      <button class="vp-btn" id="btn-issues" title="Toggle PSS Debug Logs panel">PSS Debug Logs</button>
+    </div>
+    <canvas id="viewport-canvas"></canvas>
+    <div id="viewport-overlay">
+      <div class="empty-msg">Select a .tani animation from the left panel<br>to preview its PSS visual effects</div>
+    </div>
+    <div id="pss-selector"></div>
+    <div id="timeline-bar" class="hidden">
+      <button id="tl-playpause" class="tl-btn" title="Play/Pause (Space)">▶</button>
+      <button id="tl-restart" class="tl-btn" title="Restart">↺</button>
+      <button id="tl-loop" class="tl-btn active" title="Toggle loop">⟳</button>
+      <div class="tl-track-wrap">
+        <input id="tl-scrubber" type="range" min="0" max="10000" value="0" step="1">
+        <div class="tl-markers" id="tl-markers"></div>
+      </div>
+      <span id="tl-time" class="tl-time">0.00 / 0.00s</span>
+      <select id="tl-speed">
+        <option value="0.25">0.25×</option>
+        <option value="0.5">0.5×</option>
+        <option value="1" selected>1×</option>
+        <option value="2">2×</option>
+        <option value="4">4×</option>
+      </select>
+    </div>
+    <!-- Debug overlay panel -->
+    <div id="debug-panel" class="hidden">
+      <div class="dbg-header">
+        <span class="dbg-title">PSS Debug Log</span>
+        <button class="dbg-copy" id="btn-debug-copy">Copy</button>
+        <button class="dbg-close" id="btn-debug-close">✕</button>
+      </div>
+      <div class="dbg-tabs">
+        <button class="dbg-tab active" data-debug-tab="runtime" type="button">Runtime</button>
+        <button class="dbg-tab" data-debug-tab="pss" type="button">PSS Audit</button>
+        <button class="dbg-tab" data-debug-tab="warnings" type="button">Warnings</button>
+      </div>
+      <div class="dbg-body" id="debug-body"></div>
+    </div>
+    <!-- New PSS Debug Logs (issues) — separate panel, sibling of #debug-panel -->
+    <div id="issues-panel" class="hidden">
+      <div class="dbg-header">
+        <span class="dbg-title">New PSS Debug Logs</span>
+        <button class="dbg-copy" id="btn-issues-copy">Copy</button>
+        <button class="dbg-close" id="btn-issues-close">✕</button>
+      </div>
+      <div class="issues-buttons" id="issues-buttons"></div>
+      <div class="dbg-body" id="issues-body"></div>
+    </div>
+  </div>
+  <div id="info-panel">
+    <div class="info-header">
+      <h3 class="info-title" id="info-title">Select an animation</h3>
+      <span class="info-subtitle" id="info-subtitle"></span>
+    </div>
+    <div class="info-body" id="info-body">
+      <div class="empty-state">Choose an animation from the left panel</div>
+    </div>
+  </div>
+</div>
+
+<!-- Status bar -->
+<div class="status-bar">
+  <span class="status-item" id="status-connection">Connecting...</span>
+  <span class="status-item" id="status-body-type">—</span>
+  <span class="status-item" id="status-count">—</span>
+  <span class="status-item" id="status-renderer">Renderer: idle</span>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "/vendor/three/build/three.module.js"
+  }
+}
+</script>
+<script type="module" src="js/actor-animation-player.js"></script>
+</body>
+</html>
