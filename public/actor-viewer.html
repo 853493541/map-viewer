@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -7,8 +7,8 @@
   <style>
     * { box-sizing: border-box; }
     :root {
-      --global-header-height: 44px;
-      --global-header-offset: 54px;
+      --global-header-height: 78px;
+      --global-header-offset: 88px;
       --panel-bg: rgba(10, 14, 20, 0.88);
       --panel-border: rgba(154, 184, 218, 0.26);
       --panel-muted: #8ea2ba;
@@ -37,6 +37,8 @@
       right: 0;
       height: var(--global-header-height);
       display: flex;
+      flex-wrap: wrap;
+      align-content: center;
       align-items: center;
       gap: 12px;
       padding: 0 12px;
@@ -763,10 +765,14 @@
     <nav class="gh-links">
       <a class="gh-link" href="index.html">Editor</a>
       <a class="gh-link" href="export-reader.html">Export Reader</a>
-      <a class="gh-link current" href="actor-viewer.html" aria-current="page">Actor Viewer</a>
       <a class="gh-link" href="mesh-inspector.html">Mesh Inspector</a>
-      <a class="gh-link" href="actor-animation-player.html">Animation Player</a>
       <a class="gh-link" href="collision-test-mode.html">Collision Test</a>
+    </nav>
+    <nav class="gh-links" style="flex-basis:100%;margin-top:2px;padding-top:6px;border-top:1px dashed rgba(130,170,220,0.22);">
+      <span style="font-size:11px;color:#8ea2ba;align-self:center;letter-spacing:0.5px;">Actor pipeline</span>
+      <a class="gh-link current" href="actor-viewer.html" aria-current="page">Actor Viewer</a>
+      <a class="gh-link" href="actor-animation-player.html">Animation Player</a>
+    <a class="gh-link" href="pss.html">PSS</a>
     </nav>
   </header>
 

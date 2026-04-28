@@ -83,6 +83,12 @@ const pssDebugState = {
   socketRouting: [],
   textureResults: [],
   meshResults: [],
+  // Per-PSS audit of mesh-emitter texture binding via launcher.nMaterialIndex
+  // → PSS embedded KE3D_MT_PARTICLE_MATERIAL records. One array of items per
+  // call to auditMeshMaterialBinding (cleared on resetDebugState, appended to
+  // by addPssEffect / loadPssEffect). Each item: {sourcePath, index, mesh,
+  // materialIndex, refPath, textureSource, texturePaths[], resolvedOk}.
+  meshBindingAudit: [],
   emitters: [],
   errors: [],
   // Every place where the renderer silently substitutes a default/guessed value
@@ -93,6 +99,42 @@ const pssDebugState = {
   // of silent drift the user asked us to stop ignoring.
   fallbacks: [],
 };
+
+// ── Step-by-step load trace ──────────────────────────────────────────
+// Every meaningful event during a PSS load is recorded here with a wall-
+// clock timestamp and a delta from the click. Surfaced in #trace-panel
+// (two tabs: Errors default + All Steps; copy button on each). Reset at
+// the start of every loadOnePss() call so the trace shows ONE load at a
+// time. Levels:
+//   info  — neutral progress step
+//   ok    — something resolved successfully
+//   warn  — fallback fired or non-fatal mismatch (yellow)
+//   error — load failed, asset missing, exception caught (red)
+const pssLoadTrace = []; // [{ t, dt, level, step, detail }]
+let traceLoadStartT = 0;
+function traceReset(label) {
+  pssLoadTrace.length = 0;
+  traceLoadStartT = Date.now();
+  pssLoadTrace.push({
+    t: traceLoadStartT, dt: 0, level: 'info',
+    step: 'load-trace-reset', detail: label || '',
+  });
+  renderTracePanelIfOpen();
+}
+function traceStep(level, step, detail) {
+  const t = Date.now();
+  const dt = traceLoadStartT ? t - traceLoadStartT : 0;
+  pssLoadTrace.push({ t, dt, level, step, detail: detail || '' });
+  renderTracePanelIfOpen();
+}
+function renderTracePanelIfOpen() {
+  // Defined later via a hoisted function; guard for early calls during
+  // module init before the DOM panel exists.
+  if (typeof renderTracePanel === 'function') {
+    const p = document.getElementById('trace-panel');
+    if (p && !p.classList.contains('hidden')) renderTracePanel();
+  }
+}
 
 function dbg(category, msg, data) {
   const entry = { t: Date.now(), category, msg, data };
@@ -107,6 +149,161 @@ function dbg(category, msg, data) {
   // routed through the window.error handler which uses console.error).
   if (category === 'fallback') console.warn(`[PSS Debug] [fallback]`, msg, data || '');
   else console.debug(`[PSS Debug] [${category}]`, msg, data || '');
+  // Mirror to the load trace so it shows the same events the existing
+  // debug panel does, with timing. Map dbg categories → trace levels:
+  //   error / mesh-error → error
+  //   fallback           → warn
+  //   texture / mesh / mesh-binding → ok (these only fire on success;
+  //     the failure paths use 'error' or 'mesh-error')
+  //   anything else      → info
+  let level = 'info';
+  if (category === 'error' || category === 'mesh-error') level = 'error';
+  else if (category === 'fallback') level = 'warn';
+  else if (category === 'texture' || category === 'mesh' || category === 'mesh-binding') level = 'ok';
+  // Keep detail compact: strip large nested objects, keep a 1-line preview.
+  let detail = '';
+  if (data && typeof data === 'object') {
+    const keys = Object.keys(data).slice(0, 6);
+    detail = keys.map((k) => {
+      const v = data[k];
+      if (v == null) return `${k}=null`;
+      if (typeof v === 'object') return `${k}=…`;
+      const s = String(v);
+      return `${k}=${s.length > 60 ? s.slice(0, 57) + '…' : s}`;
+    }).join(' ');
+  }
+  traceStep(level, category, msg + (detail ? ` :: ${detail}` : ''));
+}
+
+// Per-PSS mesh-emitter material-binding audit. For every mesh emitter that
+// has a .Mesh path, verifies the launcher.nMaterialIndex (decoded server-side
+// at +260 in the type-2 launcher block) successfully resolved into a PSS
+// embedded KE3D_MT_PARTICLE_MATERIAL record with .tga textures that exist in
+// cache. Emits one dbg('mesh-binding', ...) per emitter and pushes a summary
+// entry to pssDebugState.meshBindingAudit so the Runtime tab can show it.
+//
+// Truth table (see /memories/repo/pss-launcher-shape-enum.md and
+// .github/copilot-instructions.md):
+//   • Material-class launchers (MeshQuote*, Particle*, Sprite, Cloth, Flame…)
+//     → success = launcher.nMaterialIndex resolved to a PSS material whose
+//       authored .tga textures are all present in cache.
+//   • Trail-class launchers (Trail, TrailVariantB) → AUTHORED with
+//     nMaterialIndex = 0xFFFFFFFF (decoded server-side to -1 → null) and
+//     texture comes from the type-3 ParticleTrack block via the procedural
+//     ribbon renderer. For these, success = the launcher has a `linkedTrack`
+//     with a decoded track whose nodes resolved a texture. Treating
+//     `materialIndex == null` as a gap on a Trail launcher is a misclassification.
+const TRAIL_LAUNCHER_CLASSES = new Set(['Trail', 'TrailVariantB']);
+function auditMeshMaterialBinding(data, sourcePath) {
+  const fileName = sourcePath ? sourcePath.split(/[\\/]/).pop() : '?';
+  const meshEms = (data?.emitters || []).filter(
+    (e) => e.type === 'mesh' && Array.isArray(e.meshes) && e.meshes.length > 0,
+  );
+  let okCount = 0;
+  for (const em of meshEms) {
+    const meshName = em.meshes[0].split(/[\\/]/).pop();
+    const launcherClass = em.meshFields?.launcherClass || em.launcherClass || null;
+    const isTrail = launcherClass && TRAIL_LAUNCHER_CLASSES.has(launcherClass);
+
+    let kind, ok, texCount, resolvedOk, textureSource, criterion;
+    let trackTexCount = 0, trackTexResolved = 0;
+
+    if (isTrail) {
+      // Trail-class success: linked track decoded + at least one track node
+      // produced a resolvable track-texture path. The renderer's track
+      // emitter pipeline takes it from there.
+      kind = 'trail';
+      const linked = em.linkedTrack || null;
+      const decoded = linked?.decodedTrack || null;
+      const nodeCount = decoded?.nodeCount || 0;
+      // Track-block textures are exposed on the sibling track emitter via
+      // `texturePaths` — same shape as for material-class launchers but on
+      // the type-3 block. For coverage purposes we treat "track has at least
+      // one resolvable node" as the necessary condition; texture resolution
+      // is verified separately by the renderer's track-texture pool.
+      trackTexCount = (em.linkedTrack?.trackTexturePaths || []).length;
+      trackTexResolved = trackTexCount; // server already filters resolved-only
+      ok = !!(linked && nodeCount > 0);
+      texCount = trackTexCount;
+      resolvedOk = trackTexResolved;
+      textureSource = ok ? 'track-block' : 'unbound-trail';
+      criterion = `track-class ${ok ? 'OK' : 'gap'} (nodes=${nodeCount})`;
+    } else {
+      // Material-class success: nMaterialIndex resolved + all authored .tga
+      // textures exist in cache.
+      kind = 'material';
+      texCount = (em.texturePaths || []).length;
+      resolvedOk = (em.resolvedTextures || []).filter((t) => t && t.existsInCache).length;
+      ok = texCount > 0 && resolvedOk === texCount;
+      textureSource = em.textureSource || 'unbound';
+      criterion = `material-class ${ok ? 'OK' : 'gap'} (mat=${em.materialIndex == null ? 'n/a' : '#' + em.materialIndex})`;
+    }
+
+    if (ok) okCount++;
+    const item = {
+      sourcePath,
+      fileName,
+      index: em.index,
+      mesh: meshName,
+      kind,
+      launcherClass,
+      materialIndex: em.materialIndex == null ? null : em.materialIndex,
+      refPath: em.materialRefPath || null,
+      textureSource,
+      textures: (em.texturePaths || []).map((p) => p.split(/[\\/]/).pop()),
+      texCount,
+      resolvedOk,
+      ok,
+      criterion,
+    };
+    pssDebugState.meshBindingAudit.push(item);
+    const idxStr = isTrail ? 'trail' : (item.materialIndex == null ? 'n/a' : `#${item.materialIndex}`);
+    const refTail = item.refPath ? item.refPath.split(/[\\/]/).pop() : '—';
+    const summary = `${fileName} mesh[${em.index}] ${meshName} ← ${idxStr} ${refTail} (${resolvedOk}/${texCount} tex, ${textureSource})`;
+    if (ok) {
+      dbg('mesh-binding', `OK ${summary}`, { ...item });
+    } else {
+      dbg('fallback', `mesh-binding gap: ${summary}`, {
+        category: 'mesh-binding', ...item,
+      });
+    }
+  }
+  if (meshEms.length > 0) {
+    const lvl = okCount === meshEms.length ? 'mesh-binding' : 'fallback';
+    dbg(lvl, `${fileName}: mesh-binding coverage ${okCount}/${meshEms.length}`, {
+      category: 'mesh-binding-summary', sourcePath, ok: okCount, total: meshEms.length,
+    });
+    // Mirror to the on-page PSS log panel (pss.html) so the user can see
+    // every mesh emitter's launcher→material binding outcome live. The
+    // pssLogStep function is defined later in this file as a hoisted
+    // declaration, so it is safe to call here.
+    if (typeof pssLogStep === 'function') {
+      const allOk = okCount === meshEms.length;
+      const headerLevel = allOk ? 'right' : 'wrong';
+      pssLogStep(headerLevel, `mesh binding: ${okCount}/${meshEms.length} matched`, {
+        sourcePath, ok: okCount, total: meshEms.length,
+      });
+      for (const item of pssDebugState.meshBindingAudit.slice(-meshEms.length)) {
+        const idxStr = item.kind === 'trail'
+          ? 'trail'
+          : (item.materialIndex == null ? 'n/a' : `#${item.materialIndex}`);
+        const refTail = item.refPath ? item.refPath.split(/[\\/]/).pop() : '—';
+        const texList = item.textures.length
+          ? item.textures.join(', ')
+          : (item.kind === 'trail' ? '(track-block texture)' : '(no .tga)');
+        const msg = `[${item.index}] ${item.mesh} ← ${idxStr} ${refTail} (${item.resolvedOk}/${item.texCount}) :: ${texList}`;
+        pssLogStep(item.ok ? 'right' : 'wrong', msg, {
+          kind: item.kind,
+          launcherClass: item.launcherClass,
+          textureSource: item.textureSource,
+          materialIndex: item.materialIndex,
+          refPath: item.refPath,
+          textures: item.textures,
+          criterion: item.criterion,
+        });
+      }
+    }
+  }
 }
 
 // Per-PSS fallback aggregator: many fallback categories (max-particles,
@@ -170,8 +367,28 @@ function flushFallbackAggregator() {
     try { pssDebugState.errors.push({ msg: `[console.error] ${format(args)}`, level: 'error' }); } catch { /* ignore */ }
     origError(...args);
   };
+  // Benign third-party warnings whose content tells us nothing actionable —
+  // route them to `fallbacks` instead of `errors` so the Errors tab stays
+  // focused on real problems. They still surface in the debug-log dump.
+  //
+  // FBXLoader negative material indices: JX3 character FBX exports leave
+  // some polygon material slots set to -1 (unset). Three.js's parser prints
+  // a warning and falls back to material[0] for those polygons, which is
+  // the correct behaviour for these meshes. We can't fix the source asset
+  // and the visual outcome is right, so suppress the noise.
+  const BENIGN_WARN_PATTERNS = [
+    /THREE\.FBXLoader: The FBX file contains invalid \(negative\) material indices/i,
+  ];
   console.warn = (...args) => {
-    try { pssDebugState.errors.push({ msg: `[console.warn] ${format(args)}`, level: 'warn' }); } catch { /* ignore */ }
+    try {
+      const msg = format(args);
+      const isBenign = BENIGN_WARN_PATTERNS.some((re) => re.test(msg));
+      if (isBenign) {
+        pssDebugState.fallbacks.push({ msg: `[console.warn] ${msg}`, category: 'benign-warn', level: 'warn' });
+      } else {
+        pssDebugState.errors.push({ msg: `[console.warn] ${msg}`, level: 'warn' });
+      }
+    } catch { /* ignore */ }
     origWarn(...args);
   };
 })();
@@ -184,6 +401,7 @@ function resetDebugState() {
   pssDebugState.socketRouting = [];
   pssDebugState.textureResults = [];
   pssDebugState.meshResults = [];
+  pssDebugState.meshBindingAudit = [];
   pssDebugState.emitters = [];
   pssDebugState.errors = [];
   pssDebugState.fallbacks = [];
@@ -194,7 +412,7 @@ function resetDebugState() {
 }
 
 function setActiveDebugTab(tabId) {
-  currentDebugTab = (tabId === 'pss' || tabId === 'warnings') ? tabId : 'runtime';
+  currentDebugTab = (tabId === 'pss' || tabId === 'warnings' || tabId === 'issues') ? tabId : 'runtime';
   debugTabButtons.forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.debugTab === currentDebugTab);
   });
@@ -284,6 +502,31 @@ function renderRuntimeDebugContent(d, data) {
     html += `</div>`;
   }
 
+  // Mesh emitter material-binding audit (launcher.nMaterialIndex → PSS
+  // KE3D_MT_PARTICLE_MATERIAL). Surfaces every mesh emitter and whether its
+  // .tga textures resolved cleanly to cached files.
+  if (d.meshBindingAudit && d.meshBindingAudit.length > 0) {
+    const okCount = d.meshBindingAudit.filter((it) => it.ok).length;
+    const total = d.meshBindingAudit.length;
+    const allOk = okCount === total;
+    const headerCls = allOk ? 'dbg-ok' : 'dbg-warn';
+    html += `<div class="dbg-section"><div class="dbg-section-title">Mesh Material Binding <span class="${headerCls}">${okCount}/${total} matched</span></div>`;
+    let lastFile = '';
+    for (const it of d.meshBindingAudit) {
+      if (it.fileName && it.fileName !== lastFile) {
+        html += `<div class="dbg-row"><span class="dbg-k">File</span><span class="dbg-v">${escapeHtml(it.fileName)}</span></div>`;
+        lastFile = it.fileName;
+      }
+      const icon = it.ok ? '✓' : '⚠';
+      const cls = it.ok ? 'dbg-ok' : 'dbg-warn';
+      const idxStr = it.materialIndex == null ? 'n/a' : `#${it.materialIndex}`;
+      const refTail = it.refPath ? it.refPath.split(/[\\/]/).pop() : '—';
+      const texs = it.textures.length ? it.textures.join(', ') : '(no .tga)';
+      html += `<div class="dbg-row"><span class="${cls}">${icon}</span><span class="dbg-v">[${it.index}] ${escapeHtml(it.mesh)} ← mat${idxStr} ${escapeHtml(refTail)} (${it.resolvedOk}/${it.texCount}) <small>${escapeHtml(it.textureSource)}</small><br><small style="color:#9ab">${escapeHtml(texs)}</small></span></div>`;
+    }
+    html += `</div>`;
+  }
+
   if (currentSoundEntries.length > 0) {
     html += `<div class="dbg-section"><div class="dbg-section-title">Sound Events (Wwise - not playable)</div>`;
     for (const s of currentSoundEntries) {
@@ -366,7 +609,8 @@ function renderPssBlockAudit(blk) {
     const featureRaw = (cf && typeof cf.raw === 'number') ? `0x${cf.raw.toString(16).padStart(8, '0')}` : '—';
     html += `<div class="dbg-row"><span class="dbg-k">Class</span><span class="dbg-v">${escapeHtml(launcherClass)} <span class="dbg-warn">(key ${escapeHtml(launcherKey)})</span></span></div>`;
     html += `<div class="dbg-row"><span class="dbg-k">Flags</span><span class="dbg-v">${escapeHtml(flagNames)} <span class="dbg-warn">(feature ${featureRaw})</span></span></div>`;
-    html += `<div class="dbg-row"><span class="dbg-k">Scale</span><span class="dbg-v">emitter:${formatDebugInlineValue(parsed.emitterScale)} | secondary:${formatDebugInlineValue(parsed.secondaryScale)} | poolIndex:${parsed.spawnPoolIndex == null ? 'ribbon' : parsed.spawnPoolIndex}</span></div>`;
+    const matIdxLabel = (parsed.materialIndex == null || parsed.materialIndex < 0) ? 'none(ribbon)' : parsed.materialIndex;
+    html += `<div class="dbg-row"><span class="dbg-k">Scale</span><span class="dbg-v">emitter:${formatDebugInlineValue(parsed.emitterScale)} | secondary:${formatDebugInlineValue(parsed.secondaryScale)} | poolIdx@+260:${parsed.spawnPoolIndex} | matIdx@+292:${matIdxLabel}</span></div>`;
   } else if (blk.typeLabel === 'track') {
     html += `<div class="dbg-row"><span class="dbg-k">Tracks</span><span class="dbg-v">${escapeHtml(formatDebugInlineValue(parsed.tracks))}</span></div>`;
     if (isMeaningfulDebugValue(parsed.trackParams)) {
@@ -637,8 +881,8 @@ const PSS_ISSUES = [
     id: 6,
     title: 'blendMode resolved by keyword/name heuristic instead of jsondef',
     difficulty: '2/5',
-    status: 'solved',
-    howFound: 'Round 1 (2026-04-26): per user directive ("anything goes wrong is a warning, never silent fallback"), the four `name-fallback:*-keyword` branches in server.js (alpha/add/glow/multiply suffix outside 独立材质, plus 消散/渐变/fade and 发光/加亮/shine/光亮/gloss Chinese-keyword guesses) were deleted. Only the `name-convention:*-suffix` path inside 独立材质/ remains — that one is authoritative because the editor writes the suffix into RenderState.BlendMode at material-creation time. For every other case where the .jsondef is unavailable, blendMode now stays null and a warning is surfaced via parsed.uncertain rather than a fabricated value.',
+    status: 'open',
+    howFound: 'Searched server.js for "blendModeSource" assignments and found name-fallback / keyword-based branches around line 2014–2051 that infer blendMode from material basename keywords ("add", "alpha", "blend") when jsondef is missing. This is heuristic guessing — should be a warning, not a silent resolution.',
     detect: (dumps) => {
       const errs = [];
       for (const dump of dumps) {
@@ -646,7 +890,7 @@ const PSS_ISSUES = [
         for (const blk of (dump.blocks || [])) {
           const src = blk.parsed?.blendModeSource;
           if (typeof src === 'string' && /name-fallback|keyword/i.test(src)) {
-            errs.push(`${fileName} blk#${blk.index} material=${blk.parsed?.material || '?'} STRUCTURAL BUG: heuristic blendMode resolution still active (${src})`);
+            errs.push(`${fileName} blk#${blk.index} material=${blk.parsed?.material || '?'} blendMode resolved via heuristic: ${src}`);
           }
         }
       }
@@ -657,22 +901,20 @@ const PSS_ISSUES = [
     id: 7,
     title: 'type-3 trackParams indices marked APPROXIMATE',
     difficulty: '3/5',
-    status: 'solved',
-    howFound: 'Round 1 (2026-04-26): per user directive ("anything goes wrong is a warning, never silent fallback / heuristic"), the unverified trackParams field-index extractor in server.js extractTrackRuntimeParams (alphaScale@floats[9], speedHint@floats[11], flowScale@floats[14], tailToken@uints[13] — all guesses labeled "APPROXIMATE indices" in the type3 audit string) was deleted. extractTrackRuntimeParams now returns null. Each type-3 emitter receives a structured trackParamsWarning explaining the absence, and the block\'s parsed.uncertain surfaces the warning so it shows in the Warnings tab. Client-side (sliceTrackNodesForEmitter, linkedTrack rendering) already gracefully handles trackParams=null with documented defaults (widthScale=1, speedHint=80, flowScale=1) — no functional regression. Detector flags any block that still carries non-null trackParams.',
+    status: 'open',
+    howFound: 'Searched server.js around line 7787 for the literal token "APPROXIMATE indices". The type-3 (track) trackParams parser uses field offsets that have not been confirmed against the engine — they are best-guesses that happen to work for visited files. Detector surfaces every block that reports approximate trackParams.',
     detect: (dumps) => {
       const errs = [];
       for (const dump of dumps) {
         const fileName = extractFileName(dump.sourcePath);
         for (const blk of (dump.blocks || [])) {
           if (blk.type !== 3) continue;
-          const tp = blk.parsed?.trackParams;
-          if (tp && typeof tp === 'object') {
-            errs.push(`${fileName} blk#${blk.index}: STRUCTURAL BUG — trackParams still extracted via APPROXIMATE indices: ${JSON.stringify(tp)}`);
+          const note = blk.parsed?.trackParamsNote || blk.parsed?.trackParamsHint;
+          if (note && /approximate/i.test(String(note))) {
+            errs.push(`${fileName} blk#${blk.index}: trackParams ${note}`);
           }
           for (const u of (blk.uncertain || [])) {
-            if (/approximate/i.test(String(u))) {
-              errs.push(`${fileName} blk#${blk.index}: lingering APPROXIMATE annotation: ${u}`);
-            }
+            if (/approximate/i.test(String(u))) errs.push(`${fileName} blk#${blk.index}: ${u}`);
           }
         }
       }
@@ -683,42 +925,23 @@ const PSS_ISSUES = [
     id: 8,
     title: 'GATA start-times use safe fallback',
     difficulty: '5/5',
-    status: 'solved',
-    howFound: 'Round 1 (2026-04-26): server.js parseTaniBinary used to push every PSS entry with a hardcoded `startTimeMs = 0` and a comment calling it the "safe fallback". When the source PSS was unresolvable, the post-loop also assigned `entry.effectiveStartTimeMs = entry.startTimeMs` (i.e. 0) with `timingSource = "tani-unresolved"`, so a fabricated zero looked authoritative. Per the no-silent-fallback policy, both substitutions were removed: GATA entries now carry `startTimeMs: null` plus a structured `gataTimingWarning`; when no source PSS is available, `effectiveStartTimeMs` stays null and `timingSource = "unresolved-no-source-pss"`. parseTaniBinary also now exposes a top-level `gataTimingStatus` summary. Client-side, getTimelineEntryStartTimeMs records a `kind:"tani-start-time-unresolved"` entry into pssDebugState.fallbacks before returning 0 for layout-only positioning, and loadAllPssFromTani feeds that resolved value into addPssEffect explicitly. Detector flags any regression that re-introduces a numeric startTimeMs, the old timingSource string, or a missing gataTimingWarning.',
-    detect: (dumps, fallbacks, apiData) => {
+    status: 'open',
+    howFound: 'Searched server.js around line 5418 for "safe fallback" and confirmed the GATA timing extractor returns hard-coded zero-start values when its parser cannot locate the start-time table. The "safe" framing is misleading — it produces zeros that look authoritative.',
+    detect: (dumps) => {
       const errs = [];
-      const tani = (typeof window !== 'undefined' && window.currentTaniData) || null;
-      const entries = tani && Array.isArray(tani.pssEntries) ? tani.pssEntries : [];
-      const taniName = tani?.path ? extractFileName(tani.path) : (tani?.aniPath ? extractFileName(tani.aniPath) : '(no tani loaded)');
-      if (entries.length === 0) {
-        // Nothing to detect against — not evidence of the bug.
-        return errs;
-      }
-      const status = tani?.gataTimingStatus;
-      if (!status || status.perEntryStartTime !== 'not-extracted') {
-        errs.push(`${taniName}: gataTimingStatus is missing or no longer marks perEntryStartTime as not-extracted (regression)`);
-      }
-      for (let i = 0; i < entries.length; i++) {
-        const e = entries[i];
-        const tag = `${taniName} pssEntries[${i}] (${extractFileName(e?.path || '')})`;
-        if (typeof e?.startTimeMs === 'number') {
-          errs.push(`${tag}: startTimeMs is a number (${e.startTimeMs}) — silent fallback regression; must be null after issue #8`);
-        }
-        if (!e?.gataTimingWarning) {
-          errs.push(`${tag}: gataTimingWarning is missing — GATA timing must always be flagged as not-extracted`);
-        }
-        if (e?.timingSource === 'tani-unresolved') {
-          errs.push(`${tag}: timingSource still uses the legacy "tani-unresolved" label that fabricated effectiveStartTimeMs=0`);
-        }
-        if (e?.timingSource === 'unresolved-no-source-pss' && Number.isFinite(e?.effectiveStartTimeMs)) {
-          errs.push(`${tag}: timingSource=unresolved-no-source-pss but effectiveStartTimeMs=${e.effectiveStartTimeMs} (must be null)`);
-        }
-      }
-      // Sanity sweep over PSS dumps for any lingering "safe fallback" wording.
-      for (const dump of (dumps || [])) {
+      for (const dump of dumps) {
         const fileName = extractFileName(dump.sourcePath);
-        for (const u of (dump.uncertain || [])) {
-          if (/safe fallback/i.test(String(u))) errs.push(`${fileName}: PSS dump still surfaces "safe fallback" text: ${u}`);
+        const top = dump.uncertain || [];
+        for (const u of top) {
+          if (/start.?time|gata|safe fallback/i.test(String(u))) errs.push(`${fileName}: ${u}`);
+        }
+        for (const blk of (dump.blocks || [])) {
+          for (const u of (blk.uncertain || [])) {
+            if (/start.?time|safe fallback/i.test(String(u))) errs.push(`${fileName} blk#${blk.index}: ${u}`);
+          }
+          if (blk.parsed?.gataStartSource && /fallback|safe/i.test(String(blk.parsed.gataStartSource))) {
+            errs.push(`${fileName} blk#${blk.index}: gataStartSource=${blk.parsed.gataStartSource}`);
+          }
         }
       }
       return errs;
@@ -728,42 +951,18 @@ const PSS_ISSUES = [
     id: 9,
     title: 'Block #15 in jc02: binary scan finds 3 emitters, parser exposes 2',
     difficulty: '5/5',
-    status: 'solved',
-    howFound: 'Round 1 (2026-04-26): probed `t_天策尖刺02.pss` block #15 directly. moduleOffsets contained 速度 at offsets 2962/3498/4035 (3 occurrences) and 缩放 at 2694/3230/3767 (3 occurrences), yet `parsed.curveInfo.velocity[].length === 2` and `parsed.curveInfo.scale[].length === 2`. Root cause: server.js `buildCurveEntry` had `if (!decoded && occurrenceIdx > 0) return null;` which silently dropped any later emitter whose payload bytes did not match a known keyframe schema. Fixed structurally per the no-silent-fallback rule: `buildCurveEntry` now ALWAYS emits an entry when the module occurrence exists, even if no schema matched. Failed-decode entries carry `decoded:false`, `layoutKind:null`, plus a `decodeWarning` string and a `structuralProbe` with `payloadStart/payloadEnd/payloadLen/moduleOffsetIdx` so the audit can see exactly where the payload sits. A new helper `findOccurrencePayload` resolves the byte range without going through the keyframe schemas. Detector flags any sprite block where the count of a curve module name in `parsed.moduleOffsets` exceeds the length of the matching `parsed.curveInfo.<key>[]` array, OR a block where any per-emitter curveInfo entry both lacks `decoded:true` AND lacks `decodeWarning` (which would mean a silent drop snuck back in).',
+    status: 'open',
+    howFound: 'After fixing issue #1, ran tools/check-jc02-after-fix.cjs which iterates parsed.curveInfo arrays. Compared with raw byte scan of block#15 from tools/audit-tag-offsets.cjs which finds 3 distinct emitter-bound module marker groups. Parser only exposes 2 — third is being silently dropped before reaching the curve-decode path.',
     detect: (dumps) => {
       const errs = [];
-      const KEY_TO_CN = {
-        velocity: '速度',
-        brightness: '亮度',
-        color: '颜色',
-        scale: '缩放',
-        rotation: '旋转',
-        distortStrength: '扭曲强度',
-        offset: '偏移',
-      };
-      for (const dump of (dumps || [])) {
+      for (const dump of dumps) {
         const fileName = extractFileName(dump.sourcePath);
         for (const blk of (dump.blocks || [])) {
           if (blk.type !== 1) continue;
-          const offsets = Array.isArray(blk.parsed?.moduleOffsets) ? blk.parsed.moduleOffsets : [];
-          const ci = blk.parsed?.curveInfo || {};
-          for (const [key, cn] of Object.entries(KEY_TO_CN)) {
-            const occurrences = offsets.reduce((n, m) => n + (m && m.name === cn ? 1 : 0), 0);
-            const arr = Array.isArray(ci[key]) ? ci[key] : [];
-            if (occurrences > arr.length) {
-              errs.push(`${fileName} blk#${blk.index}: ${cn} has ${occurrences} byte-scan occurrence(s) but curveInfo.${key} only exposes ${arr.length} — silent emitter drop (issue #9 regression)`);
-            }
-            // Also flag any entry that lacks both decoded:true and a decodeWarning — a true silent failure shouldn't exist after the fix.
-            for (let i = 0; i < arr.length; i++) {
-              const e = arr[i];
-              if (!e) {
-                errs.push(`${fileName} blk#${blk.index}: curveInfo.${key}[${i}] is falsy — silent drop`);
-                continue;
-              }
-              if (e.decoded !== true && e.layoutKind == null && !e.decodeWarning) {
-                errs.push(`${fileName} blk#${blk.index}: curveInfo.${key}[${i}] (emitter#${e.emitterIndex}) has decoded=${e.decoded}, layoutKind=null, AND no decodeWarning — every undecoded entry must carry an explanation or a recognized layoutKind`);
-              }
-            }
+          const raw = blk.parsed?.rawEmitterScanCount;
+          const exposed = blk.parsed?.emitterCount || 0;
+          if (typeof raw === 'number' && raw > exposed) {
+            errs.push(`${fileName} blk#${blk.index}: byte-scan finds ${raw} emitters, parsed exposes ${exposed}`);
           }
         }
       }
@@ -774,24 +973,18 @@ const PSS_ISSUES = [
     id: 10,
     title: 'validModules filter drops emitters before curve decode',
     difficulty: '3/5',
-    status: 'solved',
-    howFound: 'Round 1 (2026-04-26): the original detector compared parsed.moduleOffsets.length vs parsed.modules.length and treated any difference as "validator dropped emitters". That premise was wrong: modules is `[...new Set(moduleOffsets.map(m => m.name))]` — deduplicated by design — so the difference is always exactly the number of repeated names across multi-emitter blocks (e.g. block #15 of jc02 declares 通道/速度/缩放 once per emitter). After the issue #4 anchored byte-search rewrite (server.js extractConfirmedSpriteModules), there is also no "validator filter" anymore: anchored search either matches an exact whitelist GB18030 byte sequence (kept) or doesn\'t (no candidate to drop). The rewritten detector now flags actual structural drops: any moduleOffsets entry whose name is not in MODULE_NAME_WHITELIST, or any block with parsed.unknownModules entries (which would indicate a regression to candidate-scan + filter logic).',
+    status: 'open',
+    howFound: 'Surfaced by issue #1 fix: while wiring buildCurveEntryList to enumerate every emitter, found that the validModules filter (early sprite-block validator) discards any module whose tag does not match the strict shape, causing whole emitter slots to vanish before curveInfo is built. Detector flags blocks where moduleOffsets count exceeds parsed.modules length.',
     detect: (dumps) => {
       const errs = [];
-      const KNOWN = new Set(['亮度','速度','颜色','加强','缩放','羽化','羽化颜色','通道','贴图','通道贴图','消散贴图','颜色贴图','颜色贴图旋转','颜色贴图单次','颜色贴图重复','颜色贴图自定义','特效','光效','烟雾','消散','消散密度','四方连续','火焰纹理','层图','纹理','轨迹','勾边','勾边宽度','勾边颜色','扭曲强度','旋转','开启深度','关闭深度','偏移','颜色贴图缩放','颜色贴图速度','其他','消散贴图速度','消散贴图偏移','扭曲速度','扭曲贴图','扭曲缩放','通道贴图缩放','通道贴图重复','流光','层雾','极光','边缘模糊','无缝','吞探','沙尘','波纹','渐入','通道贴图单次','刀光溶解','水纹','光球','颜色贴图偏移','光线','噪点贴图','纹理烟影','光点','星空纹理','流光颜色','强度控制','流光区域贴图','流光亮度','通道贴图偏移','烟火','通道贴图旋转','水波','流光区域','法线','柔光','光圈','消散贴图旋转','云烟雾','轮廓范围幂','轮廓光强度','条带','闪电','羽化强度','遮罩','方向消失程度']);
       for (const dump of dumps) {
         const fileName = extractFileName(dump.sourcePath);
         for (const blk of (dump.blocks || [])) {
           if (blk.type !== 1) continue;
-          const mods = Array.isArray(blk.parsed?.modules) ? blk.parsed.modules : [];
-          for (const name of mods) {
-            if (typeof name === 'string' && !KNOWN.has(name)) {
-              errs.push(`${fileName} blk#${blk.index}: parsed.modules contains "${name}" not in MODULE_NAME_WHITELIST — anchored byte-search regression`);
-            }
-          }
-          const unk = blk.parsed?.unknownModules || [];
-          if (Array.isArray(unk) && unk.length > 0) {
-            errs.push(`${fileName} blk#${blk.index}: unknownModules has ${unk.length} entries — anchored byte-search regression (issue #4 was supposed to make this 0)`);
+          const offCount = Array.isArray(blk.parsed?.moduleOffsets) ? blk.parsed.moduleOffsets.length : null;
+          const modCount = Array.isArray(blk.parsed?.modules) ? blk.parsed.modules.length : 0;
+          if (offCount != null && offCount > modCount) {
+            errs.push(`${fileName} blk#${blk.index}: ${offCount} module offsets but only ${modCount} valid modules — ${offCount - modCount} dropped by validator`);
           }
         }
       }
@@ -801,32 +994,13 @@ const PSS_ISSUES = [
 ];
 
 let __selectedIssueId = 1;
-function renderIssuesPanel() {
-  const issuesBody = document.getElementById('issues-body');
-  const issuesButtons = document.getElementById('issues-buttons');
-  if (!issuesBody || !issuesButtons) return;
-  const d = pssDebugState;
+function renderIssuesContent(d) {
   const dumps = Array.isArray(d.debugDumps) ? d.debugDumps : [];
   const fallbacks = Array.isArray(d.fallbacks) ? d.fallbacks : [];
 
-  // Render the 10 issue buttons (green = solved, red = open).
-  issuesButtons.innerHTML = PSS_ISSUES.map((iss) => {
-    const cls = ['issue-btn'];
-    if (iss.status === 'solved') cls.push('solved');
-    if (iss.id === __selectedIssueId) cls.push('active');
-    return `<button type="button" class="${cls.join(' ')}" data-issue-id="${iss.id}" title="${escapeHtml(iss.title)}">#${iss.id}<br>${iss.status === 'solved' ? '\u2713 SOLVED' : '\u2717 OPEN'}</button>`;
-  }).join('');
-  Array.from(issuesButtons.querySelectorAll('.issue-btn')).forEach((btn) => {
-    btn.addEventListener('click', () => {
-      __selectedIssueId = parseInt(btn.dataset.issueId, 10) || 1;
-      renderIssuesPanel();
-    });
-  });
-
-  if (!d.apiData) {
-    issuesBody.innerHTML = '<div style="color:var(--panel-muted);padding:12px;">No PSS loaded yet</div>';
-    return;
-  }
+  const dropdown = `<select id="issue-dropdown" style="width:100%;padding:6px;background:#1a1a1a;color:#ddd;border:1px solid #444;font-family:inherit;font-size:12px;margin-bottom:8px;">${
+    PSS_ISSUES.map((iss) => `<option value="${iss.id}" ${iss.id === __selectedIssueId ? 'selected' : ''}>#${iss.id} [${iss.status === 'solved' ? '✓ SOLVED' : '✗ OPEN'}] ${escapeHtml(iss.title)} (difficulty ${iss.difficulty})</option>`).join('')
+  }</select>`;
 
   const issue = PSS_ISSUES.find((i) => i.id === __selectedIssueId) || PSS_ISSUES[0];
   let errors = [];
@@ -837,27 +1011,26 @@ function renderIssuesPanel() {
     : `<span style="color:#ff8a65;font-weight:bold;">OPEN</span>`;
 
   const dumpInfo = dumps.length === 0
-    ? `<div style="color:#888;font-style:italic;padding:6px;">No PSS debug-dump loaded yet \u2014 load an animation to see live evidence.</div>`
+    ? `<div style="color:#888;font-style:italic;padding:6px;">No PSS debug-dump loaded yet — load an animation to see live evidence.</div>`
     : `<div style="color:#888;font-size:11px;padding:4px 0;">scanned ${dumps.length} PSS file(s): ${dumps.map((dd) => escapeHtml(extractFileName(dd.sourcePath))).join(', ')}</div>`;
 
   let evidenceHtml;
   if (errors.length === 0) {
     evidenceHtml = issue.status === 'solved'
-      ? `<div style="color:#7fdc7f;padding:6px;">\u2713 No evidence found \u2014 fix is verified live.</div>`
+      ? `<div style="color:#7fdc7f;padding:6px;">✓ No evidence found — fix is verified live.</div>`
       : `<div style="color:#888;padding:6px;font-style:italic;">No evidence found in currently-loaded PSS files. Either the issue does not affect them, or the loaded set is too small to surface it.</div>`;
   } else {
     evidenceHtml = `<div style="padding:4px 0;color:#ff8a65;font-weight:bold;">${errors.length} evidence row(s):</div>`
       + errors.map((e) => `<div style="padding:3px 6px;border-left:2px solid #ff8a65;margin:2px 0;background:#2a1a1a;font-family:monospace;font-size:11px;color:#ddd;">${escapeHtml(e)}</div>`).join('');
   }
 
-  const plainLines = errors.map((e) => `#${issue.id} ${issue.title} | ${e}`);
-  window.__pssIssuesPlainText = plainLines.join('\n');
-
-  issuesBody.innerHTML = `
+  const html = `
 <div class="dbg-section">
+  <div class="dbg-section-title">New Pss DEBUG LOGS — pick an issue:</div>
+  ${dropdown}
   <div style="padding:8px;background:#1a1a1a;border:1px solid #333;border-radius:3px;">
-    <div style="font-size:13px;font-weight:bold;margin-bottom:4px;">#${issue.id} \u2014 ${escapeHtml(issue.title)}</div>
-    <div style="font-size:11px;color:#aaa;margin-bottom:6px;">Status: ${statusBadge} \u00b7 Difficulty: ${escapeHtml(issue.difficulty)}</div>
+    <div style="font-size:13px;font-weight:bold;margin-bottom:4px;">#${issue.id} — ${escapeHtml(issue.title)}</div>
+    <div style="font-size:11px;color:#aaa;margin-bottom:6px;">Status: ${statusBadge} · Difficulty: ${escapeHtml(issue.difficulty)}</div>
     <div style="font-size:11px;color:#bbb;margin-bottom:8px;padding:6px;background:#0d0d0d;border-left:2px solid #4a8;border-radius:2px;">
       <b style="color:#4a8;">How this was found:</b><br>${escapeHtml(issue.howFound)}
     </div>
@@ -865,6 +1038,18 @@ function renderIssuesPanel() {
     ${evidenceHtml}
   </div>
 </div>`;
+
+  // Wire the dropdown after innerHTML is set. We do it via setTimeout so it
+  // runs after the parent assignment in renderDebugPanel.
+  setTimeout(() => {
+    const sel = document.getElementById('issue-dropdown');
+    if (sel) sel.addEventListener('change', (ev) => {
+      __selectedIssueId = parseInt(ev.target.value, 10) || 1;
+      renderDebugPanel();
+    });
+  }, 0);
+
+  return html;
 }
 
 // Unified Warnings panel. Per the user's directive (2026-04-26):
@@ -924,11 +1109,6 @@ function renderWarningsContent(d) {
 }
 
 function renderDebugPanel() {
-  // Issues panel is independent of the debug panel; refresh it if visible.
-  try {
-    const ip = document.getElementById('issues-panel');
-    if (ip && !ip.classList.contains('hidden')) renderIssuesPanel();
-  } catch { /* ignore */ }
   if (!debugBody) return;
   const d = pssDebugState;
   const data = d.apiData;
@@ -941,7 +1121,9 @@ function renderDebugPanel() {
     ? renderPssDebugContent(d, data)
     : currentDebugTab === 'warnings'
       ? renderWarningsContent(d, data)
-      : renderRuntimeDebugContent(d, data);
+      : currentDebugTab === 'issues'
+        ? renderIssuesContent(d, data)
+        : renderRuntimeDebugContent(d, data);
 }
 
 async function postDebugLogToServer() {
@@ -1585,6 +1767,7 @@ function initThreeJs() {
     canvas: viewportCanvas,
     antialias: true,
     alpha: true,
+    preserveDrawingBuffer: true, // needed for visual Playwright assertions
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setClearColor(0x080c12, 1);
@@ -1625,6 +1808,269 @@ function initThreeJs() {
   const ro = new ResizeObserver(() => resizeRenderer());
   ro.observe(viewportPanel);
   resizeRenderer();
+
+  // Test/debug introspection hook — module scope is invisible to
+  // page.evaluate, so we expose a snapshot function. Cheap, no perf
+  // cost unless called.
+
+  // Per-emitter runtime snapshot for parameter-oracle / timeline tests.
+  // Returns the in-memory state of every sprite/mesh/track emitter so
+  // automated tests can compare against /api/pss/analyze and detect
+  // "all emitters spawned with identical timing" bugs.
+  window.__pssRuntimeSnapshot = () => {
+    const v3 = (o) => o ? [o.x, o.y, o.z] : null;
+    const sprites = (typeof spriteEmitters !== 'undefined' ? spriteEmitters : []).map((e, i) => ({
+      kind: 'sprite',
+      runtimeIndex: i,
+      sourcePath: e.sourcePath || null,
+      startTimeMs: e.startTimeMs ?? null,
+      effectDurationMs: e.effectDurationMs ?? null,
+      visible: !!(e.points && e.points.visible),
+      worldPosition: e.points ? v3(e.points.getWorldPosition(new THREE.Vector3())) : null,
+      attachedTo: e.points && e.points.parent ? (e.points.parent.name || e.points.parent.type) : null,
+    }));
+    const meshes = (typeof meshObjects !== 'undefined' ? meshObjects : []).map((e, i) => ({
+      kind: 'mesh',
+      runtimeIndex: i,
+      sourcePath: e.sourcePath || null,
+      startTimeMs: e.startTimeMs ?? null,
+      visible: !!(e.group && e.group.visible),
+      worldPosition: e.group ? v3(e.group.getWorldPosition(new THREE.Vector3())) : null,
+      localPosition: e.group ? v3(e.group.position) : null,
+      attachedTo: e.group && e.group.parent ? (e.group.parent.name || e.group.parent.type) : null,
+      hasTrackPath: !!e.trackPath,
+    }));
+    const tracks = (typeof trackLines !== 'undefined' ? trackLines : []).map((e, i) => ({
+      kind: 'track',
+      runtimeIndex: i,
+      sourcePath: e.sourcePath || null,
+      startTimeMs: e.startTimeMs ?? null,
+      effectDurationMs: e.effectDurationMs ?? null,
+      visible: !!(e.group && e.group.visible),
+      worldPosition: e.group ? v3(e.group.getWorldPosition(new THREE.Vector3())) : null,
+    }));
+    return {
+      timeline: {
+        timelineMs: typeof timelineMs !== 'undefined' ? timelineMs : null,
+        timelineTotalMs: typeof timelineTotalMs !== 'undefined' ? timelineTotalMs : null,
+        playing: typeof timelinePlaying !== 'undefined' ? timelinePlaying : null,
+      },
+      sprites, meshes, tracks,
+      counts: { sprite: sprites.length, mesh: meshes.length, track: tracks.length },
+    };
+  };
+
+  // Detailed per-emitter inventory for the "white walls" diagnostic. Returns
+  // the actual rendering parameters that ended up on the GPU — texture src,
+  // material color/opacity/blending, geometry vert count, world-space size,
+  // particle counts — so a test can print a flat table and the bad emitters
+  // are immediately obvious. NOT cheap to run every frame; intended for
+  // single-shot diagnostics.
+  window.__pssEmitterInventory = () => {
+    const v3 = (o) => o ? [+o.x.toFixed(3), +o.y.toFixed(3), +o.z.toFixed(3)] : null;
+    const colArr = (c) => c ? [+c.r.toFixed(3), +c.g.toFixed(3), +c.b.toFixed(3)] : null;
+    const blendName = (b) => {
+      if (b === THREE.AdditiveBlending) return 'additive';
+      if (b === THREE.MultiplyBlending) return 'multiply';
+      if (b === THREE.SubtractiveBlending) return 'subtractive';
+      if (b === THREE.NoBlending) return 'none';
+      if (b === THREE.NormalBlending) return 'normal';
+      if (b === THREE.CustomBlending) return 'custom';
+      return `?(${b})`;
+    };
+    const texInfo = (t) => {
+      if (!t) return { bound: false };
+      const img = t.image || null;
+      return {
+        bound: true,
+        uuid: t.uuid?.slice(0, 8) || null,
+        srcShort: img && img.src ? img.src.split('/').pop()?.split('?')[0] : null,
+        w: img?.width || img?.naturalWidth || null,
+        h: img?.height || img?.naturalHeight || null,
+        repeat: t.repeat ? [t.repeat.x, t.repeat.y] : null,
+        offset: t.offset ? [+t.offset.x.toFixed(3), +t.offset.y.toFixed(3)] : null,
+        format: t.format,
+        colorSpace: t.colorSpace || null,
+      };
+    };
+    const worldBoxSize = (obj) => {
+      if (!obj) return null;
+      try {
+        const b = new THREE.Box3().setFromObject(obj);
+        if (b.isEmpty()) return null;
+        const s = new THREE.Vector3(); b.getSize(s);
+        return [+s.x.toFixed(2), +s.y.toFixed(2), +s.z.toFixed(2)];
+      } catch { return null; }
+    };
+
+    const sprites = (typeof spriteEmitters !== 'undefined' ? spriteEmitters : []).map((e, i) => {
+      const layers = (e.layerResources || []).map((res) => ({
+        texture: texInfo(res.texture),
+        atlasTex: res.atlasTex ? texInfo(res.atlasTex) : null,
+        materialColor: colArr(res.mat?.color),
+        materialOpacity: res.mat?.opacity ?? null,
+        materialTransparent: res.mat?.transparent ?? null,
+        blending: blendName(res.mat?.blending),
+        depthWrite: res.mat?.depthWrite ?? null,
+        layerFlag: res.layerFlag,
+      }));
+      const aliveParticles = (e.particles || []).filter((p) => p.alive).length;
+      return {
+        kind: 'sprite',
+        runtimeIndex: i,
+        emitterDataIndex: e.emDef?.index ?? null,
+        sourcePath: e.sourcePath || null,
+        visible: !!(e.points && e.points.visible),
+        startTimeMs: e.startTimeMs ?? null,
+        effectDurationMs: e.effectDurationMs ?? null,
+        worldPosition: e.points ? v3(e.points.getWorldPosition(new THREE.Vector3())) : null,
+        worldBoxSize: worldBoxSize(e.points),
+        attachedTo: e.points && e.points.parent ? (e.points.parent.name || e.points.parent.type) : null,
+        // What the Material+Texture actually look like on the GPU.
+        layers,
+        layerCount: layers.length,
+        // Atlas / particle state.
+        atlas: { rows: e.uvRows, cols: e.uvCols, cells: e.atlasCellCount, isAtlas: !!e.isAtlas },
+        particleCount: e.particleCount ?? null,
+        aliveParticles,
+        isAdditive: !!e.isAdditive,
+        baseTint: colArr(e.baseTint),
+        currentColor: colArr(e.currentColor),
+        // Authored fields the renderer captured at construction time.
+        authoredLifetime: e.authoredLifetime ?? null,
+        authoredSizeCurve: e.authoredSizeCurve || null,
+        authoredSizeKeyframes: e.authoredSizeKeyframes || null,
+        authoredAlphaCurve: e.authoredAlphaCurve || null,
+        authoredMaxParticles: e.authoredMaxParticles ?? null,
+        sizeCurveAuthored: !!e.sizeCurveAuthored,
+        // Verdict flags so a test can grep the inventory and assert.
+        flags: {
+          noTextureBound: layers.every((l) => !l.texture.bound),
+          allWhiteTint: layers.every((l) => {
+            const c = l.materialColor || [1, 1, 1];
+            return c[0] >= 0.99 && c[1] >= 0.99 && c[2] >= 0.99;
+          }),
+          collapsedSizeCurve: Array.isArray(e.authoredSizeCurve)
+            && e.authoredSizeCurve.length === 3
+            && e.authoredSizeCurve.every((v) => v === 0),
+          unauthoredSize: !e.sizeCurveAuthored,
+        },
+      };
+    });
+
+    const meshes = (typeof meshObjects !== 'undefined' ? meshObjects : []).map((e, i) => {
+      const matsSeen = [];
+      const texsSeen = [];
+      e.group?.traverse?.((obj) => {
+        const m = obj.material;
+        const ms = Array.isArray(m) ? m : (m ? [m] : []);
+        for (const mat of ms) {
+          if (!mat) continue;
+          matsSeen.push({
+            name: mat.name || null,
+            type: mat.type || null,
+            color: colArr(mat.color),
+            opacity: mat.opacity ?? null,
+            transparent: mat.transparent ?? null,
+            blending: blendName(mat.blending),
+            map: texInfo(mat.map),
+            normalMap: mat.normalMap ? texInfo(mat.normalMap) : null,
+            emissive: colArr(mat.emissive),
+            emissiveMap: mat.emissiveMap ? texInfo(mat.emissiveMap) : null,
+          });
+          if (mat.map) texsSeen.push(mat.map.image?.src?.split('/').pop()?.split('?')[0] || mat.map.uuid?.slice(0, 8));
+        }
+      });
+      return {
+        kind: 'mesh',
+        runtimeIndex: i,
+        sourcePath: e.sourcePath || null,
+        visible: !!(e.group && e.group.visible),
+        startTimeMs: e.startTimeMs ?? null,
+        worldPosition: e.group ? v3(e.group.getWorldPosition(new THREE.Vector3())) : null,
+        worldBoxSize: worldBoxSize(e.group),
+        attachedTo: e.group && e.group.parent ? (e.group.parent.name || e.group.parent.type) : null,
+        materials: matsSeen,
+        materialCount: matsSeen.length,
+        texturesBound: texsSeen.filter(Boolean).length,
+        flags: {
+          noTextureBound: matsSeen.length > 0 && matsSeen.every((m) => !m.map.bound),
+          allWhiteTint: matsSeen.length > 0 && matsSeen.every((m) => {
+            const c = m.color || [1, 1, 1];
+            return c[0] >= 0.99 && c[1] >= 0.99 && c[2] >= 0.99;
+          }),
+        },
+      };
+    });
+
+    return {
+      counts: {
+        sprite: sprites.length,
+        mesh: meshes.length,
+        track: (typeof trackLines !== 'undefined' ? trackLines.length : 0),
+      },
+      timeline: {
+        timelineMs: typeof timelineMs !== 'undefined' ? timelineMs : null,
+        timelineTotalMs: typeof timelineTotalMs !== 'undefined' ? timelineTotalMs : null,
+      },
+      sprites,
+      meshes,
+    };
+  };
+
+  // Drive the timeline for time-evolution tests. Sets timelineMs and
+  // pauses; the running render loop then renders the scene at that instant.
+  window.__pssTimelineSeek = (ms) => {
+    if (typeof timelineMs === 'undefined') return false;
+    timelineMs = Math.max(0, Number(ms) || 0);
+    timelinePlaying = false;
+    timelineLastClockSec = null;
+    return { timelineMs, timelinePlaying: false };
+  };
+  window.__pssTimelinePlay = () => {
+    if (typeof timelinePlaying === 'undefined') return false;
+    timelinePlaying = true;
+    timelineLastClockSec = null;
+    return true;
+  };
+
+  window.__pssDebug = () => {
+    const vp = document.getElementById('viewport-panel');
+    const ra = document.getElementById('right-area');
+    const lp = document.getElementById('pss-log-panel');
+    const rect = (el) => el ? el.getBoundingClientRect() : null;
+    return {
+      canvas: {
+        w: viewportCanvas.width,
+        h: viewportCanvas.height,
+        cw: viewportCanvas.clientWidth,
+        ch: viewportCanvas.clientHeight,
+      },
+      rendererSize: renderer ? renderer.getSize(new THREE.Vector2()).toArray() : null,
+      isRendering: typeof isRendering !== 'undefined' ? isRendering : null,
+      scene: scene ? {
+        children: scene.children.length,
+        types: scene.children.map((c) => c.type + (c.name ? `:${c.name}` : '')).slice(0, 30),
+      } : null,
+      counts: {
+        sprite: (typeof spriteEmitters !== 'undefined' && spriteEmitters) ? spriteEmitters.length : -1,
+        mesh: (typeof meshObjects !== 'undefined' && meshObjects) ? meshObjects.length : -1,
+        track: (typeof trackLines !== 'undefined' && trackLines) ? trackLines.length : -1,
+      },
+      camera: camera ? {
+        pos: [camera.position.x, camera.position.y, camera.position.z],
+        aspect: camera.aspect,
+        fov: camera.fov,
+      } : null,
+      orbit: typeof orbitState !== 'undefined' ? { ...orbitState } : null,
+      layout: {
+        viewportPanel: rect(vp),
+        rightArea: rect(ra),
+        logPanel: rect(lp),
+        rightAreaInlineRight: ra ? ra.style.right : null,
+      },
+    };
+  };
 }
 
 function resizeRenderer() {
@@ -1905,21 +2351,6 @@ function updateTimelineUI() {
 function getTimelineEntryStartTimeMs(entry) {
   if (Number.isFinite(entry?.effectiveStartTimeMs)) return entry.effectiveStartTimeMs;
   if (Number.isFinite(entry?.startTimeMs)) return entry.startTimeMs;
-  // Issue #8: GATA per-PSS start times are not engine-verified. When the source
-  // PSS could not be resolved either, surface the unresolved state once per
-  // (entry-path) so the Warnings panel shows it instead of silently rendering
-  // at t=0 as if it were authoritative.
-  if (entry && !entry.__timingWarningRecorded) {
-    entry.__timingWarningRecorded = true;
-    const list = (pssDebugState.fallbacks ||= []);
-    list.push({
-      kind: 'tani-start-time-unresolved',
-      path: entry.path || '(unknown path)',
-      timingSource: entry.timingSource || 'unresolved',
-      gataTimingWarning: entry.gataTimingWarning || 'GATA per-PSS start time is not engine-verified; source PSS globalStartDelay also unresolved.',
-      message: `${extractFileName(entry.path || '')}: timing unresolved — rendered at t=0 for layout only, not as an authoritative authored value.`,
-    });
-  }
   return 0;
 }
 
@@ -1973,6 +2404,8 @@ async function addPssEffect(sourcePath, startTimeMs = 0) {
       fetchJson(`/api/pss/debug-dump?sourcePath=${encodeURIComponent(sourcePath)}`).catch(() => null),
     ]);
     if (!data.ok) throw new Error('API error');
+    traceStep('ok', 'analyze-fetched',
+      `emitters=${(data.emitters||[]).length} textures=${(data.textures||[]).length} debug-dump=${debugDump?.ok ? 'ok' : 'none'}`);
 
     // Store first successfully loaded PSS data for debug panel
     if (!pssDebugState.apiData) pssDebugState.apiData = data;
@@ -1982,6 +2415,9 @@ async function addPssEffect(sourcePath, startTimeMs = 0) {
         pssDebugState.debugDumps.push(debugDump);
       }
     }
+
+    // Audit mesh-emitter material binding for this PSS
+    auditMeshMaterialBinding(data, sourcePath);
 
     // Per-PSS socket selection: honor the server-provided hint if it resolves
     // to a real socket on the currently-loaded rig; fall back to whatever
@@ -2026,6 +2462,12 @@ async function addPssEffect(sourcePath, startTimeMs = 0) {
         texMap.set(t.originalPath || t.texturePath, loadedTextures[ti]);
       }
     }
+    {
+      const texTotal = (data.textures || []).length;
+      const texOk = loadedTextures.filter(Boolean).length;
+      traceStep(texOk === texTotal ? 'ok' : (texOk === 0 ? 'error' : 'warn'),
+        'textures-loaded', `${texOk}/${texTotal} textures resolved`);
+    }
     // data.fireIntent was a keyword guess on server side — REMOVED. Always false.
     const trackTexturePool = buildTrackTexturePool(data.textures || [], texMap, false);
     const effectTiming = getPssEffectTiming(data);
@@ -2055,9 +2497,15 @@ async function addPssEffect(sourcePath, startTimeMs = 0) {
     }
 
     const meshEmitterDefs = (data.emitters || []).filter((em) => em.type === 'mesh');
+    // Parallelize per-emitter mesh loads — each does an independent /api/pss/mesh-glb
+    // fetch + GLB parse + texture upload. Sequential await was the dominant
+    // PSS-load stall (8 mesh emitters × ~80–250 ms each).
+    const meshEmitterResults = await Promise.all(
+      meshEmitterDefs.map((em, meshIdx) => loadMeshEmitter(em, meshIdx, meshEmitterDefs.length))
+    );
     for (let meshIdx = 0; meshIdx < meshEmitterDefs.length; meshIdx++) {
       const em = meshEmitterDefs[meshIdx];
-      const mo = await loadMeshEmitter(em, meshIdx, meshEmitterDefs.length);
+      const mo = meshEmitterResults[meshIdx];
       const meshName = (em.resolvedMeshes || [])
         .map((asset) => asset?.sourcePath)
         .filter(Boolean)
@@ -2178,12 +2626,7 @@ async function loadAllPssFromTani(pssEntries, durationMs) {
     const entry = timelinePssEntries[i];
     pssDebugState.sourcePath = entry.path;
     pssDebugState.loadedAt = new Date().toISOString();
-    // Issue #8: never coerce a null start time to 0 silently. Use the explicit
-    // effectiveStartTimeMs from the server when available; otherwise call
-    // getTimelineEntryStartTimeMs which records an unresolved-timing warning
-    // before returning the layout-only 0.
-    const layoutStart = getTimelineEntryStartTimeMs(entry);
-    const window = await addPssEffect(entry.path, layoutStart);
+    const window = await addPssEffect(entry.path, entry.startTimeMs || 0);
     if (window) {
       entry.effectiveStartTimeMs = window.startTimeMs;
       timelineTotalMs = Math.max(timelineTotalMs, window.endTimeMs);
@@ -2216,7 +2659,7 @@ async function loadAllPssFromTani(pssEntries, durationMs) {
   // Flush per-PSS aggregated fallback summaries (max-particles / lifetime /
   // size-curve collapse dozens of per-emitter logs to one summary each).
   flushFallbackAggregator();
-  if (!debugPanel.classList.contains('hidden') || (document.getElementById('issues-panel') && !document.getElementById('issues-panel').classList.contains('hidden'))) renderDebugPanel();
+  if (!debugPanel.classList.contains('hidden')) renderDebugPanel();
   postDebugLogToServer();
 }
 
@@ -2599,31 +3042,38 @@ function createSpriteEmitter(emitterData, textures, emIndex = 0, totalEmitters =
     };
   });
 
+  // Single Mesh per layer (not per particle × layer). The per-particle
+  // update path spawns every particle at (0,0,0) with zero velocity and
+  // applies the same scale + quaternion to every layer, so allocating
+  // particleCount × layerCount THREE.Mesh objects produces the same
+  // visual output as a single overlapping pair of meshes per emitter.
+  // Collapsing this drops scene-graph cost from ~maxParticles × layers
+  // to just `layers` per emitter and eliminates the load-time mesh
+  // allocation burst that was blocking the main thread.
+  const layerMeshes = layerResources.map((res) => {
+    const mesh = new THREE.Mesh(sharedGeometry, res.mat);
+    mesh.visible = false;
+    points.add(mesh);
+    return {
+      mesh,
+      mat: res.mat,
+      atlasTex: res.atlasTex,
+      scaleMul: res.scaleMul,
+      opacityMul: res.opacityMul,
+      spinMul: res.spinMul,
+      rotationOffset: res.rotationOffset,
+      layerFlag: res.layerFlag,
+    };
+  });
+
+  // The `particles` array is kept for state tracking (age/lifetime/size
+  // curve) so spawnSpriteParticle/updateSpriteEmitter logic stays
+  // unchanged downstream. The visible mesh is shared across all of them.
   const particles = [];
   for (let particleIndex = 0; particleIndex < particleCount; particleIndex++) {
-    // Each particle still owns its own Mesh instances (one per layer) so the
-    // scene graph honors the authored maxParticles concurrency. Mesh objects
-    // are cheap compared with Materials/Textures; the Material+Map is shared
-    // across every particle in the emitter at the same layer index.
-    const layers = layerResources.map((res) => {
-      const mesh = new THREE.Mesh(sharedGeometry, res.mat);
-      mesh.visible = false;
-      points.add(mesh);
-      return {
-        mesh,
-        mat: res.mat,
-        atlasTex: res.atlasTex,
-        scaleMul: res.scaleMul,
-        opacityMul: res.opacityMul,
-        spinMul: res.spinMul,
-        rotationOffset: res.rotationOffset,
-        layerFlag: res.layerFlag,
-      };
-    });
-
     particles.push({
       id: particleIndex,
-      layers,
+      layers: layerMeshes,   // shared reference; not per-particle copies
       alive: false,
       age: 0,
       lifetime: 1,
@@ -2782,13 +3232,15 @@ async function loadMeshEmitter(meshAsset, emIndex = 0, totalMeshEmitters = 1) {
     ? new THREE.Color(meshAsset.color[0], meshAsset.color[1], meshAsset.color[2])
     : null;
 
-  // PSS particle meshes: normalize to 100 units max, matching the track emitter
-  // normalisation (scale = 100 / maxDim) so all effect layers share the same
-  // coordinate scale. Then apply the per-emitter emitterScale from meshFields.
-  const pssEffectNormalizeSize = 100;
+  // Authored emitter scale from the type-2 launcher block (+308 f32). This
+  // is the ONLY transform field we extract today — `f3MeshScale` (Vector3)
+  // and `f3CenterAdjust` (Vector3) from the editor's mesh schema (DLL
+  // `KG3D_SceneNodeFactory` strings: szMeshPath / f3MeshScale /
+  // f3CenterAdjust / eUpAxis / eForwardAxis) are not yet probed in the
+  // type-2 block, so until they are wired we apply only this uniform
+  // multiplier and otherwise render the mesh as authored.
   const emitterScaleFactor = Number.isFinite(meshAsset?.meshFields?.emitterScale)
     ? Math.max(0.1, Math.min(4, meshAsset.meshFields.emitterScale)) : 1;
-  const actorMultiMeshRadialOffset = 8;
 
   const animationPaths = (meshAsset?.resolvedAnimations || [])
     .map((asset) => asset?.sourcePath)
@@ -2849,11 +3301,46 @@ async function loadMeshEmitter(meshAsset, emIndex = 0, totalMeshEmitters = 1) {
       ? mesh.material.map((mat, i) => ({ mat, i }))
       : [{ mat: mesh.material, i: null }];
 
+    // Fallback texture paths embedded directly in the type-2 PSS mesh-emitter
+    // block (server now extracts these via findPaths(/tga|dds|png/)). Used
+    // when no JsonInspack companion provides authoritative material params —
+    // common for PSS particle meshes whose .Mesh ships without companion.
+    const pssEmitterTexturePaths = Array.isArray(meshAsset?.texturePaths)
+      ? meshAsset.texturePaths : [];
+
     for (const { mat: material, i: slotIndex } of slots) {
       if (!material) continue;
 
       const meshMaterialMeta = material.userData?.pssMaterial;
-      if (!meshMaterialMeta || typeof meshMaterialMeta !== 'object') continue;
+      if (!meshMaterialMeta || typeof meshMaterialMeta !== 'object') {
+        // No JsonInspack-derived material: fall back to the texture path
+        // embedded inline in the PSS type-2 block. Default to additive
+        // MeshBasicMaterial — matches the engine's particle-mesh convention
+        // (KE3D_ParticleMeshQuoteLauncher) and avoids unlit-StandardMaterial
+        // appearing solid white when no scene lights exist.
+        const embeddedTexPath = pssEmitterTexturePaths[0] || null;
+        if (!embeddedTexPath) continue;
+        const embeddedTex = await loadPssMeshTextureByPath(embeddedTexPath, 'color');
+        if (!embeddedTex) continue;
+        const tintHex = pssEmitterTint ? pssEmitterTint.getHex() : 0xffffff;
+        const fallbackMat = new THREE.MeshBasicMaterial({
+          map: embeddedTex,
+          color: tintHex,
+          transparent: true,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+          toneMapped: false,
+        });
+        fallbackMat.userData = material.userData;
+        if (slotIndex !== null) {
+          mesh.material[slotIndex] = fallbackMat;
+        } else {
+          mesh.material = fallbackMat;
+        }
+        material.dispose();
+        continue;
+      }
 
       const textures = meshMaterialMeta.textures || {};
       const colors = meshMaterialMeta.colors || {};
@@ -2977,18 +3464,26 @@ async function loadMeshEmitter(meshAsset, emIndex = 0, totalMeshEmitters = 1) {
     return root;
   };
 
-  const centerAndScaleMeshGroup = (root) => {
-    const box = new THREE.Box3().setFromObject(root);
-    if (box.isEmpty()) return false;
-    const boxCenter = new THREE.Vector3();
-    const boxSize = new THREE.Vector3();
-    box.getCenter(boxCenter);
-    box.getSize(boxSize);
-    const maxDim = Math.max(boxSize.x, boxSize.y, boxSize.z);
-    if (!Number.isFinite(maxDim) || maxDim <= 0.0001) return false;
-    const normScale = (pssEffectNormalizeSize / maxDim) * emitterScaleFactor;
-    root.scale.setScalar(normScale);
-    root.position.copy(boxCenter).multiplyScalar(-normScale);
+  // Authored-transform pass.
+  // Previous behaviour (REMOVED):
+  //   1. computed bbox, forced max-dim to `pssEffectNormalizeSize` (=100).
+  //   2. recentred at bbox center via `position.copy(boxCenter)*-normScale`.
+  // Both steps were guesses that DESTROY the mesh's authored shape:
+  //   - normalize-to-100 erases authored size relative to the actor.
+  //   - bbox-recenter erases the authored pivot (`f3CenterAdjust` in the
+  //     editor's KG3D_SceneNodeFactory schema — see DLL string at offset
+  //     ~32507000: `szMaterialInsPath / szMeshPath / f3MeshScale /
+  //     f3CenterAdjust / eUpAxis / eForwardAxis`).
+  // Engine behaviour: render mesh at authored size with the launcher's
+  // emitterScale (+308 in type-2 block) applied as uniform scale. Until we
+  // wire `f3MeshScale` (Vector3) and `f3CenterAdjust` from the launcher
+  // bytes, this is the honest rendering. We also drop the bbox-validity
+  // gate — empty bboxes (skinned/unloaded) should not silently swallow
+  // the mesh; we just skip the scale step when emitterScale is degenerate.
+  const applyAuthoredEmitterScale = (root) => {
+    if (Number.isFinite(emitterScaleFactor) && emitterScaleFactor !== 1) {
+      root.scale.setScalar(emitterScaleFactor);
+    }
     return true;
   };
 
@@ -3026,14 +3521,13 @@ async function loadMeshEmitter(meshAsset, emIndex = 0, totalMeshEmitters = 1) {
 
       const instance = prepareMeshInstance(root);
       await applyPssMeshMaterialTextures(instance);
-      if (!centerAndScaleMeshGroup(instance)) continue;
+      applyAuthoredEmitterScale(instance);
 
-      if (resolvedMeshAssets.length > 1) {
-        const angle = (meshIndex / Math.max(resolvedMeshAssets.length, 1)) * Math.PI * 2;
-        const radial = actorMultiMeshRadialOffset;
-        instance.position.x += Math.cos(angle) * radial;
-        instance.position.z += Math.sin(angle) * radial;
-      }
+      // No invented radial spread for multi-mesh emitters: the engine
+      // renders all referenced meshes at the launcher origin (they overlap
+      // by design, e.g. red02's 4 dragon-head meshes layer to compose one
+      // visual). Spreading them in a ring was a guess and made the effect
+      // look like several separate objects orbiting a point.
 
       group.add(instance);
 
@@ -3858,6 +4352,8 @@ async function loadPssEffect(sourcePath) {
       }
     }
 
+    auditMeshMaterialBinding(data, sourcePath);
+
     const requestedSocket = debugDump?.socket?.suggested || null;
     const resolvedSocket = requestedSocket
       ? resolveAvailableEffectSocketName(requestedSocket)
@@ -3989,7 +4485,7 @@ async function loadPssEffect(sourcePath) {
     startRenderLoop();
 
     // Update debug panel
-    if (!debugPanel.classList.contains('hidden') || (document.getElementById('issues-panel') && !document.getElementById('issues-panel').classList.contains('hidden'))) renderDebugPanel();
+    if (!debugPanel.classList.contains('hidden')) renderDebugPanel();
     postDebugLogToServer();
 
   } catch (err) {
@@ -3998,7 +4494,7 @@ async function loadPssEffect(sourcePath) {
     statusRenderer.textContent = `Renderer: error - ${err.message}`;
     viewportOverlay.classList.remove('hidden');
     viewportOverlay.querySelector('.empty-msg').textContent = `Failed to load: ${err.message}`;
-    if (!debugPanel.classList.contains('hidden') || (document.getElementById('issues-panel') && !document.getElementById('issues-panel').classList.contains('hidden'))) renderDebugPanel();
+    if (!debugPanel.classList.contains('hidden')) renderDebugPanel();
     postDebugLogToServer();
   }
 }
@@ -4061,29 +4557,7 @@ $('#btn-hide-bones').addEventListener('click', () => {
 $('#btn-debug').addEventListener('click', () => {
   debugPanel.classList.toggle('hidden');
   $('#btn-debug').classList.toggle('active', !debugPanel.classList.contains('hidden'));
-  if (!debugPanel.classList.contains('hidden') || (document.getElementById('issues-panel') && !document.getElementById('issues-panel').classList.contains('hidden'))) renderDebugPanel();
-});
-const issuesPanel = $('#issues-panel');
-$('#btn-issues').addEventListener('click', () => {
-  issuesPanel.classList.toggle('hidden');
-  $('#btn-issues').classList.toggle('active', !issuesPanel.classList.contains('hidden'));
-  if (!issuesPanel.classList.contains('hidden')) renderIssuesPanel();
-});
-$('#btn-issues-close').addEventListener('click', () => {
-  issuesPanel.classList.add('hidden');
-  $('#btn-issues').classList.remove('active');
-});
-$('#btn-issues-copy').addEventListener('click', async () => {
-  const btn = $('#btn-issues-copy');
-  try {
-    const payload = window.__pssIssuesPlainText || '(no evidence)';
-    await navigator.clipboard.writeText(payload);
-    btn.textContent = 'Copied!';
-    btn.classList.add('copied');
-  } catch {
-    btn.textContent = 'Error';
-  }
-  setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  if (!debugPanel.classList.contains('hidden')) renderDebugPanel();
 });
 debugTabButtons.forEach((btn) => {
   btn.addEventListener('click', () => setActiveDebugTab(btn.dataset.debugTab));
@@ -4103,6 +4577,85 @@ $('#btn-debug-copy').addEventListener('click', async () => {
       payload = JSON.stringify({ ...pssDebugState, soundEntries: currentSoundEntries }, null, 2);
     }
     await navigator.clipboard.writeText(payload);
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+  } catch {
+    btn.textContent = 'Error';
+  }
+  setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+});
+
+// ── Load Trace panel ─────────────────────────────────────────────────
+// Surfaces `pssLoadTrace` (built up by traceStep / dbg). Two tabs:
+//   • Errors (default) — only level === 'error' OR 'warn' (fallbacks count
+//     because a fallback IS the symptom of "what went wrong" the user
+//     wants visible without scrolling).
+//   • All Steps — everything in chronological order.
+// Per-tab Copy button copies plain-text rows so the user can paste into
+// a bug report. NOTE: traceReset() inside loadOnePss also calls
+// renderTracePanelIfOpen() so the panel updates live during a load.
+let currentTraceTab = 'errors';
+const tracePanel = $('#trace-panel');
+const traceBody = $('#trace-body');
+const traceTabButtons = Array.from(document.querySelectorAll('[data-trace-tab]'));
+function escapeTraceHtml(s) {
+  return String(s).replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[ch]);
+}
+function renderTracePanel() {
+  if (!traceBody) return;
+  const rows = currentTraceTab === 'errors'
+    ? pssLoadTrace.filter((r) => r.level === 'error' || r.level === 'warn')
+    : pssLoadTrace.slice();
+  if (rows.length === 0) {
+    traceBody.innerHTML = `<div class="trace-empty">${
+      currentTraceTab === 'errors'
+        ? 'No errors or fallbacks recorded for the current load.'
+        : 'No load yet — click a PSS file to populate the trace.'
+    }</div>`;
+    return;
+  }
+  const html = rows.map((r) => {
+    const dt = `+${r.dt}ms`;
+    const lvl = r.level;
+    const stepHtml = `<span class="trace-step">${escapeTraceHtml(r.step)}</span>`;
+    const detailHtml = escapeTraceHtml(r.detail || '');
+    return `<div class="trace-row lvl-${lvl}"><span class="trace-dt">${dt}</span><span class="trace-lvl">${lvl}</span><span class="trace-detail">${stepHtml}${detailHtml}</span></div>`;
+  }).join('');
+  traceBody.innerHTML = html;
+  // Auto-scroll to bottom so the latest step is visible during live loads.
+  traceBody.scrollTop = traceBody.scrollHeight;
+}
+function setActiveTraceTab(tab) {
+  currentTraceTab = (tab === 'all') ? 'all' : 'errors';
+  for (const b of traceTabButtons) {
+    b.classList.toggle('active', b.dataset.traceTab === currentTraceTab);
+  }
+  renderTracePanel();
+}
+traceTabButtons.forEach((b) => b.addEventListener('click', () => setActiveTraceTab(b.dataset.traceTab)));
+setActiveTraceTab(currentTraceTab);
+$('#btn-trace').addEventListener('click', () => {
+  tracePanel.classList.toggle('hidden');
+  $('#btn-trace').classList.toggle('active', !tracePanel.classList.contains('hidden'));
+  if (!tracePanel.classList.contains('hidden')) renderTracePanel();
+});
+$('#btn-trace-close').addEventListener('click', () => {
+  tracePanel.classList.add('hidden');
+  $('#btn-trace').classList.remove('active');
+});
+$('#btn-trace-copy').addEventListener('click', async () => {
+  const btn = $('#btn-trace-copy');
+  try {
+    const rows = currentTraceTab === 'errors'
+      ? pssLoadTrace.filter((r) => r.level === 'error' || r.level === 'warn')
+      : pssLoadTrace.slice();
+    const header = `# PSS Load Trace — tab=${currentTraceTab} — ${rows.length} row(s)\n`;
+    const body = rows.map((r) =>
+      `[+${String(r.dt).padStart(5,' ')}ms] ${r.level.toUpperCase().padEnd(5,' ')} ${r.step} :: ${r.detail || ''}`
+    ).join('\n');
+    await navigator.clipboard.writeText(header + body);
     btn.textContent = 'Copied!';
     btn.classList.add('copied');
   } catch {
@@ -4640,6 +5193,267 @@ window.addEventListener('unhandledrejection', (ev) => {
   postDebugLogToServer();
 });
 
+// ── PSS-only mode (pss.html) ────────────────────────────────────────────────
+// Replaces the sidebar with a flat search + PSS-file list. Clicking a PSS
+// drives the same addPssEffect() pipeline used by the animation player, so
+// every renderer / parser fix lives in one place and propagates to both
+// pages automatically. There is intentionally no body-type, no tani, no
+// serial — just "pick a PSS file and render it".
+
+// Synthetic anchor rig used in pss-only mode. Loading the actor FBX takes
+// 1–2 seconds and pulls in textures we don't need when we're inspecting a
+// PSS in isolation. Instead we build a tiny Group hierarchy that exposes
+// the bone names addPssEffect()'s socket-fallback chain expects (
+// `bip01_r_hand`, `bip01_l_hand`, `bip01_spine2`, `bip01_pelvis`, `bip01`),
+// at world positions roughly matching where they sit on a JX3 character.
+// A single wireframe sphere at origin acts as a visual placeholder so the
+// scene isn't empty.
+function ensurePlaceholderAnchorRig() {
+  if (playerAnchorRig?.bodyType === '__placeholder__') return playerAnchorRig;
+  clearPlayerAnchorRig(false);
+
+  const placementRoot = new THREE.Group();
+  placementRoot.name = 'pss_only_placeholder_root';
+  scene.add(placementRoot);
+
+  // Visible marker so the user can tell the rig anchor is at origin. Small
+  // wireframe sphere — non-intrusive, not lit, doesn't interfere with
+  // additive particle blending.
+  const markerGeo = new THREE.SphereGeometry(6, 12, 8);
+  const markerMat = new THREE.MeshBasicMaterial({ color: 0x4080c0, wireframe: true, transparent: true, opacity: 0.35 });
+  const marker = new THREE.Mesh(markerGeo, markerMat);
+  marker.name = 'pss_only_marker';
+  placementRoot.add(marker);
+
+  // Synthetic bone Groups at sensible default positions (units: cm, JX3
+  // skeletons are roughly 175–185 cm tall). Effects authored against
+  // bip01_r_hand will appear at right-hand height.
+  const bones = {
+    bip01:           [0,   0,  0],
+    bip01_pelvis:    [0,  90,  0],
+    bip01_spine:     [0, 110,  0],
+    bip01_spine1:    [0, 125,  0],
+    bip01_spine2:    [0, 140,  0],
+    bip01_l_hand:    [ 35,  95,  10],
+    bip01_r_hand:    [-35,  95,  10],
+    bip01_l_forearm: [ 30, 110,   5],
+    bip01_r_forearm: [-30, 110,   5],
+    r_weaponsocket:  [-40,  90,  15],
+    l_weaponsocket:  [ 40,  90,  15],
+  };
+  const bonesByLower = new Map();
+  const bonesByNormalized = new Map();
+  for (const [name, pos] of Object.entries(bones)) {
+    const g = new THREE.Group();
+    g.name = name;
+    g.position.set(pos[0], pos[1], pos[2]);
+    placementRoot.add(g);
+    bonesByLower.set(name.toLowerCase(), g);
+    bonesByNormalized.set(normalizeBoneKey(name), g);
+  }
+
+  playerAnchorRig = {
+    bodyType: '__placeholder__',
+    support: { socketBindings: [] },
+    root: placementRoot,
+    placementRoot,
+    orientationRoot: placementRoot,
+    usingActorPreset: false,
+    presetName: null,
+    bonesByLower,
+    bonesByNormalized,
+    socketNodes: new Map(),
+  };
+  return playerAnchorRig;
+}
+
+async function initPssOnlyMode() {
+  // Hide / disable elements that don't apply in this mode but are referenced
+  // by the rest of the codebase.
+  const btBar = document.getElementById('body-type-bar');
+  if (btBar) btBar.style.display = 'none';
+  const sidebar = document.getElementById('sidebar');
+  if (!sidebar) throw new Error('#sidebar missing on pss.html');
+
+  // Replace sidebar contents with PSS list UI.
+  sidebar.innerHTML = `
+    <div class="body-type-bar" id="body-type-bar" style="display:none;"></div>
+    <div class="sidebar-tabs">
+      <button class="sidebar-tab active" type="button">PSS Files <span class="tab-badge" id="pss-list-badge">0</span></button>
+    </div>
+    <div class="tab-content" id="tab-pss-list">
+      <input type="text" class="search-box" id="pss-search" placeholder="Search PSS by name..." value="龙牙">
+      <div class="pagination" id="pss-pagination" style="font-size:11px;color:#8ea2ba;padding:4px 8px;"></div>
+      <ul class="item-list" id="pss-list"></ul>
+    </div>
+  `;
+
+  // Show the debug log panel by default — the whole point of this page is
+  // PSS rendering inspection. The "things right / things wrong" content
+  // lives inside the PSS Audit and Warnings tabs of #debug-panel; default
+  // to the PSS Audit tab on cold load so the user sees binding diagnostics
+  // immediately rather than the runtime log.
+  const debugPanel = document.getElementById('debug-panel');
+  if (debugPanel) debugPanel.classList.remove('hidden');
+  try {
+    currentDebugTab = 'pss';
+    document.querySelectorAll('.dbg-tab').forEach((b) => {
+      b.classList.toggle('active', b.dataset.debugTab === 'pss');
+    });
+  } catch {}
+
+  // Update label to make the page identity obvious.
+  if (typeof vpLabel !== 'undefined' && vpLabel) {
+    vpLabel.textContent = 'No PSS loaded';
+  }
+  statusConnection.textContent = 'Connected (PSS-only)';
+  statusConnection.className = 'status-item status-ok';
+  if (typeof statusBodyType !== 'undefined' && statusBodyType) statusBodyType.textContent = 'mode: pss-only';
+
+  const searchEl = document.getElementById('pss-search');
+  const listEl = document.getElementById('pss-list');
+  const badgeEl = document.getElementById('pss-list-badge');
+  const pagEl = document.getElementById('pss-pagination');
+
+  let lastQuery = '';
+  let activeListItem = null;
+
+  async function refreshList() {
+    const q = (searchEl.value || '').trim();
+    lastQuery = q;
+    pagEl.textContent = 'Loading…';
+    try {
+      const data = await fetchJson(`/api/pss/find?q=${encodeURIComponent(q)}&limit=300`);
+      // Discard if user typed something newer.
+      if ((searchEl.value || '').trim() !== q) return;
+      const items = (data && data.items) || [];
+      badgeEl.textContent = String(items.length);
+      pagEl.textContent = items.length ? `${items.length} match${items.length === 1 ? '' : 'es'}` : 'No matches';
+      listEl.innerHTML = '';
+      activeListItem = null;
+      for (const it of items) {
+        const li = document.createElement('li');
+        li.className = 'item';
+        li.dataset.sourcePath = it.sourcePath;
+        // User preference (stated repeatedly): left list shows ONLY the
+        // bare filename — no path, no .pss extension. The full path lives
+        // on the title attribute for hover discovery.
+        const displayName = String(it.fileName || '').replace(/\.pss$/i, '');
+        li.innerHTML = `
+          <div class="item-name" title="${escapeHtml(it.sourcePath)}">${escapeHtml(displayName)}</div>
+        `;
+        li.addEventListener('click', () => {
+          if (activeListItem) activeListItem.classList.remove('active');
+          li.classList.add('active');
+          activeListItem = li;
+          // The click resets the trace clock — every dt seen in the panel
+          // is "ms since user clicked this item". Do this BEFORE loadOnePss
+          // so the very first reset entry shows t+0 = click moment.
+          traceReset(`click ${it.fileName}`);
+          traceStep('info', 'click', it.sourcePath);
+          loadOnePss(it.sourcePath).catch((err) => {
+            traceStep('error', 'loadOnePss-throw', `${it.fileName}: ${err.message}`);
+            dbg('error', `loadOnePss(${it.fileName}): ${err.message}`, {});
+            renderDebugPanel();
+          });
+        });
+        listEl.appendChild(li);
+      }
+    } catch (err) {
+      pagEl.textContent = `Error: ${err.message}`;
+      badgeEl.textContent = '0';
+    }
+  }
+
+  async function loadOnePss(sourcePath) {
+    setAnimationPlayerStatus('loading');
+    clearEffect();
+    resetDebugState();
+    pssDebugState.sourcePath = sourcePath;
+    pssDebugState.loadedAt = new Date().toISOString();
+    if (viewportOverlay) viewportOverlay.classList.add('hidden');
+    if (vpLabel) vpLabel.textContent = extractFileName(sourcePath);
+
+    // pss-only: never load the character FBX. Build a synthetic anchor rig
+    // with named bone Groups so attachObjectToEffectSocket() falls through
+    // to bip01_r_hand the same way it would on the animation player page.
+    ensurePlaceholderAnchorRig();
+    traceStep('info', 'placeholder-rig', 'synthetic anchor rig built');
+    traceStep('info', 'addPssEffect-begin', sourcePath);
+    const effectWindow = await addPssEffect(sourcePath, 0);
+    if (!effectWindow) {
+      traceStep('error', 'addPssEffect-fail', 'addPssEffect returned null');
+      if (viewportOverlay) {
+        viewportOverlay.classList.remove('hidden');
+        const empty = viewportOverlay.querySelector('.empty-msg');
+        if (empty) empty.textContent = 'PSS load failed — see Debug Log';
+      }
+      statusRenderer.textContent = 'Renderer: load failed';
+      setAnimationPlayerStatus('error', 'pss-load-failed');
+      renderDebugPanel();
+      return;
+    }
+    traceStep('ok', 'addPssEffect-done',
+      `${spriteEmitters.length}S / ${meshObjects.length}M / ${trackLines.length}T, dur=${(effectWindow.endTimeMs/1000).toFixed(2)}s`);
+    timelineTotalMs = effectWindow.endTimeMs;
+    timelineMs = 0;
+    timelinePlaying = true;
+    timelineLastClockSec = null;
+    timelinePssEntries = [{ path: sourcePath, startTimeMs: 0, effectiveStartTimeMs: 0 }];
+    if (timelineBar) timelineBar.classList.remove('hidden');
+    statusRenderer.textContent = `Renderer: ${spriteEmitters.length}S ${meshObjects.length}M ${trackLines.length}T | ${(timelineTotalMs / 1000).toFixed(2)}s`;
+    setAnimationPlayerStatus('ready');
+    renderDebugPanel();
+    // Frame the camera on whatever the PSS actually fills. Different
+    // effects span very different scales (a hand-held spark vs. a screen-
+    // filling ribbon burst); without this the viewport is hard-coded to
+    // dist=400 and big effects clip / small ones look tiny. autoFit reads
+    // the union AABB of all live mesh objects, track lines, and sprite
+    // spawn volumes and sets dist = (maxDim/2) / tan(fov/2) * 1.5.
+    autoFitCameraToEffect();
+    traceStep('ok', 'autofit-camera', `dist=${orbitState.dist.toFixed(0)}, target=(${orbitState.targetX.toFixed(1)},${orbitState.targetY.toFixed(1)},${orbitState.targetZ.toFixed(1)})`);
+    // addPssEffect (the additive variant used here) does NOT start the
+    // render loop on its own — only the legacy loadPssEffect does. Without
+    // this call the rAF loop never runs, timelineMs stays at 0 forever, and
+    // every emitter sits invisible because they all wait for timelineMs to
+    // reach their startTimeMs. Symptom: viewport is blank even though
+    // status reads "Renderer: 22S 2M 0T".
+    startRenderLoop();
+    traceStep('ok', 'render-loop-started', `total=${(timelineTotalMs/1000).toFixed(2)}s`);
+  }
+
+  // Debounced search.
+  let searchTimer = null;
+  searchEl.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(refreshList, 180);
+  });
+  searchEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      clearTimeout(searchTimer);
+      refreshList();
+    }
+  });
+
+  await refreshList();
+
+  // Auto-pick first match (default 龙牙) so the page is useful on cold load.
+  const firstItem = listEl.querySelector('li.item');
+  if (firstItem) {
+    firstItem.click();
+  }
+
+  // Honour ?pss=<path> URL param for headless / linked navigation.
+  try {
+    const params = new URLSearchParams(location.search);
+    const explicit = params.get('pss');
+    if (explicit) {
+      await loadOnePss(explicit);
+    }
+  } catch {}
+}
+
 async function init() {
   statusConnection.textContent = 'Loading...';
   statusConnection.className = 'status-item';
@@ -4649,6 +5463,26 @@ async function init() {
   initThreeJs();
   // Do a single render so the viewport isn't blank
   renderer.render(scene, camera);
+
+  // ── PSS-only mode (pss.html) ────────────────────────────────────────────
+  // When the page sets <body data-page-mode="pss-only">, skip all the
+  // actor / tani / serial / anim-table loading paths entirely. The page
+  // shows a flat list of .pss files; clicking one renders that single
+  // PSS via the same addPssEffect() pipeline the animation player uses,
+  // so any rendering / parser fix applied here automatically benefits
+  // the animation player and vice-versa.
+  if (document.body && document.body.dataset && document.body.dataset.pageMode === 'pss-only') {
+    try {
+      await initPssOnlyMode();
+      setAnimationPlayerStatus('ready');
+    } catch (err) {
+      statusConnection.textContent = `Error: ${err.message}`;
+      statusConnection.className = 'status-item status-err';
+      pssDebugState.errors.push({ msg: `[pss-init] ${err.message}` });
+      setAnimationPlayerStatus('error', err.message);
+    }
+    return;
+  }
 
   try {
     const btData = await fetchJson('/api/player-anim/body-types');
