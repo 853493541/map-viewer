@@ -1,0 +1,780 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>CDN Resource Browser</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    height: 100vh;
+    overflow: hidden;
+    color: #d7dbd8;
+    background: #1f2221;
+    font: 13px/1.35 "Segoe UI", system-ui, sans-serif;
+  }
+  button, input { font: inherit; }
+  .app { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100vh; }
+  .topbar {
+    display: grid;
+    grid-template-columns: auto auto 1fr auto auto auto auto auto;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border-bottom: 1px solid #151717;
+    background: #2b2e2d;
+  }
+  .brand { display: inline-flex; align-items: center; gap: 8px; min-width: 190px; font-weight: 600; }
+  .brand-mark {
+    width: 26px;
+    height: 26px;
+    display: grid;
+    place-items: center;
+    border: 2px solid #249ce8;
+    color: #249ce8;
+    border-radius: 3px;
+    font-weight: 700;
+  }
+  .page-nav { display: inline-flex; gap: 4px; align-items: center; }
+  .page-nav a {
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 9px;
+    border: 1px solid #46504b;
+    border-radius: 4px;
+    color: #d7dbd8;
+    text-decoration: none;
+    background: #252928;
+    white-space: nowrap;
+  }
+  .page-nav a.active { border-color: #249ce8; color: #f5fbff; background: #26313a; }
+  .search, .side-search, .type-search {
+    min-width: 0;
+    height: 30px;
+    padding: 0 10px;
+    border: 1px solid #171918;
+    border-radius: 7px;
+    color: #e8ecea;
+    background: #1a1c1b;
+    outline: none;
+  }
+  .toolbar-button {
+    height: 30px;
+    padding: 0 10px;
+    border: 1px solid #1a1d1c;
+    border-radius: 4px;
+    color: #e8ecea;
+    background: #343837;
+    cursor: pointer;
+  }
+  .toolbar-button[hidden] { display: none; }
+  .toolbar-button.primary { background: #2f78b7; border-color: #2f78b7; }
+  .toolbar-button.local { background: #4f564c; border-color: #646c60; }
+  .toolbar-button.resume { background: #3f6f55; border-color: #4d8064; }
+  .toolbar-button.danger { background: #724136; border-color: #835044; }
+  .toolbar-button:disabled, .file-action:disabled { opacity: 0.55; cursor: default; }
+  .status-pill { color: #aeb5b2; white-space: nowrap; font-size: 12px; }
+  .main { display: grid; grid-template-columns: 300px 1fr 290px; min-height: 0; }
+  .sidebar, .filters { min-height: 0; overflow: auto; background: #2b2e2d; }
+  .sidebar { border-right: 1px solid #151717; }
+  .filters { border-left: 1px solid #151717; }
+  .pane-title {
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 0 12px;
+    border-bottom: 1px solid #191b1a;
+    color: #eef1ef;
+    font-size: 17px;
+    font-weight: 700;
+  }
+  .side-tools, .type-tools { padding: 8px 10px; }
+  .side-search, .type-search { width: 100%; background: #3a3d3c; }
+  .tree, .type-list { padding: 4px 6px 12px; }
+  .tree-row {
+    display: grid;
+    grid-template-columns: 20px 22px 1fr auto;
+    align-items: center;
+    gap: 5px;
+    width: 100%;
+    min-height: 27px;
+    padding: 3px 7px;
+    border: 0;
+    border-radius: 3px;
+    color: #d7dbd8;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+  }
+  .tree-row:hover, .tree-row.active { background: #3a3e3d; }
+  .tree-row .twisty { color: #9aa29e; text-align: center; }
+  .tree-row .folder-icon {
+    width: 18px;
+    height: 14px;
+    border: 2px solid #8d9390;
+    border-radius: 2px;
+    position: relative;
+  }
+  .tree-row .folder-icon::before {
+    content: '';
+    position: absolute;
+    left: 1px;
+    top: -6px;
+    width: 10px;
+    height: 5px;
+    border: 2px solid #8d9390;
+    border-bottom: 0;
+    border-radius: 2px 2px 0 0;
+  }
+  .tree-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tree-count { color: #8e9692; font-size: 11px; }
+  .content { min-width: 0; min-height: 0; display: grid; grid-template-rows: 34px 1fr; background: #222524; }
+  .pathbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 10px;
+    border-bottom: 1px solid #151717;
+    background: #282b2a;
+    min-width: 0;
+  }
+  .pathbar button {
+    height: 24px;
+    border: 1px solid #171918;
+    border-radius: 3px;
+    color: #e8ecea;
+    background: #343837;
+    cursor: pointer;
+  }
+  .path-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #c5cbc8; }
+  .notice { flex: 0 0 auto; max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #aeb5b2; font-size: 12px; }
+  .notice.busy { color: #8fc7ff; }
+  .notice.error { color: #ffb7aa; }
+  .table-wrap { min-height: 0; overflow: auto; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    height: 30px;
+    padding: 0 10px;
+    color: #b8bfbc;
+    background: #0f1110;
+    border-bottom: 1px solid #2a2d2c;
+    font-weight: 500;
+    text-align: left;
+  }
+  td {
+    height: 34px;
+    padding: 4px 10px;
+    border-bottom: 1px solid #2d302f;
+    color: #d6d9d7;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  tr:hover td { background: #2c302f; }
+  .name-cell { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .thumb {
+    width: 30px;
+    height: 28px;
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    border-radius: 3px;
+    color: #ecf4f1;
+    background: var(--accent, #58615d);
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-sub { color: #9da5a1; font-size: 11px; }
+  .ready-pill {
+    display: inline-flex;
+    align-items: center;
+    min-width: 74px;
+    justify-content: center;
+    padding: 2px 7px;
+    border-radius: 999px;
+    color: #dcebe2;
+    background: #24533a;
+    font-size: 11px;
+  }
+  .ready-pill.pending { color: #d8d0bd; background: #5a4930; }
+  .ready-pill.fail { color: #f5c8c2; background: #6b302d; }
+  .file-action {
+    height: 24px;
+    min-width: 78px;
+    border: 1px solid #1a1d1c;
+    border-radius: 3px;
+    color: #e8ecea;
+    background: #343837;
+    cursor: pointer;
+  }
+  .file-actions { display: flex; align-items: center; gap: 6px; }
+  .file-action.play { background: #2f78b7; border-color: #2f78b7; }
+  .file-action.locate { min-width: 64px; background: #45504b; border-color: #56625d; }
+  .type-section { margin: 1px 0 3px; }
+  .type-row {
+    display: grid;
+    grid-template-columns: 18px 22px 1fr;
+    align-items: center;
+    gap: 7px;
+    min-height: 28px;
+    padding: 3px 7px;
+    color: #d9ddda;
+  }
+  .type-row.group { font-size: 15px; }
+  .type-row.child { padding-left: 34px; }
+  .type-row input { width: 18px; height: 18px; accent-color: #2388dc; }
+  .type-toggle { color: #9aa29e; cursor: pointer; user-select: none; }
+  .type-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .type-swatch { width: 5px; height: 18px; border-radius: 3px; background: var(--accent, #7f8782); }
+  .empty { padding: 18px; color: #aeb5b2; }
+  .audio-row { padding: 8px 10px 10px 46px; border-bottom: 1px solid #2d302f; background: #252928; }
+  audio { width: min(540px, 100%); height: 34px; }
+  @media (max-width: 1000px) {
+    .main { grid-template-columns: 220px 1fr; }
+    .filters { display: none; }
+    .topbar { grid-template-columns: 1fr auto; }
+    .brand, .status-pill { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">R</span><span>CDN Resource Browser</span></div>
+    <nav class="page-nav" aria-label="Pages"><a href="/ability-matcher.html">Ability Matcher</a><a href="/ability-tani-sound.html">TANI-SOUND</a><a class="active" href="/cdn-resource-browser.html">CDN Browser</a><a href="/wwise-soundbanks.html">Soundbanks</a></nav>
+    <input id="search" class="search" type="search" placeholder="Search inside selected folder..." autocomplete="off" />
+    <button id="preview-index" class="toolbar-button primary" type="button" title="Scan HPKG indexes and build the folder/file list without downloading full packages.">Index Only</button>
+    <button id="open-local-folder" class="toolbar-button local" type="button">Open Local Folder</button>
+    <button id="resume-download" class="toolbar-button resume" type="button">Resume Download</button>
+    <button id="download-all" class="toolbar-button danger" type="button">Download All</button>
+    <div id="status" class="status-pill">checking...</div>
+  </header>
+  <main class="main">
+    <aside class="sidebar">
+      <div class="pane-title"><span>Resource</span><span id="folder-count">0</span></div>
+      <div class="side-tools"><input id="folder-search" class="side-search" type="search" placeholder="Filter folders..." autocomplete="off" /></div>
+      <div id="tree" class="tree"></div>
+    </aside>
+    <section class="content">
+      <div class="pathbar">
+        <button id="up" type="button">Up</button>
+        <div id="path" class="path-text">data</div>
+        <div id="notice" class="notice"></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:34%">Name</th>
+              <th style="width:14%">Type</th>
+              <th style="width:11%">Size</th>
+              <th style="width:13%">Ready</th>
+              <th style="width:15%">Package</th>
+              <th>Path</th>
+              <th style="width:100px">Action</th>
+            </tr>
+          </thead>
+          <tbody id="files"></tbody>
+        </table>
+      </div>
+    </section>
+    <aside class="filters">
+      <div class="pane-title"><span>Resource Type</span></div>
+      <div class="type-tools"><input id="type-search" class="type-search" type="search" placeholder="Filter types..." autocomplete="off" /></div>
+      <div id="types" class="type-list"></div>
+    </aside>
+  </main>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const FALLBACK_TYPE_GROUPS = [
+  { label: 'Animation', color: '#6aa5ff', children: ['Animation', 'BlendShape', 'Rig', 'SkeletalMesh', 'TgaAni'] },
+  { label: 'FBX', color: '#57c0d8', children: ['FBX'] },
+  { label: 'Material', color: '#d8b657', children: ['Material', 'Material Packet'] },
+  { label: 'Material Function', color: '#c49aef', children: ['Material Blend Function', 'Material Function'] },
+  { label: 'Material Instance', color: '#ad8fe8', children: ['Material Instance', 'Material Instance Set'] },
+  { label: 'Model', color: '#6dd0a5', children: ['AniModel', 'Bundle', 'Decal', 'Group', 'House', 'MDL', 'Model', 'Modelset'] },
+  { label: 'ModelInst', color: '#78b7ff', children: ['AniModelInst', 'ModelInst'] },
+  { label: 'ParticalSystem', color: '#ff8f66', children: ['EmitterTemplate', 'PSS', 'SFX', 'Track'] },
+  { label: 'Scene', color: '#a2d76f', children: ['Scene'] },
+  { label: 'Sound', color: '#f7c24f', children: ['MP3', 'OGG', 'SoundBall', 'WAV'] },
+  { label: 'SpeedTree', color: '#84c975', children: ['SRT', 'ST'] },
+  { label: 'Texture', color: '#44b7ff', children: ['BMP', 'DDS', 'JPG', 'PNG', 'PSD', 'TGA'] },
+  { label: 'Texture HDRI', color: '#49d5d0', children: ['EXR', 'HDR'] },
+  { label: 'TextureCube', color: '#40c7e8', children: ['TextureCube'] },
+  { label: 'TextureSet', color: '#3aa2e3', children: ['TextureSet'] },
+  { label: 'TextureSet Render', color: '#3e8ed8', children: ['TextureSet Render'] },
+  { label: 'UnDefine', color: '#aeb5b2', children: ['UnDefine'] },
+  { label: 'VirtualTexture', color: '#37c6b8', children: ['FVT', 'RVT'] },
+  { label: 'JX3HD', color: '#8f98a3', children: ['HD', 'INV-HD', 'LOD'] },
+];
+const state = {
+  folder: '',
+  search: '',
+  folderSearch: '',
+  typeSearch: '',
+  rows: [],
+  folderChildren: new Map(),
+  expandedFolders: new Set(['']),
+  selectedTypeKeys: new Set(),
+  typeSelectionInitialized: false,
+  expandedTypeGroups: new Set(FALLBACK_TYPE_GROUPS.map((group) => group.label)),
+  typeGroups: FALLBACK_TYPE_GROUPS,
+  status: null,
+};
+let searchTimer = null;
+let browseSerial = 0;
+
+function normalizePathParam(value) {
+  return String(value || '').trim().replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+/g, '/');
+}
+
+function expandFolderAncestors(folder) {
+  const parts = normalizePathParam(folder).split('/').filter(Boolean);
+  let current = '';
+  for (const part of parts) {
+    current = current ? `${current}/${part}` : part;
+    state.expandedFolders.add(current);
+  }
+}
+
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+}
+
+function formatBytes(value) {
+  const size = Number(value || 0);
+  if (!Number.isFinite(size)) return '0 B';
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(2)} MB`;
+  return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function formatCount(value) {
+  const count = Number(value || 0);
+  if (!Number.isFinite(count)) return '0';
+  return count.toLocaleString();
+}
+
+function describeMirrorMode(mode) {
+  if (mode === 'preview') return 'Index Only scans package indexes and updates the browser list without downloading full HPKG payloads.';
+  if (mode === 'resume') return 'Resume Download continues the full mirror using the existing downloaded progress.';
+  return 'Download All fetches full HPKG packages and keeps updating the index while it downloads.';
+}
+
+async function fetchJson(url, options) {
+  const response = await fetch(url, options);
+  const data = await response.json().catch(() => ({ ok: false, error: `${response.status} ${response.statusText}` }));
+  if (!response.ok) throw new Error(data.error || `${response.status} ${response.statusText}`);
+  return data;
+}
+
+function allTypeKeys() {
+  return state.typeGroups.flatMap((group) => group.children.map((child) => `${group.label}/${child}`));
+}
+
+function ensureTypeSelection() {
+  if (state.typeSelectionInitialized) return;
+  for (const key of allTypeKeys()) state.selectedTypeKeys.add(key);
+  state.typeSelectionInitialized = true;
+}
+
+function selectedTypesParam() {
+  const keys = allTypeKeys();
+  if (state.selectedTypeKeys.size === keys.length) return '';
+  if (!state.selectedTypeKeys.size) return '__none__';
+  return Array.from(state.selectedTypeKeys).join(',');
+}
+
+function setTypeGroups(groups) {
+  const validKeys = new Set(groups.flatMap((group) => group.children.map((child) => `${group.label}/${child}`)));
+  state.typeGroups = groups;
+  if (!state.typeSelectionInitialized) {
+    ensureTypeSelection();
+    return;
+  }
+  state.selectedTypeKeys = new Set([...state.selectedTypeKeys].filter((key) => validKeys.has(key)));
+}
+
+function typeGroupFor(item) {
+  return state.typeGroups.find((group) => group.label === item.resourceGroup)
+    || FALLBACK_TYPE_GROUPS.find((group) => group.label === item.type)
+    || { color: '#58615d' };
+}
+
+function typeIcon(item) {
+  const type = item.resourceType || item.type || 'BIN';
+  if (type === 'SoundBall') return 'WEM';
+  if (type.length <= 4) return type.toUpperCase();
+  return type.slice(0, 3).toUpperCase();
+}
+
+function setNotice(lines, kind = '') {
+  const text = (Array.isArray(lines) ? lines : [lines]).filter(Boolean).join(' | ');
+  const notice = $('notice');
+  notice.textContent = text;
+  notice.className = `notice${kind ? ` ${kind}` : ''}`;
+}
+
+function setBusy(message) {
+  setNotice(message, 'busy');
+  $('files').innerHTML = `<tr><td colspan="7" class="empty">${esc(message)}</td></tr>`;
+}
+
+async function loadFolder(folder) {
+  const key = folder || '';
+  if (state.folderChildren.has(key)) return state.folderChildren.get(key);
+  const params = new URLSearchParams({ folder: key, limit: '1' });
+  const data = await fetchJson('/api/cdn/resource-browser/browse?' + params.toString());
+  const folders = data.folders || [];
+  state.folderChildren.set(key, folders);
+  return folders;
+}
+
+function folderVisible(folder) {
+  if (!state.folderSearch) return true;
+  return `${folder.path} ${folder.name}`.toLowerCase().includes(state.folderSearch.toLowerCase());
+}
+
+function renderFolderRows(folder, depth, out) {
+  const children = state.folderChildren.get(folder) || [];
+  for (const child of children.filter(folderVisible)) {
+    const expanded = state.expandedFolders.has(child.path);
+    const active = state.folder === child.path;
+    out.push(`
+      <button class="tree-row ${active ? 'active' : ''}" style="padding-left:${7 + depth * 16}px" data-folder="${esc(child.path)}">
+        <span class="twisty" data-toggle="1">${expanded ? '-' : '+'}</span>
+        <span class="folder-icon"></span>
+        <span class="tree-name" title="${esc(child.path)}">${esc(child.name)}</span>
+        <span class="tree-count">${Number(child.fileCount || 0).toLocaleString()}</span>
+      </button>
+    `);
+    if (expanded) renderFolderRows(child.path, depth + 1, out);
+  }
+}
+
+function renderTree() {
+  const rows = [];
+  renderFolderRows('', 0, rows);
+  $('tree').innerHTML = rows.length ? rows.join('') : '<div class="empty">No folders indexed yet.</div>';
+  $('folder-count').textContent = String(rows.length);
+  $('tree').querySelectorAll('.tree-row').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      const folder = button.dataset.folder || '';
+      const isToggle = event.target?.dataset?.toggle === '1';
+      state.folder = folder;
+      if (isToggle || !state.expandedFolders.has(folder)) {
+        if (state.expandedFolders.has(folder) && isToggle) state.expandedFolders.delete(folder);
+        else {
+          state.expandedFolders.add(folder);
+          await loadFolder(folder);
+        }
+      }
+      await browse();
+      renderTree();
+    });
+  });
+}
+
+function renderTypes() {
+  ensureTypeSelection();
+  const needle = state.typeSearch.toLowerCase();
+  const keys = allTypeKeys();
+  const allChecked = state.selectedTypeKeys.size === keys.length;
+  const sections = [`
+    <div class="type-row group" style="--accent:#2388dc">
+      <span class="type-toggle"></span>
+      <input id="all-filter" type="checkbox" ${allChecked ? 'checked' : ''} />
+      <span class="type-label">All</span>
+    </div>
+  `];
+  for (const group of state.typeGroups) {
+    const childKeys = group.children.map((child) => `${group.label}/${child}`);
+    const visibleChildren = group.children.filter((child) => !needle || `${group.label} ${child}`.toLowerCase().includes(needle));
+    if (needle && !visibleChildren.length && !group.label.toLowerCase().includes(needle)) continue;
+    const checkedChildren = childKeys.filter((key) => state.selectedTypeKeys.has(key));
+    const expanded = state.expandedTypeGroups.has(group.label) || !!needle;
+    sections.push(`
+      <div class="type-section" style="--accent:${esc(group.color || '#2388dc')}">
+        <div class="type-row group" data-type-group="${esc(group.label)}">
+          <span class="type-toggle">${expanded ? '-' : '+'}</span>
+          <input type="checkbox" data-group-check="${esc(group.label)}" ${checkedChildren.length === childKeys.length ? 'checked' : ''} />
+          <span class="type-label">${esc(group.label)}</span>
+        </div>
+        ${expanded ? visibleChildren.map((child) => {
+          const key = `${group.label}/${child}`;
+          return `<label class="type-row child"><span class="type-swatch"></span><input type="checkbox" data-type-key="${esc(key)}" ${state.selectedTypeKeys.has(key) ? 'checked' : ''} /><span class="type-label">${esc(child)}</span></label>`;
+        }).join('') : ''}
+      </div>
+    `);
+  }
+  $('types').innerHTML = sections.join('');
+  const all = $('all-filter');
+  all?.addEventListener('change', () => {
+    state.selectedTypeKeys.clear();
+    if (all.checked) for (const key of allTypeKeys()) state.selectedTypeKeys.add(key);
+    browse();
+    renderTypes();
+  });
+  $('types').querySelectorAll('[data-type-group]').forEach((row) => {
+    row.addEventListener('click', (event) => {
+      if (event.target?.tagName === 'INPUT') return;
+      const group = row.dataset.typeGroup;
+      if (state.expandedTypeGroups.has(group)) state.expandedTypeGroups.delete(group);
+      else state.expandedTypeGroups.add(group);
+      renderTypes();
+    });
+  });
+  $('types').querySelectorAll('[data-group-check]').forEach((input) => {
+    input.addEventListener('change', () => {
+      const group = state.typeGroups.find((entry) => entry.label === input.dataset.groupCheck);
+      for (const child of group?.children || []) {
+        const key = `${group.label}/${child}`;
+        if (input.checked) state.selectedTypeKeys.add(key);
+        else state.selectedTypeKeys.delete(key);
+      }
+      browse();
+      renderTypes();
+    });
+  });
+  $('types').querySelectorAll('[data-type-key]').forEach((input) => {
+    input.addEventListener('change', () => {
+      if (input.checked) state.selectedTypeKeys.add(input.dataset.typeKey);
+      else state.selectedTypeKeys.delete(input.dataset.typeKey);
+      browse();
+      renderTypes();
+    });
+  });
+}
+
+function actionLabel(item) {
+  if (item.playable) return 'Play';
+  return item.packageDownloaded ? 'Ready' : 'Pending';
+}
+
+function readyLabel(item) {
+  if (item.packageStatus?.failed) return 'failed';
+  return item.packageDownloaded ? 'downloaded' : 'listed';
+}
+
+function renderFiles() {
+  if (!state.rows.length) {
+    const emptyText = state.search
+      ? `No matches for "${state.search}" in ${state.folder || 'data'}.`
+      : state.selectedTypeKeys.size === 0
+        ? 'No resource types selected.'
+        : state.folder ? 'No direct files in this folder yet. Pick a child folder on the left or use search.' : 'No indexed files in this view.';
+    $('files').innerHTML = `<tr><td colspan="7" class="empty">${esc(emptyText)}</td></tr>`;
+    return;
+  }
+  $('files').innerHTML = state.rows.map((item, index) => {
+    const group = typeGroupFor(item);
+    const ready = readyLabel(item);
+    const canPlay = Boolean(item.playable && item.packageDownloaded);
+    const canLocate = Boolean(item.packageDownloaded);
+    return `
+      <tr data-index="${index}">
+        <td><div class="name-cell"><span class="thumb" style="--accent:${esc(group.color || '#58615d')}">${esc(typeIcon(item))}</span><span><span class="file-name" title="${esc(item.name || item.path)}">${esc(item.name || item.path)}</span><br><span class="file-sub">${esc(item.resourceType || item.type || 'UnDefine')}</span></span></div></td>
+        <td>${esc(item.resourceGroup || item.type || 'UnDefine')}</td>
+        <td>${esc(formatBytes(item.originalSize))}</td>
+        <td><span class="ready-pill ${ready === 'downloaded' ? '' : ready === 'failed' ? 'fail' : 'pending'}">${esc(ready)}</span></td>
+        <td title="${esc(item.packageStatus?.localPackageRelativePath || item.packageStatus?.remotePath || item.packageName)}">${esc(item.packageName)}.hpkg</td>
+        <td title="${esc(item.path)}">${esc(item.path)}</td>
+        <td><div class="file-actions">${item.playable ? `<button class="file-action play" type="button" data-action="play" ${canPlay ? '' : 'disabled'}>${esc(actionLabel(item))}</button>` : ''}<button class="file-action locate" type="button" data-action="locate" ${canLocate ? '' : 'disabled'}>Locate</button></div></td>
+      </tr>
+    `;
+  }).join('');
+  $('files').querySelectorAll('[data-action="play"]').forEach((button) => {
+    button.addEventListener('click', () => handleRowAction(Number(button.closest('tr').dataset.index)));
+  });
+  $('files').querySelectorAll('[data-action="locate"]').forEach((button) => {
+    button.addEventListener('click', () => handleLocateAction(Number(button.closest('tr').dataset.index)));
+  });
+}
+
+async function browse() {
+  const serial = ++browseSerial;
+  const params = new URLSearchParams({ folder: state.folder, limit: '500' });
+  if (state.search) params.set('search', state.search);
+  const types = selectedTypesParam();
+  if (types) params.set('types', types);
+  const folderLabel = state.folder || 'data';
+  const started = performance.now();
+  const loadingText = state.search ? `Searching "${state.search}" in ${folderLabel}...` : `Loading ${folderLabel}...`;
+  setBusy(loadingText);
+  try {
+    const data = await fetchJson('/api/cdn/resource-browser/browse?' + params.toString());
+    if (serial !== browseSerial) return;
+  state.folderChildren.set(state.folder || '', data.folders || []);
+  state.rows = data.files || [];
+  $('path').textContent = state.search ? `search: ${state.search} in ${state.folder || 'data'}` : (state.folder || 'data');
+  renderTree();
+  renderFiles();
+    const elapsed = Math.max(1, Math.round(performance.now() - started));
+    const searchHint = state.search ? ` searched in ${elapsed}ms` : '';
+    const indexHint = data.indexReady ? 'index ready' : 'index not ready';
+    setNotice(`${indexHint}; folders ${formatCount(data.totalFolders || 0)}; matches ${formatCount(data.totalFiles || 0)}; shown ${formatCount(state.rows.length)}${searchHint}`);
+  } catch (error) {
+    if (serial !== browseSerial) return;
+    setNotice(String(error.message || error), 'error');
+    $('files').innerHTML = `<tr><td colspan="7" class="empty">${esc(String(error.message || error))}</td></tr>`;
+  }
+}
+
+async function refreshStatus() {
+  const data = await fetchJson('/api/cdn/resource-browser/status');
+  state.status = data;
+  if (Array.isArray(data.resourceTypeGroups) && data.resourceTypeGroups.length) {
+    setTypeGroups(data.resourceTypeGroups);
+  }
+  const downloaded = Number(data.progress?.downloaded || data.packageCounts?.fullDownloaded || data.summary?.ok || 0);
+  const total = Number(data.progress?.total || data.summary?.totalFiltered || data.summary?.totalOnlinePackages || data.summary?.total || 0);
+  const complete = total > 0 && downloaded >= total;
+  $('status').textContent = total > 0
+    ? `${formatCount(downloaded)}/${formatCount(total)} downloaded`
+    : `${formatCount(downloaded)} downloaded`;
+  $('resume-download').hidden = complete;
+  $('download-all').hidden = complete;
+  renderTypes();
+}
+
+async function startMirror(mode) {
+  const body = { mode, concurrency: mode === 'download' ? 4 : 8 };
+  if (mode === 'resume') body.concurrency = 4;
+  const data = await fetchJson('/api/cdn/resource-browser/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  setNotice([describeMirrorMode(mode), data.note || 'mirror started']);
+  await refreshStatus();
+}
+
+async function openLocalFolder() {
+  const data = await fetchJson('/api/cdn/resource-browser/open-local-folder');
+  setNotice(['opened local folder', data.opened || '']);
+}
+
+async function handleRowAction(index) {
+  const item = state.rows[index];
+  if (!item?.playable || !item.packageDownloaded) return;
+  const button = $('files').querySelector(`tr[data-index="${index}"] [data-action="play"]`);
+  button.disabled = true;
+  button.textContent = 'Opening';
+  try {
+    const result = await fetchJson('/api/cdn/hpkg/extract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ packageName: item.packageName, size: item.packageSize, memberPath: item.path, convertToOgg: true, download: true }),
+    });
+    button.textContent = 'Playing';
+    const tr = button.closest('tr');
+    const existing = tr.nextElementSibling;
+    if (existing && existing.classList.contains('audio-row-host')) existing.remove();
+    if (result.playback) {
+      const host = document.createElement('tr');
+      host.className = 'audio-row-host';
+      host.innerHTML = `<td colspan="7" class="audio-row"><audio controls preload="auto" src="${esc(result.playback.url)}"></audio><div>${esc(result.playback.relativePath)}</div></td>`;
+      tr.after(host);
+      const audio = host.querySelector('audio');
+      audio.play().catch(() => setNotice(['Playback is ready. Browser blocked autoplay, so press play in the control.', result.playback.relativePath]));
+    }
+  } catch (error) {
+    button.textContent = 'Error';
+    setNotice(String(error.message || error), 'error');
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function handleLocateAction(index) {
+  const item = state.rows[index];
+  if (!item?.packageDownloaded) return;
+  const button = $('files').querySelector(`tr[data-index="${index}"] [data-action="locate"]`);
+  button.disabled = true;
+  button.textContent = 'Locating';
+  try {
+    const result = await fetchJson('/api/cdn/hpkg/locate-local', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ packageName: item.packageName, size: item.packageSize, memberPath: item.path, download: true }),
+    });
+    setNotice([
+      `located ${result.memberPath}`,
+      result.locatedFile?.path || result.opened || '',
+    ]);
+  } catch (error) {
+    setNotice(String(error.message || error), 'error');
+  } finally {
+    button.textContent = 'Locate';
+    button.disabled = false;
+  }
+}
+
+$('up').addEventListener('click', async () => {
+  state.folder = state.folder.split('/').slice(0, -1).join('/');
+  await loadFolder(state.folder);
+  browse();
+});
+$('search').addEventListener('input', (event) => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    state.search = event.target.value.trim();
+    browse();
+  }, 250);
+});
+$('search').addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  clearTimeout(searchTimer);
+  state.search = event.currentTarget.value.trim();
+  browse();
+});
+$('folder-search').addEventListener('input', (event) => {
+  state.folderSearch = event.target.value.trim();
+  renderTree();
+});
+$('type-search').addEventListener('input', (event) => {
+  state.typeSearch = event.target.value.trim();
+  renderTypes();
+});
+$('preview-index').addEventListener('click', () => startMirror('preview'));
+$('open-local-folder').addEventListener('click', () => openLocalFolder().catch((error) => setNotice(String(error.message || error), 'error')));
+$('resume-download').addEventListener('click', () => startMirror('resume'));
+$('download-all').addEventListener('click', () => startMirror('download'));
+
+(async function boot() {
+  try {
+    const initial = new URLSearchParams(location.search);
+    const initialFolder = normalizePathParam(initial.get('folder') || 'data') || 'data';
+    const initialSearch = String(initial.get('search') || '').trim();
+    const initialTypes = String(initial.get('types') || initial.get('type') || '').trim();
+    await refreshStatus();
+    state.folderChildren.set('', [{ name: 'data', path: 'data', fileCount: 0 }]);
+    state.expandedFolders.add('data');
+    state.folder = initialFolder;
+    state.search = initialSearch;
+    $('search').value = initialSearch;
+    if (initialTypes) {
+      state.selectedTypeKeys = new Set(initialTypes.split(',').map((value) => value.trim()).filter(Boolean));
+    }
+    expandFolderAncestors(initialFolder);
+    await browse();
+  } catch (error) {
+    setNotice(String(error.message || error), 'error');
+  }
+})();
+setInterval(() => refreshStatus().catch(() => {}), 5000);
+</script>
+</body>
+</html>

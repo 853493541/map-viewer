@@ -1,0 +1,16 @@
+﻿{
+  "errs": [],
+  "logs": [
+    "[warning] WebGL: CONTEXT_LOST_WEBGL: loseContext: context lost",
+    "[warning] [PSS Debug] [fallback] socket: no authored socket 鈫?attached to default bone \"r_weaponsocket\" (subsequent identical fallbacks suppressed) {category: socket, preferred: , resolved: , appliedBone: r_weaponsocket, rigLoaded: true}",
+    "[warning] [.WebGL-0x43cc001ba600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+    "[warning] [.WebGL-0x43cc001ba600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+    "[warning] [.WebGL-0x43cc001ba600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+    "[warning] [.WebGL-0x43cc001ba600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"
+  ],
+  "counts": {
+    "sprite": 19,
+    "mesh": 0,
+    "track": 4
+  }
+}

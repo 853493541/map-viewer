@@ -59,7 +59,7 @@
 
     #right-area {
       position: fixed; top: var(--global-header-offset);
-      left: 384px; right: 12px; bottom: 40px;
+      left: 384px; right: 472px; bottom: 40px;
       display: flex; flex-direction: column; gap: 8px;
     }
 
@@ -308,18 +308,17 @@
     #issues-panel.hidden { display: none; }
     /* When debug panel is hidden, snap issues panel to the right edge. */
     #debug-panel.hidden ~ #issues-panel { right: 0; }
-    /* ── Load Trace panel (sibling of #debug-panel and #issues-panel) ── */
+    /* ── Load Trace panel: ALWAYS-VISIBLE right sidebar, outside the
+         viewport area (#right-area is shrunk by 460px to make room).
+         Sibling of #right-area at body level. ── */
     #trace-panel {
-      position: absolute; top: 40px; bottom: 0; width: 460px;
-      right: 720px;
-      background: rgba(6, 10, 15, 0.94); border-left: 1px solid rgba(130, 170, 220, 0.25);
-      z-index: 18; display: flex; flex-direction: column; backdrop-filter: blur(6px);
+      position: fixed; top: var(--global-header-offset); right: 0; bottom: 40px;
+      width: 460px;
+      background: rgba(6, 10, 15, 0.94);
+      border: 1px solid var(--panel-border); border-radius: 12px 0 0 12px;
+      z-index: 30; display: flex; flex-direction: column; backdrop-filter: blur(8px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.34);
     }
-    #trace-panel.hidden { display: none; }
-    /* When debug-panel hidden, slide trace-panel left so we don't leave a gap */
-    #debug-panel.hidden ~ #trace-panel { right: 380px; }
-    /* When BOTH right siblings hidden, trace-panel snaps to the right edge */
-    #debug-panel.hidden ~ #issues-panel.hidden ~ #trace-panel { right: 0; }
     .trace-row {
       display: grid; grid-template-columns: 56px 52px 1fr;
       gap: 8px; padding: 2px 4px; line-height: 1.45;
@@ -429,6 +428,8 @@
     <a class="gh-link" href="export-reader.html">Export Reader</a>
     <a class="gh-link" href="mesh-inspector.html">Mesh Inspector</a>
     <a class="gh-link" href="collision-test-mode.html">Collision Test</a>
+    <a class="gh-link" href="cdn-resource-browser.html">CDN Browser</a>
+    <a class="gh-link" href="ability-matcher.html">Ability Matcher</a>
   </nav>
   <nav class="gh-links" style="flex-basis:100%;margin-top:2px;padding-top:6px;border-top:1px dashed rgba(130,170,220,0.22);">
     <span style="font-size:11px;color:#8ea2ba;align-self:center;letter-spacing:0.5px;">Actor pipeline</span>
@@ -473,9 +474,6 @@
       <button class="vp-btn" id="btn-restart" title="Restart effect">Replay</button>
       <button class="vp-btn" id="btn-grid" title="Toggle grid">Grid</button>
       <button class="vp-btn" id="btn-hide-bones" title="No player model in scene — bones not available" disabled style="opacity:0.4;cursor:default;">Bones</button>
-      <button class="vp-btn" id="btn-debug" title="Toggle debug log panel">Debug</button>
-      <button class="vp-btn" id="btn-issues" title="Toggle PSS Debug Logs panel">PSS Debug Logs</button>
-      <button class="vp-btn" id="btn-trace" title="Toggle Load Trace panel (timestamped per-step log)">Trace</button>
     </div>
     <canvas id="viewport-canvas"></canvas>
     <div id="viewport-overlay">
@@ -499,8 +497,9 @@
         <option value="4">4×</option>
       </select>
     </div>
-    <!-- Debug overlay panel -->
-    <div id="debug-panel" class="hidden">
+    <!-- Debug overlay panel (entrance button removed; kept in DOM for legacy
+         JS handlers — Load Trace is the single user-facing entrance). -->
+    <div id="debug-panel" class="hidden" style="display:none">
       <div class="dbg-header">
         <span class="dbg-title">PSS Debug Log</span>
         <button class="dbg-copy" id="btn-debug-copy">Copy</button>
@@ -513,30 +512,21 @@
       </div>
       <div class="dbg-body" id="debug-body"></div>
     </div>
-    <!-- New PSS Debug Logs (issues) — separate panel, sibling of #debug-panel -->
-    <div id="issues-panel" class="hidden">
-      <div class="dbg-header">
-        <span class="dbg-title">New PSS Debug Logs</span>
-        <button class="dbg-copy" id="btn-issues-copy">Copy</button>
-        <button class="dbg-close" id="btn-issues-close">✕</button>
-      </div>
-      <div class="issues-buttons" id="issues-buttons"></div>
-      <div class="dbg-body" id="issues-body"></div>
+    <!-- Issues panel removed (no JS references); Load Trace covers issues. -->
+  </div>
+  <!-- Load Trace panel: ALWAYS-VISIBLE right sidebar (sibling of #right-area).
+       Two tabs (Errors default, All Steps); copy button. No close button —
+       it's a permanent fixture. -->
+  <div id="trace-panel">
+    <div class="dbg-header">
+      <span class="dbg-title">Load Trace</span>
+      <button class="dbg-copy" id="btn-trace-copy">Copy</button>
     </div>
-    <!-- Load Trace panel: timestamped step-by-step log of the most recent
-         PSS load. Two tabs (Errors default, All Steps); copy button on each. -->
-    <div id="trace-panel" class="hidden">
-      <div class="dbg-header">
-        <span class="dbg-title">Load Trace</span>
-        <button class="dbg-copy" id="btn-trace-copy">Copy</button>
-        <button class="dbg-close" id="btn-trace-close">✕</button>
-      </div>
-      <div class="dbg-tabs">
-        <button class="dbg-tab active" data-trace-tab="errors" type="button">Errors</button>
-        <button class="dbg-tab" data-trace-tab="all" type="button">All Steps</button>
-      </div>
-      <div class="dbg-body" id="trace-body"></div>
+    <div class="dbg-tabs">
+      <button class="dbg-tab active" data-trace-tab="errors" type="button">Errors</button>
+      <button class="dbg-tab" data-trace-tab="all" type="button">All Steps</button>
     </div>
+    <div class="dbg-body" id="trace-body"></div>
   </div>
   <div id="info-panel">
     <div class="info-header">
@@ -564,6 +554,6 @@
   }
 }
 </script>
-<script type="module" src="js/actor-animation-player.js?v=20260428h"></script>
+<script type="module" src="js/actor-animation-player.js?v=20260428m"></script>
 </body>
 </html>

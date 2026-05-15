@@ -1,5 +1,5 @@
-import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync } from 'fs';
-import { join, resolve } from 'path';
+import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'fs';
+import { basename, join, resolve } from 'path';
 import iconv from 'iconv-lite';
 import koffi from 'koffi';
 
@@ -41,6 +41,16 @@ function xxHashMergeRound(accumulator, value) {
 
 function readUInt64LE(buffer, offset) {
   return buffer.readBigUInt64LE(offset);
+}
+
+function formatHex64(value) {
+  return `0x${BigInt.asUintN(64, value).toString(16).padStart(16, '0')}`;
+}
+
+function countEntries(counts, keyName) {
+  return [...counts.entries()]
+    .map(([key, count]) => ({ [keyName]: key, count }))
+    .sort((left, right) => right.count - left.count || String(left[keyName]).localeCompare(String(right[keyName])));
 }
 
 function djb2Masked(bytes) {
@@ -236,6 +246,55 @@ export function createJx3CacheReader(options = {}) {
     return lzhamUncompress;
   }
 
+  function buildResolvedEntry(candidatePath, parentPath, dirHash, fileHash, h2, fnEntry, idxEntry) {
+    const datPath = join(cacheRoot, `${idxEntry.datIndex}.dat`);
+    return {
+      logicalPath: candidatePath,
+      parentPath,
+      dirHash,
+      fileHash,
+      h2,
+      h1: fnEntry.h1,
+      fnFile: fnEntry.fnFile,
+      fnOffset: fnEntry.fnOffset,
+      idxPath: idxEntry.idxPath,
+      idxOffset: idxEntry.idxOffset,
+      datPath,
+      datIndex: idxEntry.datIndex,
+      datOffset: idxEntry.offset,
+      originalSize: idxEntry.originalSize,
+      compressedSize: idxEntry.compressedSize,
+      compressionType: idxEntry.compressionType,
+      sequence: idxEntry.sequence,
+      blocks: idxEntry.blocks,
+    };
+  }
+
+  function findEntry(logicalPath) {
+    const rawPath = preserveLogicalPath(logicalPath);
+    const candidates = [...new Set([normalizeLogicalPath(rawPath), rawPath].filter(Boolean))];
+
+    for (const candidatePath of candidates) {
+      const slashIndex = candidatePath.lastIndexOf('/');
+      if (slashIndex < 0) continue;
+
+      const parentPath = candidatePath.slice(0, slashIndex);
+      const fullPathBytes = iconv.encode(candidatePath, 'gbk');
+      const parentBytes = iconv.encode(parentPath, 'gbk');
+      const dirHash = djb2Masked(parentBytes);
+      const fileHash = xxHash64(fullPathBytes);
+      const h2 = composeH2(dirHash, fileHash);
+      const fnEntry = ensureFnIndex().get(h2);
+      if (!fnEntry) continue;
+
+      const idxEntry = ensureIdxIndex().get(fnEntry.h1);
+      if (!idxEntry) continue;
+      return buildResolvedEntry(candidatePath, parentPath, dirHash, fileHash, h2, fnEntry, idxEntry);
+    }
+
+    return null;
+  }
+
   function resolveEntry(logicalPath) {
     const rawPath = preserveLogicalPath(logicalPath);
     const candidates = [...new Set([normalizeLogicalPath(rawPath), rawPath].filter(Boolean))];
@@ -265,27 +324,7 @@ export function createJx3CacheReader(options = {}) {
         continue;
       }
 
-      const datPath = join(cacheRoot, `${idxEntry.datIndex}.dat`);
-      return {
-        logicalPath: candidatePath,
-        parentPath,
-        dirHash,
-        fileHash,
-        h2,
-        h1: fnEntry.h1,
-        fnFile: fnEntry.fnFile,
-        fnOffset: fnEntry.fnOffset,
-        idxPath: idxEntry.idxPath,
-        idxOffset: idxEntry.idxOffset,
-        datPath,
-        datIndex: idxEntry.datIndex,
-        datOffset: idxEntry.offset,
-        originalSize: idxEntry.originalSize,
-        compressedSize: idxEntry.compressedSize,
-        compressionType: idxEntry.compressionType,
-        sequence: idxEntry.sequence,
-        blocks: idxEntry.blocks,
-      };
+      return buildResolvedEntry(candidatePath, parentPath, dirHash, fileHash, h2, fnEntry, idxEntry);
     }
 
     throw lastError || new Error(`No FN mapping found for ${rawPath}`);
@@ -380,9 +419,127 @@ export function createJx3CacheReader(options = {}) {
     };
   }
 
+  function buildCacheRecord(rowIndex, h2, fnEntry, idxEntry) {
+    const datPath = idxEntry ? join(cacheRoot, `${idxEntry.datIndex}.dat`) : null;
+    return {
+      index: rowIndex,
+      h1: formatHex64(fnEntry.h1),
+      h2: formatHex64(h2),
+      fnFile: basename(fnEntry.fnFile),
+      fnOffset: fnEntry.fnOffset,
+      chain: fnEntry.chain,
+      missingIdx: !idxEntry,
+      idxFile: idxEntry ? basename(idxEntry.idxPath) : null,
+      idxOffset: idxEntry?.idxOffset ?? null,
+      datFile: datPath ? basename(datPath) : null,
+      datIndex: idxEntry?.datIndex ?? null,
+      datOffset: idxEntry?.offset ?? null,
+      originalSize: idxEntry?.originalSize ?? null,
+      compressedSize: idxEntry?.compressedSize ?? null,
+      compressionType: idxEntry?.compressionType ?? null,
+      sequence: idxEntry?.sequence ?? null,
+      blocks: idxEntry?.blocks ?? null,
+    };
+  }
+
+  function getStats() {
+    const fn = ensureFnIndex();
+    const idx = ensureIdxIndex();
+    const fnFileCounts = new Map();
+    const datIndexCounts = new Map();
+    const compressionCounts = new Map();
+    const referencedH1 = new Set();
+    let missingIdxMappings = 0;
+    let totalOriginalSize = 0;
+    let totalCompressedSize = 0;
+
+    for (const fnEntry of fn.values()) {
+      const fnFileName = basename(fnEntry.fnFile);
+      fnFileCounts.set(fnFileName, (fnFileCounts.get(fnFileName) || 0) + 1);
+      if (idx.has(fnEntry.h1)) {
+        referencedH1.add(fnEntry.h1);
+      } else {
+        missingIdxMappings += 1;
+      }
+    }
+
+    for (const idxEntry of idx.values()) {
+      totalOriginalSize += idxEntry.originalSize;
+      totalCompressedSize += idxEntry.compressedSize;
+      datIndexCounts.set(idxEntry.datIndex, (datIndexCounts.get(idxEntry.datIndex) || 0) + 1);
+      compressionCounts.set(idxEntry.compressionType, (compressionCounts.get(idxEntry.compressionType) || 0) + 1);
+    }
+
+    const datFiles = readdirSync(cacheRoot, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && /^\d+\.dat$/i.test(entry.name))
+      .map((entry) => {
+        const filePath = join(cacheRoot, entry.name);
+        const stats = statSync(filePath);
+        return { file: entry.name, size: stats.size, mtime: stats.mtimeMs };
+      })
+      .sort((left, right) => left.file.localeCompare(right.file, undefined, { numeric: true, sensitivity: 'base' }));
+
+    return {
+      cacheRoot,
+      lzhamDllPath,
+      fnMappings: fn.size,
+      idxRecords: idx.size,
+      referencedIdxRecords: referencedH1.size,
+      missingIdxMappings,
+      duplicateContentMappings: Math.max(0, fn.size - referencedH1.size),
+      unreferencedIdxRecords: Math.max(0, idx.size - referencedH1.size),
+      totalOriginalSize,
+      totalCompressedSize,
+      fnFiles: countEntries(fnFileCounts, 'file'),
+      datFiles,
+      datIndexes: countEntries(datIndexCounts, 'datIndex'),
+      compressionTypes: countEntries(compressionCounts, 'compressionType'),
+    };
+  }
+
+  function listEntries(options = {}) {
+    const fn = ensureFnIndex();
+    const idx = ensureIdxIndex();
+    const search = String(options.search || '').trim().toLowerCase();
+    const offset = Math.max(0, Number(options.offset) || 0);
+    const limit = Math.min(5000, Math.max(1, Number(options.limit) || 200));
+    const items = [];
+    let rowIndex = 0;
+    let matched = 0;
+
+    for (const [h2, fnEntry] of fn.entries()) {
+      rowIndex += 1;
+      const record = buildCacheRecord(rowIndex, h2, fnEntry, idx.get(fnEntry.h1));
+      if (search) {
+        const haystack = `${record.h1} ${record.h2} ${record.fnFile} ${record.idxFile || ''} ${record.datFile || ''} ${record.datIndex ?? ''} ${record.compressionType ?? ''}`.toLowerCase();
+        if (!haystack.includes(search)) continue;
+      }
+      if (matched >= offset && items.length < limit) {
+        items.push(record);
+      }
+      matched += 1;
+    }
+
+    return {
+      ok: true,
+      source: 'local-pakv5-fn-idx',
+      cacheRoot,
+      totalItems: fn.size,
+      totalFiltered: matched,
+      offset,
+      limit,
+      hasNextPage: offset + items.length < matched,
+      items,
+    };
+  }
+
   return {
     cacheRoot,
     lzhamDllPath,
+    findEntry,
+    formatHex64,
+    getStats,
+    listEntries,
     resolveEntry,
     readEntry,
   };

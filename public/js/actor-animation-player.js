@@ -128,11 +128,11 @@ function traceStep(level, step, detail) {
   renderTracePanelIfOpen();
 }
 function renderTracePanelIfOpen() {
-  // Defined later via a hoisted function; guard for early calls during
-  // module init before the DOM panel exists.
+  // Trace panel is now always visible (no .hidden class). Render unconditionally
+  // when the function exists.
   if (typeof renderTracePanel === 'function') {
     const p = document.getElementById('trace-panel');
-    if (p && !p.classList.contains('hidden')) renderTracePanel();
+    if (p) renderTracePanel();
   }
 }
 
@@ -194,6 +194,23 @@ function dbg(category, msg, data) {
 //     with a decoded track whose nodes resolved a texture. Treating
 //     `materialIndex == null` as a gap on a Trail launcher is a misclassification.
 const TRAIL_LAUNCHER_CLASSES = new Set(['Trail', 'TrailVariantB']);
+
+// Ribbon-class launchers whose .mesh reference is a material/UV template,
+// NOT a static mesh to render. The procedural ribbon is drawn by the paired
+// type-3 track block (see /memories/repo/pss-launcher-no-mesh-transform.md).
+// `loadMeshEmitter` short-circuits these; the caller treats the resulting
+// `null` as an intentional skip, not a load failure.
+const RIBBON_DELEGATED_LAUNCHER_CLASSES = new Set([
+  'Trail', 'TrailVariantB',
+  'MeshQuote',
+  'ParticleOutline', 'ParticleOutlineB',
+]);
+function isRibbonMeshDelegatedToTrack(em) {
+  const cls = em?.meshFields?.launcherClass;
+  if (!cls || !RIBBON_DELEGATED_LAUNCHER_CLASSES.has(cls)) return false;
+  if (em?.meshFields?.classFlags?.hasSiblingTrack !== true) return false;
+  return !!em?.linkedTrack;
+}
 function auditMeshMaterialBinding(data, sourcePath) {
   const fileName = sourcePath ? sourcePath.split(/[\\/]/).pop() : '?';
   const meshEms = (data?.emitters || []).filter(
@@ -1943,6 +1960,11 @@ function initThreeJs() {
         authoredAlphaCurve: e.authoredAlphaCurve || null,
         authoredMaxParticles: e.authoredMaxParticles ?? null,
         sizeCurveAuthored: !!e.sizeCurveAuthored,
+        // Per-module curveInfo summary (which keys plumbed through).
+        curveInfoKeys: e.curveInfo ? Object.keys(e.curveInfo).filter((k) => {
+          const arr = e.curveInfo[k];
+          return Array.isArray(arr) && arr.some((entry) => entry?.decoded !== false && Array.isArray(entry?.keys) && entry.keys.length > 0);
+        }) : null,
         // Verdict flags so a test can grep the inventory and assert.
         flags: {
           noTextureBound: layers.every((l) => !l.texture.bound),
@@ -2032,6 +2054,63 @@ function initThreeJs() {
     timelinePlaying = true;
     timelineLastClockSec = null;
     return true;
+  };
+
+  // Per-mesh-emitter geometry diagnostic. For each mesh emitter, lists every
+  // child Mesh node's local position, geometry bbox (in geometry-space), and
+  // the geometry vertex extent. Lets us distinguish "huge intrinsic geometry"
+  // from "many children placed far apart".
+  window.__pssMeshGeometryProbe = () => {
+    const round = (n) => Number.isFinite(n) ? +n.toFixed(2) : null;
+    const v3 = (o) => o ? [round(o.x), round(o.y), round(o.z)] : null;
+    return (typeof meshObjects !== 'undefined' ? meshObjects : []).map((e, i) => {
+      const groupScale = e.group ? v3(e.group.scale) : null;
+      const groupPos = e.group ? v3(e.group.position) : null;
+      const children = [];
+      e.group?.traverse?.((obj) => {
+        if (!obj.geometry || !obj.geometry.attributes?.position) return;
+        const pos = obj.geometry.attributes.position;
+        const arr = pos.array;
+        let mnx = Infinity, mxx = -Infinity, mny = Infinity, mxy = -Infinity, mnz = Infinity, mxz = -Infinity;
+        for (let k = 0; k < arr.length; k += 3) {
+          if (arr[k] < mnx) mnx = arr[k];
+          if (arr[k] > mxx) mxx = arr[k];
+          if (arr[k+1] < mny) mny = arr[k+1];
+          if (arr[k+1] > mxy) mxy = arr[k+1];
+          if (arr[k+2] < mnz) mnz = arr[k+2];
+          if (arr[k+2] > mxz) mxz = arr[k+2];
+        }
+        // Compose world-effect scale from ancestors up to e.group.
+        let cumScale = new THREE.Vector3(1, 1, 1);
+        let cur = obj;
+        while (cur && cur !== e.group?.parent) {
+          cumScale.multiply(cur.scale);
+          cur = cur.parent;
+        }
+        children.push({
+          name: obj.name || obj.type,
+          localPos: v3(obj.position),
+          localScale: v3(obj.scale),
+          cumulativeScale: v3(cumScale),
+          vertCount: pos.count,
+          rawGeomExtent: {
+            x: [round(mnx), round(mxx), round(mxx - mnx)],
+            y: [round(mny), round(mxy), round(mxy - mny)],
+            z: [round(mnz), round(mxz), round(mxz - mnz)],
+          },
+        });
+      });
+      return {
+        i,
+        sourcePath: (e.sourcePath || '').split('/').pop(),
+        emitterScale: e.emDef?.meshFields?.emitterScale ?? null,
+        launcherClass: e.emDef?.meshFields?.launcherClass ?? null,
+        groupPos,
+        groupScale,
+        childCount: children.length,
+        children,
+      };
+    });
   };
 
   window.__pssDebug = () => {
@@ -2172,11 +2251,14 @@ function autoFitCameraToEffect() {
   box.getCenter(center);
   box.getSize(size);
 
-  const maxDim = Math.max(size.x, size.y, size.z, 50);
+  const maxDim = Math.max(size.x, size.y, size.z, 30);
   const fovRad = (camera.fov * Math.PI) / 180;
-  const fitDist = (maxDim / 2) / Math.tan(fovRad / 2) * 1.5;
+  // Padding 1.15 (was 1.5): the previous 1.5 + min-clamp 200 over-zoomed
+  // every small effect (e.g. T_天策龙牙 fits in ~285cm; min 200 forced ~460cm
+  // distance, leaving the effect a tiny dot in the canvas).
+  const fitDist = (maxDim / 2) / Math.tan(fovRad / 2) * 1.15;
 
-  orbitState.dist = Math.max(200, Math.min(3000, fitDist));
+  orbitState.dist = Math.max(60, Math.min(3000, fitDist));
   orbitState.targetX = center.x;
   orbitState.targetY = center.y;
   orbitState.targetZ = center.z;
@@ -2416,6 +2498,12 @@ async function addPssEffect(sourcePath, startTimeMs = 0) {
       }
     }
 
+    // Wire structured per-module curveInfo (DLL-verified module decoder
+    // output) onto each emitter. See /memories/repo/pss-transform-pipeline.md
+    // for the engine-side pipeline. Without this, sprites fall back to the
+    // tail-trailer triplet heuristics and ignore authored module curves.
+    mergeCurveInfoFromDebugDump(data, debugDump);
+
     // Audit mesh-emitter material binding for this PSS
     auditMeshMaterialBinding(data, sourcePath);
 
@@ -2532,6 +2620,11 @@ async function addPssEffect(sourcePath, startTimeMs = 0) {
           sourcePaths: (em.resolvedMeshes || []).map((asset) => asset?.sourcePath).filter(Boolean),
           animationPaths: (em.resolvedAnimations || []).map((asset) => asset?.sourcePath).filter(Boolean),
         });
+      } else if (isRibbonMeshDelegatedToTrack(em)) {
+        // Intentional skip — ribbon-class launcher whose .mesh is a UV
+        // template; the procedural ribbon is rendered by the sibling type-3
+        // track block. The skip itself is already logged inside
+        // `loadMeshEmitter`. Do NOT emit a mesh-error here.
       } else {
         // Only record as a real failure if the server DID resolve a mesh path
         // for this emitter but the GLB loader rejected it. Emitters with no
@@ -2712,6 +2805,154 @@ function sampleKeyframeCurve(keyframes, t) {
   const right = Math.min(keyframes.length - 1, left + 1);
   const frac = scaled - left;
   return keyframes[left] + (keyframes[right] - keyframes[left]) * frac;
+}
+
+// ─── Structured per-module curve sampler (DLL-verified pipeline) ─────
+// curveInfo arrives from /api/pss/debug-dump → block.parsed.curveInfo
+// and is per-emitter-occurrence indexed:
+//   em.curveInfo[key] = [{ keys: [{value} | {x,y,z} | {x,y,z,w}],
+//                          layoutKind, decoded, ... }, ...]
+// Layouts produced by the server decoder (see /memories/repo/pss-curve-module-layout.md):
+//   '1d' (default)        → keys: [{value:f32}], time implicit even spacing
+//   '3d-explicit-time'    → keys: [{t,x,y,z}]
+//   '4d-implicit-time'    → keys: [{x,y,z,w}], time implicit
+//   '4d-implicit-no-header' → keys: [{a,b,c,d}], time implicit
+// For unparsable / legacy layouts decoded=false, no keys → sampler returns null.
+function pickCurveEntry(em, key, occurrenceIdx = 0) {
+  const arr = em && em.curveInfo && em.curveInfo[key];
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  const entry = arr[occurrenceIdx] || arr[0];
+  if (!entry || entry.decoded === false || !Array.isArray(entry.keys) || entry.keys.length === 0) {
+    return null;
+  }
+  return entry;
+}
+
+// Sample a 1D-channel curve (returns scalar or null). For multi-channel
+// layouts (3d/4d) returns the named channel; default 'value' picks .value
+// for 1d or .x for vec curves.
+function sampleEmitterCurve1D(em, key, t, channel = 'value') {
+  const entry = pickCurveEntry(em, key);
+  if (!entry) return null;
+  const keys = entry.keys;
+  const time = clamp01(t);
+  const pickValue = (k) => {
+    if (k == null) return null;
+    if (channel === 'value' && Number.isFinite(k.value)) return k.value;
+    if (channel === 'x' && Number.isFinite(k.x)) return k.x;
+    if (channel === 'y' && Number.isFinite(k.y)) return k.y;
+    if (channel === 'z' && Number.isFinite(k.z)) return k.z;
+    if (channel === 'w' && Number.isFinite(k.w)) return k.w;
+    // Auto-fallback chain: value → x → first finite numeric channel
+    if (Number.isFinite(k.value)) return k.value;
+    if (Number.isFinite(k.x)) return k.x;
+    return null;
+  };
+  if (entry.layoutKind === '3d-explicit-time') {
+    // Each key has its own .t; do a linear interpolation across time axis.
+    let leftIdx = 0;
+    for (let i = 0; i < keys.length; i++) {
+      if (keys[i].t <= time) leftIdx = i; else break;
+    }
+    const rightIdx = Math.min(keys.length - 1, leftIdx + 1);
+    const left = keys[leftIdx];
+    const right = keys[rightIdx];
+    if (right === left) return pickValue(left);
+    const span = (right.t - left.t) || 1;
+    const mix = (time - left.t) / span;
+    const lv = pickValue(left);
+    const rv = pickValue(right);
+    if (lv == null || rv == null) return lv ?? rv;
+    return lv + (rv - lv) * mix;
+  }
+  // Implicit-time: even spacing across [0..1].
+  if (keys.length === 1) return pickValue(keys[0]);
+  const scaled = time * (keys.length - 1);
+  const leftIdx = Math.floor(scaled);
+  const rightIdx = Math.min(keys.length - 1, leftIdx + 1);
+  const mix = scaled - leftIdx;
+  const lv = pickValue(keys[leftIdx]);
+  const rv = pickValue(keys[rightIdx]);
+  if (lv == null || rv == null) return lv ?? rv;
+  return lv + (rv - lv) * mix;
+}
+
+// Sample a 3D vector channel (velocity / offset). Returns {x,y,z} or null.
+function sampleEmitterCurve3D(em, key, t) {
+  const entry = pickCurveEntry(em, key);
+  if (!entry) return null;
+  const keys = entry.keys;
+  if (keys.length === 0) return null;
+  const time = clamp01(t);
+  const pick3 = (k) => ({
+    x: Number.isFinite(k.x) ? k.x : 0,
+    y: Number.isFinite(k.y) ? k.y : 0,
+    z: Number.isFinite(k.z) ? k.z : 0,
+  });
+  if (keys.length === 1) return pick3(keys[0]);
+  if (entry.layoutKind === '3d-explicit-time') {
+    let leftIdx = 0;
+    for (let i = 0; i < keys.length; i++) {
+      if (keys[i].t <= time) leftIdx = i; else break;
+    }
+    const rightIdx = Math.min(keys.length - 1, leftIdx + 1);
+    const left = keys[leftIdx]; const right = keys[rightIdx];
+    if (right === left) return pick3(left);
+    const span = (right.t - left.t) || 1;
+    const mix = (time - left.t) / span;
+    const l = pick3(left); const r = pick3(right);
+    return { x: l.x + (r.x - l.x) * mix, y: l.y + (r.y - l.y) * mix, z: l.z + (r.z - l.z) * mix };
+  }
+  const scaled = time * (keys.length - 1);
+  const leftIdx = Math.floor(scaled);
+  const rightIdx = Math.min(keys.length - 1, leftIdx + 1);
+  const mix = scaled - leftIdx;
+  const l = pick3(keys[leftIdx]); const r = pick3(keys[rightIdx]);
+  return { x: l.x + (r.x - l.x) * mix, y: l.y + (r.y - l.y) * mix, z: l.z + (r.z - l.z) * mix };
+}
+
+// Sample a 4D vector channel (RGBA color). Returns [r,g,b,a] or null.
+function sampleEmitterCurve4D(em, key, t) {
+  const entry = pickCurveEntry(em, key);
+  if (!entry) return null;
+  const keys = entry.keys;
+  if (keys.length === 0) return null;
+  const time = clamp01(t);
+  const pick4 = (k) => [
+    Number.isFinite(k.x) ? k.x : (Number.isFinite(k.value) ? k.value : 1),
+    Number.isFinite(k.y) ? k.y : 1,
+    Number.isFinite(k.z) ? k.z : 1,
+    Number.isFinite(k.w) ? k.w : 1,
+  ];
+  if (keys.length === 1) return pick4(keys[0]);
+  const scaled = time * (keys.length - 1);
+  const leftIdx = Math.floor(scaled);
+  const rightIdx = Math.min(keys.length - 1, leftIdx + 1);
+  const mix = scaled - leftIdx;
+  const l = pick4(keys[leftIdx]); const r = pick4(keys[rightIdx]);
+  return [
+    l[0] + (r[0] - l[0]) * mix,
+    l[1] + (r[1] - l[1]) * mix,
+    l[2] + (r[2] - l[2]) * mix,
+    l[3] + (r[3] - l[3]) * mix,
+  ];
+}
+
+// Merge per-block curveInfo from /api/pss/debug-dump back onto each
+// emitter object. The /api/pss/analyze emitter list does not include
+// curveInfo (it lives in the block-level debug-dump output), so the client
+// stitches them together by block.index. Safe no-op when debugDump null.
+function mergeCurveInfoFromDebugDump(data, debugDump) {
+  if (!data || !Array.isArray(data.emitters)) return;
+  if (!debugDump || !Array.isArray(debugDump.blocks)) return;
+  const curveByIndex = new Map();
+  for (const blk of debugDump.blocks) {
+    if (blk?.parsed?.curveInfo) curveByIndex.set(blk.index, blk.parsed.curveInfo);
+  }
+  for (const em of data.emitters) {
+    const ci = curveByIndex.get(em.index);
+    if (ci) em.curveInfo = ci;
+  }
 }
 
 function sampleColorCurve(colorCurve, t) {
@@ -3107,6 +3348,11 @@ function createSpriteEmitter(emitterData, textures, emIndex = 0, totalEmitters =
     authoredAlphaCurve,
     authoredMaxParticles,
     sizeCurveAuthored: Boolean(authoredSizeCurve),
+    // Structured per-module curves merged from /api/pss/debug-dump. Drives
+    // velocity / brightness / color / scale / rotation / distortStrength /
+    // offset wiring in updateSpriteEmitter when present. Falls back to the
+    // legacy tail-trailer triplet path when null.
+    curveInfo: emitterData.curveInfo || null,
     isAdditive,
     baseTint: baseTint.clone(),
     currentColor: baseTint.clone(),
@@ -3149,24 +3395,34 @@ function updateSpriteEmitter(em, effectTimeMs) {
   const t = clamp01(rep.age / rep.lifetime);
 
   // Shared color + alpha (one write per layer material).
+  // Priority: structured curveInfo.color (DLL-verified module decoder) →
+  // legacy heuristic em.colorCurve. Brightness multiplier from
+  // curveInfo.brightness modulates the final RGB amplitude.
   let opacity = globalGate;
-  if (em.colorCurve) {
+  let rgb = null;
+  const ciColor = sampleEmitterCurve4D(em, 'color', t);
+  if (ciColor) {
+    rgb = [ciColor[0], ciColor[1], ciColor[2]];
+    if (Number.isFinite(ciColor[3])) opacity = Math.max(0, Math.min(1, ciColor[3])) * globalGate;
+  } else if (em.colorCurve) {
     const color = sampleColorCurve(em.colorCurve, t);
+    rgb = [color[0], color[1], color[2]];
     const authoredAlpha = em.authoredAlphaCurve
       ? sampleTriCurve(em.authoredAlphaCurve[0], em.authoredAlphaCurve[1], em.authoredAlphaCurve[2], t)
       : (Number.isFinite(color[3]) ? color[3] : 1);
     opacity = Math.max(0, Math.min(1, authoredAlpha)) * globalGate;
-    em.currentColor.setRGB(color[0], color[1], color[2]);
-    for (const res of em.layerResources) {
-      res.mat.color.setRGB(color[0], color[1], color[2]);
-      res.mat.opacity = opacity;
-    }
-  } else {
-    em.currentColor.setRGB(1, 1, 1);
-    for (const res of em.layerResources) {
-      res.mat.color.setRGB(1, 1, 1);
-      res.mat.opacity = opacity;
-    }
+  }
+  if (!rgb) rgb = [1, 1, 1];
+  // curveInfo.brightness is plumbed to em.curveInfo.brightness but NOT
+  // applied to RGB until the unit/semantic is engine-verified. The decoded
+  // values for some emitters drop to 0 mid-life which would zero the color
+  // and (under additive blend) produce invisible sprites. Sample value is
+  // exposed on `em.lastBrightnessSample` so future shader work can consume it.
+  em.lastBrightnessSample = sampleEmitterCurve1D(em, 'brightness', t);
+  em.currentColor.setRGB(rgb[0], rgb[1], rgb[2]);
+  for (const res of em.layerResources) {
+    res.mat.color.setRGB(rgb[0], rgb[1], rgb[2]);
+    res.mat.opacity = opacity;
   }
 
   // Shared atlas offset (one write per layer texture).
@@ -3182,11 +3438,25 @@ function updateSpriteEmitter(em, effectTimeMs) {
     }
   }
 
-  const currentSize = rep.useRuntimeSizeCurve
+  const baseSize = rep.useRuntimeSizeCurve
     ? (rep.sizeKeyframes
         ? sampleKeyframeCurve(rep.sizeKeyframes, t)
         : sampleTriCurve(rep.size, rep.sizeMid, rep.sizeEnd, t))
     : 1;
+  // curveInfo.scale (KG3D_ParticleScaleLifeTime) is a 1D multiplier applied
+  // on top of the authored sizeCurve triplet. Engine pipeline confirms the
+  // scale module multiplies, not replaces.
+  const scaleMul = sampleEmitterCurve1D(em, 'scale', t);
+  const currentSize = baseSize * (Number.isFinite(scaleMul) ? scaleMul : 1);
+
+  // curveInfo.rotation → per-frame z-rotation (sprite spin around the
+  // billboard axis). 1D curve in radians per the module decoder.
+  const rotationAngle = sampleEmitterCurve1D(em, 'rotation', t);
+
+  // curveInfo.offset → per-particle spawn-position offset (3D).
+  // curveInfo.velocity → per-particle position drift (3D, integrated dt).
+  const offsetVec = sampleEmitterCurve3D(em, 'offset', t);
+  const velocityVec = sampleEmitterCurve3D(em, 'velocity', t);
 
   // Shared billboard quaternion (parent group is the same for all layers).
   const parentGroup = em.points;
@@ -3198,16 +3468,38 @@ function updateSpriteEmitter(em, effectTimeMs) {
   }
 
   // Per-particle work: sync age, then apply scale + quaternion to meshes.
-  // Position is static (spawn = origin, no authored velocity) so we do NOT
-  // re-copy it every frame — that was 4560+ redundant Vector3.copy calls
-  // per frame on a fully loaded PSS.
+  // When velocity / offset curves are present, particle positions are
+  // dynamic and we must re-copy each frame.
+  const dynamicPosition = !!(velocityVec || offsetVec);
   for (const particle of em.particles) {
     if (!particle.alive) spawnSpriteParticle(em, particle);
     particle.age = rep.age;
+    if (velocityVec) {
+      particle.velocity.set(velocityVec.x, velocityVec.y, velocityVec.z);
+    }
+    if (dynamicPosition) {
+      // Integrate position from spawnPos + accumulated drift + offset.
+      if (velocityVec) {
+        particle.spawnPos.x += velocityVec.x * dt;
+        particle.spawnPos.y += velocityVec.y * dt;
+        particle.spawnPos.z += velocityVec.z * dt;
+      }
+    }
     for (const layer of particle.layers) {
       layer.mesh.visible = true;
       layer.mesh.scale.setScalar(currentSize * layer.scaleMul);
       layer.mesh.quaternion.copy(spriteLocalQuaternion);
+      if (Number.isFinite(rotationAngle)) {
+        layer.mesh.rotation.z = layer.rotationOffset + rotationAngle;
+      }
+      if (dynamicPosition) {
+        layer.mesh.position.copy(particle.spawnPos);
+        if (offsetVec) {
+          layer.mesh.position.x += offsetVec.x;
+          layer.mesh.position.y += offsetVec.y;
+          layer.mesh.position.z += offsetVec.z;
+        }
+      }
     }
   }
 }
@@ -3219,6 +3511,20 @@ function updateSpriteEmitter(em, effectTimeMs) {
 async function loadMeshEmitter(meshAsset, emIndex = 0, totalMeshEmitters = 1) {
   const resolvedMeshAssets = (meshAsset?.resolvedMeshes || []).filter((asset) => asset?.sourcePath);
   if (resolvedMeshAssets.length === 0) return null;
+
+  // ── Ribbon-class launchers must NOT be drawn as raw meshes ────────────
+  // See /memories/repo/pss-launcher-no-mesh-transform.md for the DLL-verified
+  // rationale and `RIBBON_DELEGATED_LAUNCHER_CLASSES` above for the class set.
+  // The matching type-3 track block is what actually renders the ribbon.
+  if (isRibbonMeshDelegatedToTrack(meshAsset)) {
+    dbg('mesh', `ribbon-mesh delegated to track: em#${meshAsset.index} class=${meshAsset.meshFields?.launcherClass}`, {
+      emitterIndex: meshAsset.index,
+      launcherClass: meshAsset.meshFields?.launcherClass,
+      meshes: resolvedMeshAssets.map((a) => a.sourcePath),
+      linkedTrackEmitterIndex: meshAsset.linkedTrack?.trackEmitterIndex ?? null,
+    });
+    return null;
+  }
 
   // NO per-emitter tint keyword guess (previous `resolvePssEmitterTint` was a
   // guess — user rule: never guess. If a launcher authors a tint color it is
@@ -3233,12 +3539,8 @@ async function loadMeshEmitter(meshAsset, emIndex = 0, totalMeshEmitters = 1) {
     : null;
 
   // Authored emitter scale from the type-2 launcher block (+308 f32). This
-  // is the ONLY transform field we extract today — `f3MeshScale` (Vector3)
-  // and `f3CenterAdjust` (Vector3) from the editor's mesh schema (DLL
-  // `KG3D_SceneNodeFactory` strings: szMeshPath / f3MeshScale /
-  // f3CenterAdjust / eUpAxis / eForwardAxis) are not yet probed in the
-  // type-2 block, so until they are wired we apply only this uniform
-  // multiplier and otherwise render the mesh as authored.
+  // is the ONLY authored transform a PSS launcher carries — verified against
+  // the DLL string table (see ribbon-skip block above for citation).
   const emitterScaleFactor = Number.isFinite(meshAsset?.meshFields?.emitterScale)
     ? Math.max(0.1, Math.min(4, meshAsset.meshFields.emitterScale)) : 1;
 
@@ -3465,21 +3767,19 @@ async function loadMeshEmitter(meshAsset, emIndex = 0, totalMeshEmitters = 1) {
   };
 
   // Authored-transform pass.
-  // Previous behaviour (REMOVED):
-  //   1. computed bbox, forced max-dim to `pssEffectNormalizeSize` (=100).
-  //   2. recentred at bbox center via `position.copy(boxCenter)*-normScale`.
-  // Both steps were guesses that DESTROY the mesh's authored shape:
-  //   - normalize-to-100 erases authored size relative to the actor.
-  //   - bbox-recenter erases the authored pivot (`f3CenterAdjust` in the
-  //     editor's KG3D_SceneNodeFactory schema — see DLL string at offset
-  //     ~32507000: `szMaterialInsPath / szMeshPath / f3MeshScale /
-  //     f3CenterAdjust / eUpAxis / eForwardAxis`).
-  // Engine behaviour: render mesh at authored size with the launcher's
-  // emitterScale (+308 in type-2 block) applied as uniform scale. Until we
-  // wire `f3MeshScale` (Vector3) and `f3CenterAdjust` from the launcher
-  // bytes, this is the honest rendering. We also drop the bbox-validity
-  // gate — empty bboxes (skinned/unloaded) should not silently swallow
-  // the mesh; we just skip the scale step when emitterScale is degenerate.
+  // Previous behaviour (REMOVED): bbox-recenter + normalize-to-100. Both
+  // were guesses that destroyed the mesh's authored shape.
+  //
+  // Authoritative source: DLL `KG3DEngineDX11EX64.dll` string table —
+  // `f3MeshScale / f3CenterAdjust` belong to `KG3D_SceneNodeFactory` (the
+  // scene-graph mesh placement system used for maps), NOT to any of the
+  // PSS launcher classes (`KG3D_ParticleMeshLauncher`, `*Trail*`,
+  // `*MeshQuote*`). The PSS launcher block carries only `+308 emitterScale`
+  // as authored mesh transform — confirmed by exhaustive scan of the .pss
+  // type-2 block layout (see /memories/repo/pss-type2-block-layout.md) and
+  // by absence of f3* field-name strings adjacent to launcher class names
+  // in the DLL. Therefore: apply emitterScale only; render the rest of the
+  // mesh exactly as authored.
   const applyAuthoredEmitterScale = (root) => {
     if (Number.isFinite(emitterScaleFactor) && emitterScaleFactor !== 1) {
       root.scale.setScalar(emitterScaleFactor);
@@ -4352,6 +4652,9 @@ async function loadPssEffect(sourcePath) {
       }
     }
 
+    // Wire structured per-module curveInfo onto each emitter (see helper).
+    mergeCurveInfoFromDebugDump(data, debugDump);
+
     auditMeshMaterialBinding(data, sourcePath);
 
     const requestedSocket = debugDump?.socket?.suggested || null;
@@ -4445,7 +4748,7 @@ async function loadPssEffect(sourcePath) {
           sourcePaths: (em.resolvedMeshes || []).map((asset) => asset?.sourcePath).filter(Boolean),
           animationPaths: (em.resolvedAnimations || []).map((asset) => asset?.sourcePath).filter(Boolean),
         });
-      } else {
+      } else if (!isRibbonMeshDelegatedToTrack(em)) {
         dbg('mesh-error', `Failed mesh emitter: ${meshName || `#${em.index}`}`, {
           emitterIndex: em.index,
           sourcePaths: (em.resolvedMeshes || []).map((asset) => asset?.sourcePath).filter(Boolean),
@@ -4554,20 +4857,20 @@ $('#btn-hide-bones').addEventListener('click', () => {
   // Bones button is disabled in HTML since there is no player skeleton in scene.
   // This listener is a no-op safety catch.
 });
-$('#btn-debug').addEventListener('click', () => {
+$('#btn-debug')?.addEventListener('click', () => {
   debugPanel.classList.toggle('hidden');
-  $('#btn-debug').classList.toggle('active', !debugPanel.classList.contains('hidden'));
+  $('#btn-debug')?.classList.toggle('active', !debugPanel.classList.contains('hidden'));
   if (!debugPanel.classList.contains('hidden')) renderDebugPanel();
 });
 debugTabButtons.forEach((btn) => {
   btn.addEventListener('click', () => setActiveDebugTab(btn.dataset.debugTab));
 });
 setActiveDebugTab(currentDebugTab);
-$('#btn-debug-close').addEventListener('click', () => {
+$('#btn-debug-close')?.addEventListener('click', () => {
   debugPanel.classList.add('hidden');
-  $('#btn-debug').classList.remove('active');
+  $('#btn-debug')?.classList.remove('active');
 });
-$('#btn-debug-copy').addEventListener('click', async () => {
+$('#btn-debug-copy')?.addEventListener('click', async () => {
   const btn = $('#btn-debug-copy');
   try {
     let payload;
@@ -4636,14 +4939,12 @@ function setActiveTraceTab(tab) {
 }
 traceTabButtons.forEach((b) => b.addEventListener('click', () => setActiveTraceTab(b.dataset.traceTab)));
 setActiveTraceTab(currentTraceTab);
-$('#btn-trace').addEventListener('click', () => {
-  tracePanel.classList.toggle('hidden');
-  $('#btn-trace').classList.toggle('active', !tracePanel.classList.contains('hidden'));
-  if (!tracePanel.classList.contains('hidden')) renderTracePanel();
+$('#btn-trace')?.addEventListener('click', () => {
+  // Trace panel is now an always-visible right sidebar; this listener is
+  // a no-op safety catch in case the legacy button is reintroduced.
 });
-$('#btn-trace-close').addEventListener('click', () => {
-  tracePanel.classList.add('hidden');
-  $('#btn-trace').classList.remove('active');
+$('#btn-trace-close')?.addEventListener('click', () => {
+  // Close button removed; safety catch if it's reintroduced.
 });
 $('#btn-trace-copy').addEventListener('click', async () => {
   const btn = $('#btn-trace-copy');
@@ -5438,8 +5739,12 @@ async function initPssOnlyMode() {
 
   await refreshList();
 
-  // Auto-pick first match (default 龙牙) so the page is useful on cold load.
-  const firstItem = listEl.querySelector('li.item');
+  // Auto-pick T_天策龙牙.pss specifically (user-chosen default). Match the
+  // exact filename so variants (e.g. T_天策龙牙_狼头版.pss) don't shadow it.
+  const preferredItem = Array.from(listEl.querySelectorAll('li.item')).find(
+    (li) => /[\\/]T_天策龙牙\.pss$/.test(li.dataset.sourcePath || '')
+  );
+  const firstItem = preferredItem || listEl.querySelector('li.item');
   if (firstItem) {
     firstItem.click();
   }

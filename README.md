@@ -47,6 +47,23 @@ node server.js
 - The UI shell can start without those large assets, but asset-driven pages need local map data or exported packages to do useful work.
 - `actor-viewer.html` can also read MovieEditor exports directly from `C:\SeasunGame\MovieEditor\source\fbx` when that local tool install is present.
 
+## Wwise Event Folder Export
+
+The generated Wwise bank tree uses numeric WEM filenames. To recover usable folders, rebuild the Wwise event index and export by original event object path:
+
+```powershell
+npm run wwise:index
+npm run wwise:event-folders -- --query qicheng_longya --write-wem --decode-ogg --out cache-extraction/wwise-event-folders-qicheng-longya
+```
+
+For a large run, omit `--query` and keep the default output folder:
+
+```powershell
+npm run wwise:event-folders -- --write-wem --decode-ogg
+```
+
+Outputs are written under `cache-extraction/wwise-event-folders`: `manifest.tsv`, `manifest.jsonl`, `summary.json`, and a `by-event` folder tree. Each row includes the Wwise event name, object path, WEM id, source Wwise path, CDN path/package, and materialized WEM/OGG status.
+
 ## Current Behavior Rules
 
 - Collision Test and Export Reader use sidecar collision only.
