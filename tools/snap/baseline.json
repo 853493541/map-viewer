@@ -1,0 +1,524 @@
+{
+  "counts": {
+    "sprite": 19,
+    "mesh": 0,
+    "track": 4
+  },
+  "timeline": {
+    "timelineMs": 3200,
+    "timelineTotalMs": 8000,
+    "playing": false
+  },
+  "sprites": [
+    {
+      "idx": 0,
+      "src": "T_天策龙牙.pss",
+      "visible": true,
+      "worldBoxSize": [
+        0,
+        0,
+        0
+      ],
+      "aliveParticles": 120,
+      "layerCount": 2,
+      "repColor": [
+        1,
+        1,
+        1
+      ],
+      "repOpacity": 1,
+      "sizeCurveAuthored": true,
+      "authoredSizeCurve": [
+        0,
+        0,
+        0
+      ],
+      "authoredAlphaCurve": null,
+      "curveInfoKeys": [
+        "velocity",
+        "brightness"
+      ]
+    },
+    {
+      "idx": 1,
+      "src": "T_天策龙牙.pss",
+      "visible": true,
+      "worldBoxSize": [
+        100,
+        50,
+        86.6
+      ],
+      "aliveParticles": 120,
+      "layerCount": 1,
+      "repColor": [
+        1,
+        1,
+        1
+      ],
+      "repOpacity": 1,
+      "sizeCurveAuthored": false,
+      "authoredSizeCurve": null,
+      "authoredAlphaCurve": null,
+      "curveInfoKeys": []
+    },
+    {
+      "idx": 2,
+      "src": "T_天策龙牙.pss",
+      "visible": true,
+      "worldBoxSize": [
+        99.35,
+        49.67,
+        86.04
+      ],
+      "aliveParticles": 120,
+      "layerCount": 2,
+      "repColor": [
+        0,
+        1,
+        1
+      ],
+      "repOpacity": 1,
+      "sizeCurveAuthored": true,
+      "authoredSizeCurve": [
+        1,
+        0.645747,
+        0.223682
+      ],
+      "authoredAlphaCurve": null,
+      "curveInfoKeys": [
+        "velocity",
+        "outlineColor"
+      ]
+    },
+    {
+      "idx": 3,
+      "src": "T_天策龙牙.pss",
+      "visible": true,
+      "worldBoxSize": [
+        99.35,
+        49.67,
+        86.04
+      ],
+      "aliveParticles": 120,
+      "layerCount": 2,
+      "repColor": [
+        0,
+        1,
+        1
+      ],
+      "repOpacity": 1,
+      "sizeCurveAuthored": true,
+      "authoredSizeCurve": [
+        1,
+        0.645747,
+        0.223682
+      ],
+      "authoredAlphaCurve": null,
+      "curveInfoKeys": [
+        "velocity",
+        "outlineColor"
+      ]
+    },
+    {
+      "idx": 4,
+      "src": "T_天策龙牙.pss",
+      "visible": true,
+      "worldBoxSize": [
+        98.7,
+        49.35,
+        85.47
+      ],
+      "aliveParticles": 120,
+      "layerCount": 2,
+      "repColor": [
+        0,
+        1,
+        1
+      ],
+      "repOpacity": 1,
+      "sizeCurveAuthored": true,
+      "authoredSizeCurve": [
+        1,
+        0.645747,
+        0.223682
+      ],
+      "authoredAlphaCurve": null,
+      "curveInfoKeys": [
+        "velocity",
+        "outlineColor"
+      ]
+    },
+    {
+      "idx": 5,
+      "src": "T_天策龙牙.pss",
+      "visible": true,
+      "worldBoxSize": [
+        100,
+        50,
+        86.6
+      ],
+      "aliveParticles": 120,
+      "layerCount": 1,
+      "repColor": [
+        1,
+        1,
+        1
+      ],
+      "repOpacity": 1,
+      "sizeCurveAuthored": false,
+      "authoredSizeCurve": null,
+      "authoredAlphaCurve": null,
+      "curveInfoKeys": [
+        "brightness"
+      ]
+    },
+    {
+      "idx": 6,
+      "src": "T_天策龙牙.pss",
+      "visible": true,
+      "worldBoxSize": [
+        100,
+        50,
+        86.6
+      ],
+      "aliveParticles": 120,
+      "layerCount": 1,
+      "repColor": [
+        0,
+        1,
+        1
+      ],
+      "repOpacity": 1,
+      "sizeCurveAuthored": false,
+      "authoredSizeCurve": null,
+      "authoredAlphaCurve": null,
+      "curveInfoKeys": [
+        "brightness",
+        "featherColor"
+      ]
+    },
+    {
+      "idx": 7,
+      "src": "T_天策龙牙.pss",
+      "visible": true,
+      "worldBoxSize": [
+        22.5,
+        11.25,
+        19.48
+      ],
+      "aliveParticles": 120,
+      "layerCount": 3,
+      "repColor": [
+        1,
+        1,
+        1
+      ],
+      "repOpacity": 1,
+      "sizeCurveAuthored": true,
+      "authoredSizeCurve": [
+        0.229508,
+        0.131148,
+        0.032787
+      ],
+      "authoredAlphaCurve": null,
+      "curveInfoKeys": [
+        "velocity",
+        "brightness",
+        "scale"
+      ]
+    },
+    {
+      "idx": 8,
+      "src": "T_天策龙牙.pss",
+      "visible": true,
+      "worldBoxSize": [
+        98.7,
+        49.35,
+        85.47
+      ],
+      "aliveParticles": 120,
+      "layerCount": 2,
+      "repColor": [
+        0,
+        1,
+        1
+      ],
+      "repOpacity": 1,
+      "sizeCurveAuthored": true,
+      "authoredSizeCurve": [
+        1,
+        0.645747,
+        0.223682
+      ],
+      "authoredAlphaCurve": null,
+      "curveInfoKeys": [
+        "velocity",
+        "outlineColor"
+      ]
+    },
+    {
+      "idx": 9,
+      "src": "T_天策龙牙.pss",
+      "visible": true,
+      "worldBoxSize": [
+        100,
+        50,
+        86.6
+      ],
+      "aliveParticles": 120,
+      "layerCount": 1,
+      "repColor": [
+        0,
+        1,
+        1
+      ],
+      "repOpacity": 1,
+      "sizeCurveAuthored": false,
+      "authoredSizeCurve": null,
+      "authoredAlphaCurve": null,
+      "curveInfoKeys": [
+        "brightness",
+        "featherColor"
+      ]
+    },
+    {
+      "idx": 10,
+      "src": "T_天策龙牙.pss",
+      "visible": true,
+      "worldBoxSize": [
+        100,
+        50,
+        86.6
+      ],
+      "aliveParticles": 120,
+      "layerCount": 1,
+      "repColor": [
+        1,
+        1,
+        1
+      ],
+      "repOpacity": 1,
+      "sizeCurveAuthored": false,
+      "authoredSizeCurve": null,
+      "authoredAlphaCurve": null,
+      "curveInfoKeys": [
+        "brightness"
+      ]
+    },
+    {
+      "idx": 11,
+      "src": "T_天策龙牙.pss",
+      "visible": true,
+      "worldBoxSize": [
+        100,
+        50,
+        86.6
+      ],
+      "aliveParticles": 120,
+      "layerCount": 1,
+      "repColor": [
+        1,
+        1,
+        1
+      ],
+      "repOpacity": 1,
+      "sizeCurveAuthored": false,
+      "authoredSizeCurve": null,
+      "authoredAlphaCurve": null,
+      "curveInfoKeys": [
+        "brightness"
+      ]
+    },
+    {
+      "idx": 12,
+      "src": "T_天策龙牙.pss",
+      "visible": true,
+      "worldBoxSize": [
+        19.68,
+        9.84,
+        17.04
+      ],
+      "aliveParticles": 1,
+      "layerCount": 3,
+      "repColor": [
+        1,
+        1,
+        1
+      ],
+      "repOpacity": 1,
+      "sizeCurveAuthored": true,
+      "authoredSizeCurve": [
+        0.229508,
+        0.131148,
+        0.04918
+      ],
+      "authoredAlphaCurve": null,
+      "curveInfoKeys": [
+        "velocity"
+      ]
+    },
+    {
+      "idx": 13,
+      "src": "T_天策龙牙.pss",
+      "visible": true,
+      "worldBoxSize": [
+        100,
+        50,
+        86.6
+      ],
+      "aliveParticles": 120,
+      "layerCount": 1,
+      "repColor": [
+        1,
+        1,
+        1
+      ],
+      "repOpacity": 1,
+      "sizeCurveAuthored": false,
+      "authoredSizeCurve": null,
+      "authoredAlphaCurve": null,
+      "curveInfoKeys": []
+    },
+    {
+      "idx": 14,
+      "src": "T_天策龙牙.pss",
+      "visible": true,
+      "worldBoxSize": [
+        22.5,
+        11.25,
+        19.48
+      ],
+      "aliveParticles": 120,
+      "layerCount": 3,
+      "repColor": [
+        1,
+        1,
+        1
+      ],
+      "repOpacity": 1,
+      "sizeCurveAuthored": true,
+      "authoredSizeCurve": [
+        0.229508,
+        0.131148,
+        0.032787
+      ],
+      "authoredAlphaCurve": null,
+      "curveInfoKeys": [
+        "velocity",
+        "brightness",
+        "scale"
+      ]
+    },
+    {
+      "idx": 15,
+      "src": "T_天策龙牙.pss",
+      "visible": true,
+      "worldBoxSize": [
+        81.6,
+        40.8,
+        70.67
+      ],
+      "aliveParticles": 120,
+      "layerCount": 1,
+      "repColor": [
+        0,
+        1,
+        1
+      ],
+      "repOpacity": 1,
+      "sizeCurveAuthored": true,
+      "authoredSizeCurve": [
+        1,
+        0,
+        0.037003
+      ],
+      "authoredAlphaCurve": null,
+      "curveInfoKeys": [
+        "brightness",
+        "featherColor"
+      ]
+    },
+    {
+      "idx": 16,
+      "src": "T_天策龙牙.pss",
+      "visible": true,
+      "worldBoxSize": [
+        100,
+        50,
+        86.6
+      ],
+      "aliveParticles": 120,
+      "layerCount": 1,
+      "repColor": [
+        1,
+        1,
+        1
+      ],
+      "repOpacity": 1,
+      "sizeCurveAuthored": false,
+      "authoredSizeCurve": null,
+      "authoredAlphaCurve": null,
+      "curveInfoKeys": []
+    },
+    {
+      "idx": 17,
+      "src": "T_天策龙牙.pss",
+      "visible": true,
+      "worldBoxSize": [
+        19.68,
+        9.84,
+        17.04
+      ],
+      "aliveParticles": 1,
+      "layerCount": 2,
+      "repColor": [
+        0,
+        1,
+        1
+      ],
+      "repOpacity": 1,
+      "sizeCurveAuthored": true,
+      "authoredSizeCurve": [
+        0.229508,
+        0.131148,
+        0.04918
+      ],
+      "authoredAlphaCurve": null,
+      "curveInfoKeys": [
+        "velocity",
+        "outlineColor",
+        "distortStrength"
+      ]
+    },
+    {
+      "idx": 18,
+      "src": "T_天策龙牙.pss",
+      "visible": true,
+      "worldBoxSize": [
+        19.68,
+        9.84,
+        17.04
+      ],
+      "aliveParticles": 1,
+      "layerCount": 2,
+      "repColor": [
+        0,
+        1,
+        1
+      ],
+      "repOpacity": 1,
+      "sizeCurveAuthored": true,
+      "authoredSizeCurve": [
+        0.229508,
+        0.131148,
+        0.04918
+      ],
+      "authoredAlphaCurve": null,
+      "curveInfoKeys": [
+        "velocity",
+        "outlineColor",
+        "distortStrength"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1008 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Wwise Soundbanks</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    height: 100vh;
+    overflow: hidden;
+    color: #e2e6e4;
+    background: #1f2221;
+    font: 13px/1.35 "Segoe UI", system-ui, sans-serif;
+  }
+  button, input, select { font: inherit; }
+  .app { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; height: 100vh; }
+  .bar {
+    display: grid;
+    grid-template-columns: auto minmax(180px, 1fr) auto auto;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 10px;
+    border-bottom: 1px solid #151817;
+    background: #292d2b;
+  }
+  .title { font-weight: 700; white-space: nowrap; }
+  .search, .folder-search {
+    width: 100%;
+    min-width: 0;
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid #121514;
+    border-radius: 4px;
+    color: #f1f5f3;
+    background: #171a19;
+    outline: none;
+  }
+  .button, .toggle {
+    height: 32px;
+    border: 1px solid #171a19;
+    border-radius: 4px;
+    color: #f1f5f3;
+    background: #343937;
+  }
+  .button { padding: 0 12px; cursor: pointer; background: #2f78b7; border-color: #2f78b7; }
+  .toggle { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; white-space: nowrap; }
+  .toggle input { margin: 0; }
+  .status {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 10px;
+    border-bottom: 1px solid #151817;
+    color: #b1b9b5;
+    background: #232725;
+    font-size: 12px;
+  }
+  .status .busy { color: #8fc7ff; }
+  .status .error { color: #ffb7aa; }
+  .content { display: grid; grid-template-columns: 310px minmax(0, 1fr); min-height: 0; }
+  .folders {
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    min-height: 0;
+    border-right: 1px solid #151817;
+    background: #202423;
+  }
+  .folder-head {
+    padding: 8px 10px;
+    border-bottom: 1px solid #303432;
+    background: #101211;
+    color: #c0c7c4;
+    font-weight: 700;
+  }
+  .folder-tools { padding: 8px 10px; border-bottom: 1px solid #151817; background: #252927; }
+  .tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 8px; }
+  .tab {
+    height: 28px;
+    border: 1px solid #171a19;
+    border-radius: 4px;
+    color: #d9dfdc;
+    background: #343937;
+    cursor: pointer;
+  }
+  .tab.active { color: #f6fbff; border-color: #2f78b7; background: #263745; }
+  .folder-search { background: #171a19; }
+  .folder-list { min-height: 0; overflow: auto; padding: 4px 0; }
+  .folder-row {
+    width: 100%;
+    min-height: 28px;
+    display: grid;
+    grid-template-columns: 18px 18px minmax(0, 1fr) auto;
+    gap: 6px;
+    align-items: center;
+    border: 0;
+    border-radius: 0;
+    padding: 5px 8px;
+    color: #d9dfdc;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+  }
+  .folder-row:hover, .folder-row.active { background: #2a2e2d; }
+  .folder-row.hidden { color: #89918d; }
+  .folder-row.starred .folder-icon, .folder-row.starred .folder-icon::before { border-color: #d5b85d; }
+  .twisty { color: #99a29d; text-align: center; }
+  .folder-icon {
+    width: 15px;
+    height: 12px;
+    border: 2px solid #8d9390;
+    border-radius: 2px;
+    position: relative;
+  }
+  .folder-icon::before {
+    content: '';
+    position: absolute;
+    left: 1px;
+    top: -6px;
+    width: 8px;
+    height: 5px;
+    border: 2px solid #8d9390;
+    border-bottom: 0;
+    border-radius: 2px 2px 0 0;
+  }
+  .folder-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .folder-count { color: #95a09b; font-size: 12px; }
+  .right { min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+  .pathbar {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    min-width: 0;
+    padding: 7px 10px;
+    border-bottom: 1px solid #151817;
+    background: #282c2a;
+    overflow: hidden;
+  }
+  .crumb {
+    max-width: 220px;
+    height: 24px;
+    border: 1px solid #171a19;
+    border-radius: 3px;
+    color: #e2e6e4;
+    background: #343937;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sep { color: #87908b; }
+  .table-wrap { min-height: 0; overflow: auto; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 8px 10px;
+    text-align: left;
+    color: #c0c7c4;
+    background: #101211;
+    border-bottom: 1px solid #313634;
+    font-weight: 700;
+  }
+  td {
+    padding: 8px 10px;
+    vertical-align: top;
+    border-bottom: 1px solid #303432;
+    word-break: break-word;
+  }
+  .result-row.playable-row { cursor: pointer; }
+  .result-row.playable-row:hover td, .result-row.playing td { background: #26323a; }
+  .wwid { color: #8fc7ff; font-weight: 700; }
+  .wwid-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .name { color: #dbe0de; font-weight: 600; }
+  .copy-action {
+    height: 24px;
+    min-width: 70px;
+    border: 1px solid #2f78b7;
+    border-radius: 3px;
+    color: #f6fbff;
+    background: #2f78b7;
+    cursor: pointer;
+  }
+  .context-menu {
+    position: fixed;
+    z-index: 20;
+    min-width: 150px;
+    padding: 4px;
+    border: 1px solid #111412;
+    border-radius: 4px;
+    background: #2b302e;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+  .context-item {
+    display: block;
+    width: 100%;
+    height: 28px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 3px;
+    color: #edf2ef;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+  }
+  .context-item:hover { background: #35413b; }
+  .empty { padding: 24px 10px; text-align: center; color: #aeb5b2; }
+  .player {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 420px);
+    gap: 10px;
+    align-items: center;
+    padding: 8px 10px;
+    border-top: 1px solid #151817;
+    background: #232725;
+  }
+  #nowPlaying { min-width: 0; color: #bfc6c3; word-break: break-word; }
+  audio { width: 100%; height: 30px; }
+  @media (max-width: 820px) {
+    .bar { grid-template-columns: 1fr auto; }
+    .title, .search { grid-column: 1 / -1; }
+    .content { grid-template-columns: 1fr; }
+    .folders { max-height: 240px; border-right: 0; border-bottom: 1px solid #151817; }
+    .player { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="bar">
+    <div class="title">Wwise Soundbanks</div>
+    <input id="query" class="search" type="search" placeholder="Search" autocomplete="off" />
+    <label class="toggle"><input id="playableOnly" type="checkbox" checked />Playable</label>
+    <button id="searchButton" class="button" type="button">Search</button>
+  </header>
+  <div class="status">
+    <div id="status">Loading...</div>
+    <div id="summary"></div>
+  </div>
+  <main class="content">
+    <aside class="folders">
+      <div class="folder-head">Folders</div>
+      <div class="folder-tools">
+        <div class="tabs">
+          <button id="allTab" class="tab active" type="button">All</button>
+          <button id="starredTab" class="tab" type="button">Starred</button>
+          <button id="hiddenTab" class="tab" type="button">Hidden</button>
+        </div>
+        <input id="folderSearch" class="folder-search" type="search" placeholder="Filter folders" autocomplete="off" />
+      </div>
+      <div id="folders" class="folder-list"></div>
+    </aside>
+    <section class="right">
+      <div id="pathbar" class="pathbar"></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 52%;">Name</th>
+              <th style="width: 30%;">WWID</th>
+              <th style="width: 18%;">Copy Path</th>
+            </tr>
+          </thead>
+          <tbody id="results"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <div id="folderMenu" class="context-menu" hidden></div>
+  <div id="resultMenu" class="context-menu" hidden></div>
+  <footer class="player">
+    <div id="nowPlaying">-</div>
+    <audio id="player" controls preload="none"></audio>
+  </footer>
+</div>
+<script>
+const TANI_STARRED_FOLDERS_SEED_VERSION = '2026-05-14-tani-confirmed-wems-v1';
+const TANI_STARRED_FOLDERS = [
+  'Events\\Fmod_Migration_Event\\BaDao\\qinggong',
+  'Events\\Fmod_Migration_Event\\BaDao\\skill',
+  'Events\\Fmod_Migration_Event\\CangYun\\skills',
+  'Events\\Fmod_Migration_Event\\ChangGe\\Skill',
+  'Events\\Fmod_Migration_Event\\GaiBang\\act',
+  'Events\\Fmod_Migration_Event\\GaiBang\\act\\skill',
+  'Events\\Fmod_Migration_Event\\Misc\\Misc\\doodad\\NPC\\katanamonkey',
+  'Events\\Fmod_Migration_Event\\TangMen\\TangMen\\Skill',
+  'Events\\Fmod_Migration_Event\\TianCe\\TianCe\\Skill',
+  'Events\\Fmod_Migration_Event\\WuDu\\WuDu',
+  'Events\\JX3_Fmod_Migration_Event\\JianWang3_Fmod\\untitled\\MingJiao',
+  'Events\\JX3_Fmod_Migration_Event\\JianWang3_Fmod\\untitled\\ShaoLin',
+  'Events\\JX3_Fmod_Migration_Event\\JianWang3_Fmod\\untitled\\TangMen',
+  'Events\\JX3_Fmod_Migration_Event\\JianWang3_Fmod\\untitled\\WuDu',
+  'Events\\JX3_Fmod_Migration_Event\\skillremake\\20190622\\0622qixiutiance',
+  'Events\\JX3_Fmod_Migration_Event\\skillremake\\20191128\\lingxuege\\xiugailoop',
+  'Events\\JX3_Fmod_Migration_Event\\skillremake\\20210422_JG',
+  'Events\\JX3_Fmod_Migration_Event\\skillremake\\20211028_JG\\20211028gb',
+  'Events\\JX3_Fmod_Migration_Event\\skillremake\\2022_DaoZong\\1027\\xinzeng',
+  'Events\\JX3_Fmod_Migration_Event\\skillremake\\BeiTianYaoZong\\3_ZhiWuXi',
+  'Events\\JX3_Fmod_Migration_Event\\skillremake\\BeiTianYaoZong\\YaoXi',
+  'Events\\JX3_Fmod_Migration_Event\\skillremake\\BeiTianYaoZong\\ZhiWuXi',
+  'Events\\JX3_Fmod_Migration_Event\\skillremake\\cangjian\\chengyouyou',
+  'Events\\JX3_Fmod_Migration_Event\\skillremake\\cangjian\\chenyan',
+  'Events\\JX3_Fmod_Migration_Event\\skillremake\\chunyang\\skill',
+  'Events\\JX3_Fmod_Migration_Event\\skillremake\\diercijigai\\wangzihui',
+  'Events\\JX3_Fmod_Migration_Event\\skillremake\\menpaiyanwu',
+  'Events\\JX3_Fmod_Migration_Event\\skillremake\\penglaibaba\\denglujiemian_penglai',
+  'Events\\JX3_Fmod_Migration_Event\\skillremake\\penglaibaba\\penglaichenyan',
+  'Events\\JX3_Fmod_Migration_Event\\skillremake\\qixiu\\skill',
+  'Events\\JX3_Fmod_Migration_Event\\skillremake\\shaolin\\skill',
+  'Events\\JX3_Fmod_Migration_Event\\skillremake\\tiance\\skill',
+  'Events\\JX3_Fmod_Migration_Event\\skillremake\\tifuxinzeng',
+  'Events\\JX3_Fmod_Migration_Event\\skillremake\\wanhua\\skill',
+];
+
+function storedArray(key) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || '[]');
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
+function initialStarredFolders() {
+  const existing = storedArray('wwiseSoundbankStarredFolders').map((folder) => String(folder || '').trim()).filter(Boolean);
+  if (localStorage.getItem('wwiseSoundbankTaniStarSeedVersion') === TANI_STARRED_FOLDERS_SEED_VERSION) return existing;
+  const seeded = [...new Set([...existing, ...TANI_STARRED_FOLDERS])].sort();
+  localStorage.setItem('wwiseSoundbankStarredFolders', JSON.stringify(seeded));
+  localStorage.setItem('wwiseSoundbankTaniStarSeedVersion', TANI_STARRED_FOLDERS_SEED_VERSION);
+  return seeded;
+}
+
+const state = {
+  stats: null,
+  query: '',
+  totalMatches: 0,
+  totalFolders: 0,
+  rows: [],
+  folders: [],
+  rawRows: [],
+  rawFolders: [],
+  folderSearch: '',
+  folder: '',
+  playingUrl: '',
+  tab: 'all',
+  expandedFolders: new Set(['']),
+  hiddenFolders: new Set(storedArray('wwiseSoundbankHiddenFolders')),
+  starredFolders: new Set(initialStarredFolders()),
+};
+
+const queryInput = document.getElementById('query');
+const playableOnlyInput = document.getElementById('playableOnly');
+const searchButton = document.getElementById('searchButton');
+const allTab = document.getElementById('allTab');
+const starredTab = document.getElementById('starredTab');
+const hiddenTab = document.getElementById('hiddenTab');
+const folderSearchInput = document.getElementById('folderSearch');
+const statusEl = document.getElementById('status');
+const summaryEl = document.getElementById('summary');
+const foldersEl = document.getElementById('folders');
+const pathbarEl = document.getElementById('pathbar');
+const resultsEl = document.getElementById('results');
+const folderMenuEl = document.getElementById('folderMenu');
+const resultMenuEl = document.getElementById('resultMenu');
+const playerEl = document.getElementById('player');
+const nowPlayingEl = document.getElementById('nowPlaying');
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value).replace(/`/g, '&#96;');
+}
+
+function formatNumber(value) {
+  return new Intl.NumberFormat().format(Number(value || 0));
+}
+
+function setStatus(message, kind = '') {
+  statusEl.className = kind;
+  statusEl.textContent = message;
+}
+
+async function fetchJson(url) {
+  const response = await fetch(url);
+  let data = null;
+  try { data = await response.json(); } catch { data = null; }
+  if (!response.ok || data?.ok === false) throw new Error(data?.error || `${response.status} ${response.statusText}`);
+  return data;
+}
+
+function renderSummary() {
+  const stats = state.stats || {};
+  summaryEl.textContent = `${formatNumber(stats.eventCount || 0)} events`;
+}
+
+function normalizePath(value) {
+  return String(value || '').replace(/^[\\/]+/, '').replace(/[\\/]+/g, '\\');
+}
+
+function splitPath(value) {
+  const normalized = normalizePath(value);
+  return normalized ? normalized.split('\\').filter(Boolean) : [];
+}
+
+function leafName(value) {
+  const parts = splitPath(value);
+  return parts.at(-1) || value || 'All';
+}
+
+function folderForRow(row) {
+  const parts = splitPath(row?.path || '');
+  return parts.length > 1 ? parts.slice(0, -1).join('\\') : '';
+}
+
+function parentFolder(folder) {
+  return splitPath(folder).slice(0, -1).join('\\');
+}
+
+function isSameOrInside(path, folder) {
+  const normalizedPath = normalizePath(path);
+  const normalizedFolder = normalizePath(folder);
+  return normalizedPath === normalizedFolder || normalizedPath.startsWith(`${normalizedFolder}\\`);
+}
+
+function isHiddenPath(path) {
+  const normalized = normalizePath(path);
+  if (!normalized) return false;
+  for (const folder of state.hiddenFolders) {
+    if (isSameOrInside(normalized, folder)) return true;
+  }
+  return false;
+}
+
+function isStarredExact(path) {
+  const normalized = normalizePath(path);
+  return Boolean(normalized && state.starredFolders.has(normalized));
+}
+
+function isStarredPath(path) {
+  const normalized = normalizePath(path);
+  if (!normalized) return false;
+  for (const folder of state.starredFolders) {
+    if (isSameOrInside(normalized, folder)) return true;
+  }
+  return false;
+}
+
+function hiddenRoots() {
+  return [...state.hiddenFolders]
+    .map(normalizePath)
+    .filter(Boolean)
+    .filter((folder, index, folders) => !folders.some((other, otherIndex) => otherIndex !== index && isSameOrInside(folder, other)));
+}
+
+function starredRoots() {
+  return [...state.starredFolders]
+    .map(normalizePath)
+    .filter(Boolean)
+    .filter((folder, index, folders) => !folders.some((other, otherIndex) => otherIndex !== index && isSameOrInside(folder, other)));
+}
+
+function hiddenRootForPath(path) {
+  const normalized = normalizePath(path);
+  if (!normalized) return '';
+  return hiddenRoots().find((folder) => isSameOrInside(normalized, folder)) || '';
+}
+
+function hiddenCountUnder(folder) {
+  const roots = hiddenRoots();
+  let count = 0;
+  for (const hidden of roots) {
+    if (folder && !isSameOrInside(hidden, folder)) continue;
+    const entry = state.rawFolders.find((item) => item.path === hidden);
+    count += Number(entry?.rowCount || 0);
+  }
+  return count;
+}
+
+function mainTotal() {
+  return Math.max(0, Number(state.totalMatches || 0) - hiddenCountUnder(''));
+}
+
+function starredCountUnder(folder) {
+  let count = 0;
+  for (const starred of starredRoots()) {
+    if (folder && !isSameOrInside(starred, folder)) continue;
+    const entry = state.rawFolders.find((item) => item.path === starred);
+    count += Math.max(0, Number(entry?.rowCount || 0) - hiddenCountUnder(starred));
+  }
+  return count;
+}
+
+function tabTotal() {
+  if (state.tab === 'hidden') return hiddenCountUnder('');
+  if (state.tab === 'starred') return starredCountUnder('');
+  return mainTotal();
+}
+
+function adjustedFolderCount(folder) {
+  const entry = state.rawFolders.find((item) => item.path === folder);
+  const count = Number(entry?.rowCount || 0) - hiddenCountUnder(folder);
+  return Math.max(0, count);
+}
+
+function saveHiddenFolders() {
+  localStorage.setItem('wwiseSoundbankHiddenFolders', JSON.stringify([...state.hiddenFolders].sort()));
+}
+
+function saveStarredFolders() {
+  localStorage.setItem('wwiseSoundbankStarredFolders', JSON.stringify([...state.starredFolders].sort()));
+}
+
+function expandAncestors(folder) {
+  const parts = splitPath(folder);
+  let current = '';
+  state.expandedFolders.add('');
+  for (const part of parts) {
+    current = current ? `${current}\\${part}` : part;
+    state.expandedFolders.add(current);
+  }
+}
+
+function expandStarredFolders() {
+  for (const folder of state.starredFolders) {
+    expandAncestors(folder);
+  }
+}
+
+function hasHiddenDescendant(folder) {
+  return hiddenRoots().some((hidden) => !folder || isSameOrInside(hidden, folder));
+}
+
+function hasStarredDescendant(folder) {
+  return starredRoots().some((starred) => !folder || isSameOrInside(starred, folder));
+}
+
+function folderTreeIncluded(folder) {
+  const normalized = normalizePath(folder);
+  if (!normalized) return true;
+  if (state.tab === 'hidden') return isHiddenPath(normalized) || hasHiddenDescendant(normalized);
+  if (state.tab === 'starred') return !isHiddenPath(normalized) && (isStarredPath(normalized) || hasStarredDescendant(normalized));
+  return !isHiddenPath(normalized);
+}
+
+function folderAllowed(folder) {
+  const normalized = normalizePath(folder);
+  if (!normalized) return true;
+  if (state.tab === 'hidden') return isHiddenPath(normalized);
+  if (state.tab === 'starred') return isStarredPath(normalized) && !isHiddenPath(normalized);
+  return !isHiddenPath(normalized);
+}
+
+function rowAllowed(row) {
+  return folderAllowed(folderForRow(row));
+}
+
+function buildTree(folders) {
+  const root = { path: '', name: 'All', depth: -1, children: [], rowCount: tabTotal() };
+  const nodes = new Map([['', root]]);
+  for (const folder of folders) {
+    const path = normalizePath(folder.path);
+    if (!path) continue;
+    if (!folderTreeIncluded(path)) continue;
+    const count = folderDisplayCount(path, folder.rowCount);
+    if (count <= 0) continue;
+    nodes.set(path, { ...folder, path, rowCount: count, children: [] });
+  }
+  for (const node of nodes.values()) {
+    if (!node.path) continue;
+    const parent = nodes.get(parentFolder(node.path)) || root;
+    parent.children.push(node);
+  }
+  for (const node of nodes.values()) {
+    node.children.sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }));
+  }
+  return root;
+}
+
+function folderDisplayCount(path, rawCount) {
+  if (!path) return tabTotal();
+  if (state.tab === 'hidden') return isHiddenPath(path) ? Number(rawCount || 0) : hiddenCountUnder(path);
+  if (state.tab === 'starred') return isStarredPath(path) ? Math.max(0, Number(rawCount || 0) - hiddenCountUnder(path)) : starredCountUnder(path);
+  return Math.max(0, Number(rawCount || 0) - hiddenCountUnder(path));
+}
+
+function folderSearchMatches(node, needle) {
+  if (!needle) return true;
+  return `${node.path} ${node.name}`.toLowerCase().includes(needle);
+}
+
+function nodeHasSearchMatch(node, needle) {
+  if (folderSearchMatches(node, needle)) return true;
+  return node.children.some((child) => nodeHasSearchMatch(child, needle));
+}
+
+function visibleRows() {
+  return (state.rawRows || []).filter(rowAllowed);
+}
+
+function displayName(row) {
+  const leaf = leafName(row?.path || row?.wwid || '');
+  return leaf.replace(/\.[^.\\/]+$/, '');
+}
+
+function renderPathbar() {
+  const parts = splitPath(state.folder);
+  const rootLabel = state.tab === 'hidden' ? 'Hidden' : state.tab === 'starred' ? 'Starred' : 'All';
+  const crumbs = [`<button class="crumb" type="button" data-folder="">${escapeHtml(rootLabel)}</button>`];
+  let current = '';
+  for (const part of parts) {
+    current = current ? `${current}\\${part}` : part;
+    crumbs.push(`<span class="sep">&gt;</span><button class="crumb" type="button" data-folder="${escapeAttr(current)}">${escapeHtml(part)}</button>`);
+  }
+  pathbarEl.innerHTML = crumbs.join('');
+}
+
+function renderNode(node, depth, needle, out) {
+  const isRoot = !node.path;
+  const children = node.children.filter((child) => !needle || nodeHasSearchMatch(child, needle));
+  const expanded = isRoot || needle || state.expandedFolders.has(node.path);
+  const active = state.folder === node.path;
+  const hidden = !isRoot && isHiddenPath(node.path);
+  const starred = !isRoot && isStarredExact(node.path);
+  const count = isRoot ? tabTotal() : node.rowCount;
+  const padding = 8 + Math.max(0, depth) * 16;
+  out.push(`
+    <button class="folder-row ${active ? 'active' : ''} ${hidden ? 'hidden' : ''} ${starred ? 'starred' : ''}" type="button" data-folder="${escapeAttr(node.path)}" style="padding-left:${padding}px">
+      <span class="twisty" data-toggle="1">${children.length ? (expanded ? '-' : '+') : ''}</span>
+      <span class="folder-icon"></span>
+      <span class="folder-name" title="${escapeAttr(node.path || 'All')}">${escapeHtml(node.name || 'All')}</span>
+      <span class="folder-count">${formatNumber(count)}</span>
+    </button>
+  `);
+  if (!expanded) return;
+  for (const child of children) renderNode(child, depth + 1, needle, out);
+}
+
+function renderFolders() {
+  const root = buildTree(state.rawFolders || []);
+  if (!root.children.length) {
+    foldersEl.innerHTML = '<div class="empty">-</div>';
+    state.folder = '';
+    return;
+  }
+  if (state.folder && !folderTreeIncluded(state.folder)) state.folder = '';
+  const out = [];
+  renderNode(root, 0, state.folderSearch.toLowerCase(), out);
+  foldersEl.innerHTML = out.join('');
+}
+
+function renderResults() {
+  renderFolders();
+  renderPathbar();
+  const rows = visibleRows();
+  if (!rows.length) {
+    resultsEl.innerHTML = '<tr><td class="empty" colspan="3">-</td></tr>';
+    return;
+  }
+  resultsEl.innerHTML = rows.map((row) => {
+    const rowClass = `result-row ${row.playable ? 'playable-row' : ''} ${row.playbackUrl === state.playingUrl ? 'playing' : ''}`;
+    const rowAttrs = row.playable
+      ? `role="button" tabindex="0" data-url="${escapeAttr(row.playbackUrl)}" data-wwid="${escapeAttr(row.wwid)}" data-path="${escapeAttr(row.path)}"`
+      : '';
+    return `<tr class="${rowClass}" ${rowAttrs}>
+      <td class="name">${escapeHtml(displayName(row))}</td>
+      <td><span class="wwid-cell"><span class="wwid">${escapeHtml(row.wwid)}</span><button class="copy-action copy-wwid" type="button" data-wwid="${escapeAttr(row.wwid)}">Copy</button></span></td>
+      <td><button class="copy-action copy-path" type="button" data-path="${escapeAttr(row.path)}">Copy Path</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function playRow(row) {
+  const url = row.getAttribute('data-url') || '';
+  const wwid = row.getAttribute('data-wwid') || '';
+  const path = row.getAttribute('data-path') || '';
+  if (!url) return;
+  state.playingUrl = url;
+  playerEl.src = url;
+  nowPlayingEl.textContent = `${wwid} ${path}`.trim();
+  renderResults();
+  try { await playerEl.play(); } catch { }
+}
+
+function updateUrl() {
+  const params = new URLSearchParams();
+  if (state.query) params.set('q', state.query);
+  if (state.folder) params.set('folder', state.folder);
+  if (state.tab !== 'all') params.set('tab', state.tab);
+  history.replaceState(null, '', params.toString() ? `?${params.toString()}` : location.pathname);
+}
+
+function setBrowseStatus() {
+  if (state.folder) {
+    setStatus(`${formatNumber(visibleRows().length)} ${state.query ? 'matches' : 'sounds'} in ${leafName(state.folder)}`);
+    return;
+  }
+  const total = tabTotal();
+  setStatus(state.query ? `${formatNumber(total)} matches` : `${formatNumber(total)} playable sounds`);
+}
+
+async function browse(updateLocation = true) {
+  const params = new URLSearchParams({ playable: playableOnlyInput.checked ? '1' : '0' });
+  if (state.query) params.set('q', state.query);
+  if (state.folder) params.set('folder', state.folder);
+  state.rawRows = [];
+  renderResults();
+  setStatus('Loading...', 'busy');
+  try {
+    const data = await fetchJson(`/api/audio/wwise/rows?${params.toString()}`);
+    state.stats = data.stats || state.stats;
+    state.rawRows = data.rows || [];
+    state.rawFolders = data.folders || [];
+    state.totalMatches = data.totalMatches || 0;
+    state.totalFolders = data.totalFolders || 0;
+    state.folder = normalizePath(data.folder || state.folder);
+    expandAncestors(state.folder);
+    if (state.tab === 'starred') expandStarredFolders();
+    renderSummary();
+    renderResults();
+    setBrowseStatus();
+    if (updateLocation) updateUrl();
+  } catch (error) {
+    state.rawRows = [];
+    state.rawFolders = [];
+    state.totalMatches = 0;
+    state.totalFolders = 0;
+    state.folder = '';
+    renderResults();
+    setStatus(error.message || String(error), 'error');
+  }
+}
+
+function runSearch() {
+  const nextQuery = queryInput.value.trim();
+  state.query = nextQuery;
+  if (nextQuery) state.folder = '';
+  browse();
+}
+
+function setTab(tab, updateLocation = true) {
+  state.tab = ['all', 'starred', 'hidden'].includes(tab) ? tab : 'all';
+  allTab.classList.toggle('active', state.tab === 'all');
+  starredTab.classList.toggle('active', state.tab === 'starred');
+  hiddenTab.classList.toggle('active', state.tab === 'hidden');
+  if (state.tab === 'starred') expandStarredFolders();
+  if (state.folder && !folderTreeIncluded(state.folder)) state.folder = '';
+  renderResults();
+  if (updateLocation) updateUrl();
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.left = '-9999px';
+    document.body.appendChild(area);
+    area.select();
+    document.execCommand('copy');
+    area.remove();
+  }
+}
+
+function refreshAfterFolderAction() {
+  if (state.folder && !folderTreeIncluded(state.folder)) state.folder = '';
+  renderResults();
+  updateUrl();
+}
+
+function hideFolder(folder) {
+  const normalized = normalizePath(folder);
+  if (!normalized) return;
+  for (const hidden of [...state.hiddenFolders]) {
+    if (isSameOrInside(hidden, normalized)) state.hiddenFolders.delete(hidden);
+  }
+  state.hiddenFolders.add(normalized);
+  saveHiddenFolders();
+  refreshAfterFolderAction();
+}
+
+function unhideFolder(folder) {
+  const normalized = normalizePath(folder);
+  if (!normalized) return;
+  state.hiddenFolders.delete(hiddenRootForPath(normalized) || normalized);
+  saveHiddenFolders();
+  refreshAfterFolderAction();
+}
+
+function toggleStarredFolder(folder) {
+  const normalized = normalizePath(folder);
+  if (!normalized) return;
+  if (state.starredFolders.has(normalized)) state.starredFolders.delete(normalized);
+  else state.starredFolders.add(normalized);
+  saveStarredFolders();
+  if (state.tab === 'starred') expandStarredFolders();
+  refreshAfterFolderAction();
+}
+
+function hideFolderMenu() {
+  folderMenuEl.hidden = true;
+  folderMenuEl.innerHTML = '';
+  folderMenuEl.dataset.folder = '';
+}
+
+function hideResultMenu() {
+  resultMenuEl.hidden = true;
+  resultMenuEl.innerHTML = '';
+  resultMenuEl.dataset.path = '';
+}
+
+function hideMenus() {
+  hideFolderMenu();
+  hideResultMenu();
+}
+
+function showFolderMenu(folder, x, y) {
+  const normalized = normalizePath(folder);
+  if (!normalized) return;
+  const hidden = Boolean(hiddenRootForPath(normalized));
+  const starred = isStarredExact(normalized);
+  folderMenuEl.dataset.folder = normalized;
+  folderMenuEl.innerHTML = `
+    <button class="context-item" type="button" data-action="${starred ? 'unstar' : 'star'}">${starred ? 'Unstar folder' : 'Star folder'}</button>
+    <button class="context-item" type="button" data-action="${hidden ? 'unhide' : 'hide'}">${hidden ? 'Unhide folder' : 'Hide folder'}</button>
+  `;
+  folderMenuEl.hidden = false;
+  folderMenuEl.style.left = '0px';
+  folderMenuEl.style.top = '0px';
+  const rect = folderMenuEl.getBoundingClientRect();
+  const left = Math.max(4, Math.min(x, window.innerWidth - rect.width - 4));
+  const top = Math.max(4, Math.min(y, window.innerHeight - rect.height - 4));
+  folderMenuEl.style.left = `${left}px`;
+  folderMenuEl.style.top = `${top}px`;
+}
+
+function showResultMenu(path, x, y) {
+  const normalizedPath = String(path || '').trim();
+  const folder = folderForRow({ path: normalizedPath });
+  if (!folder) return;
+  resultMenuEl.dataset.path = normalizedPath;
+  resultMenuEl.innerHTML = '<button class="context-item" type="button" data-action="focus-folder">Focus folder</button>';
+  resultMenuEl.hidden = false;
+  resultMenuEl.style.left = '0px';
+  resultMenuEl.style.top = '0px';
+  const rect = resultMenuEl.getBoundingClientRect();
+  const left = Math.max(4, Math.min(x, window.innerWidth - rect.width - 4));
+  const top = Math.max(4, Math.min(y, window.innerHeight - rect.height - 4));
+  resultMenuEl.style.left = `${left}px`;
+  resultMenuEl.style.top = `${top}px`;
+}
+
+function focusFolderFromPath(path) {
+  const folder = folderForRow({ path });
+  if (!folder) return;
+  focusFolder(folder);
+}
+
+function focusFolder(folder) {
+  const normalized = normalizePath(folder);
+  if (!normalized) return;
+  state.query = '';
+  queryInput.value = '';
+  state.folder = normalized;
+  expandAncestors(state.folder);
+  browse();
+}
+
+searchButton.addEventListener('click', runSearch);
+playableOnlyInput.addEventListener('change', () => {
+  browse();
+});
+allTab.addEventListener('click', () => setTab('all'));
+starredTab.addEventListener('click', () => setTab('starred'));
+hiddenTab.addEventListener('click', () => setTab('hidden'));
+folderSearchInput.addEventListener('input', (event) => {
+  state.folderSearch = event.target.value.trim();
+  renderFolders();
+});
+queryInput.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  runSearch();
+});
+foldersEl.addEventListener('click', (event) => {
+  hideMenus();
+  const button = event.target.closest('[data-folder]');
+  if (!button) return;
+  const folder = button.getAttribute('data-folder') || '';
+  const toggle = event.target?.dataset?.toggle === '1';
+  if (toggle && folder) {
+    if (state.expandedFolders.has(folder)) state.expandedFolders.delete(folder);
+    else state.expandedFolders.add(folder);
+    renderFolders();
+    return;
+  }
+  state.folder = folder;
+  expandAncestors(folder);
+  browse();
+});
+foldersEl.addEventListener('contextmenu', (event) => {
+  hideResultMenu();
+  const button = event.target.closest('[data-folder]');
+  if (!button) return;
+  event.preventDefault();
+  showFolderMenu(button.getAttribute('data-folder') || '', event.clientX, event.clientY);
+});
+folderMenuEl.addEventListener('click', (event) => {
+  const item = event.target.closest('[data-action]');
+  if (!item) return;
+  const folder = folderMenuEl.dataset.folder || '';
+  const action = item.getAttribute('data-action') || '';
+  hideFolderMenu();
+  if (action === 'hide') hideFolder(folder);
+  if (action === 'unhide') unhideFolder(folder);
+  if (action === 'star' || action === 'unstar') toggleStarredFolder(folder);
+});
+resultMenuEl.addEventListener('click', (event) => {
+  const item = event.target.closest('[data-action]');
+  if (!item) return;
+  const path = resultMenuEl.dataset.path || '';
+  const action = item.getAttribute('data-action') || '';
+  hideResultMenu();
+  if (action === 'focus-folder') focusFolderFromPath(path);
+});
+document.addEventListener('click', (event) => {
+  if (!folderMenuEl.contains(event.target)) hideFolderMenu();
+  if (!resultMenuEl.contains(event.target)) hideResultMenu();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') hideMenus();
+});
+window.addEventListener('resize', hideMenus);
+foldersEl.addEventListener('scroll', hideFolderMenu);
+resultsEl.addEventListener('scroll', hideResultMenu);
+pathbarEl.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-folder]');
+  if (!button) return;
+  const folder = button.getAttribute('data-folder') || '';
+  if (!folder) {
+    state.query = '';
+    queryInput.value = '';
+    state.folder = '';
+    browse();
+    return;
+  }
+  focusFolder(folder);
+});
+resultsEl.addEventListener('click', (event) => {
+  hideResultMenu();
+  const copyButton = event.target.closest('.copy-path[data-path]');
+  if (copyButton) {
+    event.stopPropagation();
+    copyText(copyButton.getAttribute('data-path') || '');
+    return;
+  }
+  const copyWwidButton = event.target.closest('.copy-wwid[data-wwid]');
+  if (copyWwidButton) {
+    event.stopPropagation();
+    copyText(copyWwidButton.getAttribute('data-wwid') || '');
+    return;
+  }
+  const row = event.target.closest('[data-url]');
+  if (row) playRow(row);
+});
+resultsEl.addEventListener('contextmenu', (event) => {
+  hideFolderMenu();
+  const row = event.target.closest('[data-path]');
+  if (!row) return;
+  event.preventDefault();
+  showResultMenu(row.getAttribute('data-path') || '', event.clientX, event.clientY);
+});
+resultsEl.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  const row = event.target.closest('[data-url]');
+  if (!row) return;
+  event.preventDefault();
+  playRow(row);
+});
+
+const initial = new URL(location.href).searchParams;
+const initialQuery = initial.get('q') || '';
+const initialTab = initial.get('tab') || 'all';
+if (initialQuery) {
+  queryInput.value = initialQuery;
+}
+state.query = initialQuery.trim();
+state.folder = normalizePath(initial.get('folder') || '');
+state.tab = ['all', 'starred', 'hidden'].includes(initialTab) ? initialTab : 'all';
+allTab.classList.toggle('active', state.tab === 'all');
+starredTab.classList.toggle('active', state.tab === 'starred');
+hiddenTab.classList.toggle('active', state.tab === 'hidden');
+expandAncestors(state.folder);
+if (state.tab === 'starred') expandStarredFolders();
+browse(false);
+</script>
+</body>
+</html>

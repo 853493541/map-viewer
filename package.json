@@ -16,6 +16,8 @@
     "start": "node server.js",
     "dev:py": "python tools/serve.py",
     "build": "node tools/build-map-data.js",
+    "wwise:index": "node tools/index-wwise-soundbanks-v3.mjs",
+    "wwise:event-folders": "node tools/export-wwise-event-folders.mjs",
     "audit:pss-proxy": "node tools/pss-proxy-audit.mjs",
     "pss:debug:auto": "node tools/pss-auto-debug-log.mjs",
     "sidecar:build": "dotnet build -c Release tools/pss-renderer-cli",
@@ -36,5 +38,8 @@
     "@playwright/test": "^1.59.1",
     "lz4js": "^0.2.0",
     "playwright": "^1.59.1"
+  },
+  "optionalDependencies": {
+    "frida": "^17.9.3"
   }
 }

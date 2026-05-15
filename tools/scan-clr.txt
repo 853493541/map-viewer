@@ -1,0 +1,198 @@
+﻿# Scanning C:\SeasunGame\Game\JX3\bin\zhcn_hd\SeasunDownloaderV2.4\seasun\editortool\movieeditor\bin64\movieengineclr.dll (4094464 bytes) for /Scale|Position|Offset|Rotation|Bone|Socket|Attach|Transform|EmitterScale|MeshScale|CenterAdjust|SpawnPos|LocalPos|Launch|Particle/i
+# Total hits: 197
+# Unique strings: 195
+0x00287820  ascii  0123456789ABCDEFinvalid string position
+0x00288c30  ascii  KActorEditor::ShowActorBone
+0x00288c50  ascii  m_pActorBone
+0x00288c60  ascii  KActorEditor::OnRotateBones
+0x00288c80  ascii  KActorEditor::OnScaleBones
+0x00288ca0  ascii  KActorEditor::OnPostScaleBones
+0x00288cc0  ascii  KActorEditor::OnTranslateBones
+0x00288d88  ascii  KMovieSelectionTool::NotifyTransformObjects
+0x00289214  ascii  Socket
+0x00289238  ascii  Rotation
+0x00289290  ascii  KMovieActor::LoadUnitModel mesh:%s,socket:%s failed.
+0x002895d0  ascii  KMovieActor::OnGetBoneTrans
+0x00289988  ascii  KMovieActor::GetAutoScaleValue
+0x00289a20  ascii  [Movie] Can't find socket %s from %s in %s
+0x00289a98  ascii  [Movie] Can't find socket in %s at line %d
+0x0028b758  ascii  KMovieObject::BindToSocket
+0x0028f358  ascii  HasOffset
+0x0028f368  ascii  paramJobj.HasMember("HasOffset")
+0x0028f390  ascii  OffsetParam
+0x0028f3a0  ascii  paramJobj.HasMember("OffsetParam")
+0x0028f3c4  ascii  scale
+0x0028f3d0  ascii  offsetJobj.HasMember("scale") && offsetJobj["scale"].IsArray() && offsetJobj["scale"].Size() == 3
+0x0028f440  ascii  offsetJobj.HasMember("trans") && offsetJobj["trans"].IsArray() && offsetJobj["trans"].Size() == 3
+0x0028f4b0  ascii  offsetJobj.HasMember("scale") && offsetJobj["quat"].IsArray() && offsetJobj["quat"].Size() == 4
+0x002908a0  ascii  KMovieActionBoneAni::SaveToFile
+0x002908d0  ascii  KMovieActionBoneAni::LoadFromFile
+0x00290968  ascii  pFKScaleTimeline
+0x002909e8  ascii  pPostScaleTimeline
+0x00297c48  ascii  KMovieActionBindRunTime::GetSocketOffset
+0x0029aef0  ascii  invalid 'self' in accessing variable 'vRotation'
+0x0029b008  ascii  invalid 'self' in accessing variable 'nOffsetTime'
+0x0029b288  ascii  #ferror in function 'SetRotation'.
+0x0029b2b0  ascii  invalid 'self' in function 'SetRotation'
+0x0029b330  ascii  #ferror in function 'GetRotation'.
+0x0029b358  ascii  invalid 'self' in function 'GetRotation'
+0x0029b940  ascii  invalid 'self' in function 'SetRotationInLocalSpaceByInitTrans'
+0x0029b9c0  ascii  invalid 'self' in function 'SetRotationInWorldSpaceByInitTrans'
+0x0029ba00  ascii  #ferror in function 'SetRotationInLocalSpaceByInitTrans'.
+0x0029ba70  ascii  #ferror in function 'SetRotationInWorldSpaceByInitTrans'.
+0x0029bb08  ascii  invalid 'self' in function 'ConvertLocalToWorldPosition'
+0x0029bba8  ascii  #ferror in function 'ConvertLocalToWorldPosition'.
+0x0029c1b0  ascii  vRotation
+0x0029c1c0  ascii  nOffsetTime
+0x0029c240  ascii  SetRotation
+0x0029c270  ascii  GetRotation
+0x0029c3a8  ascii  SetRotationInLocalSpaceByInitTrans
+0x0029c408  ascii  SetRotationInWorldSpaceByInitTrans
+0x0029c430  ascii  ConvertLocalToWorldPosition
+0x0029cbb8  ascii  [Movie]music  dwOffset: %u
+0x002a3378  ascii  nBaseBoneCount
+0x002a3388  ascii  KActorBone::FillSKeleton
+0x002a33a8  ascii  KActorBone::SetBonesVisible
+0x002a33c8  ascii  KActorBone::Helper_FillSKeleton
+0x002a33e8  ascii  KActorBone::_AddBoneNode
+0x002a3420  ascii  %s\ResourcePack\SocketToParentBone.ini
+0x002a3460  ascii  KActorBone::InitSocketNode
+0x002a3488  ascii  bone.pNode
+0x002a3498  ascii  KActorBone::InitBoneNode
+0x002a34b8  ascii  KActorBone::RemoveAllSocketNode
+0x002a34d8  ascii  KActorBone::UnInitBoneNode
+0x002a34f8  ascii  vBoneIDs
+0x002a3508  ascii  KActorBone::RotateBones
+0x002a3520  ascii  KActorBone::ScaleBones
+0x002a3538  ascii  m_mapBoneIdToName.find(nBoneID) != m_mapBoneIdToName.end()
+0x002a3578  ascii  KActorBone::TranslateBones
+0x002a3598  ascii  KActorBone::PostScaleBones
+0x002a35b8  ascii  KActorBone::GetBoneRotation
+0x002a3748  ascii  AniOffset
+0x002a3ce8  ascii  KGModel_Utility::GetMetaBoneParams
+0x002a3d68  ascii  KGModel_Utility::SetMetaBoneParams
+0x002a5558  ascii  RuntimeEngineOption.EnableLinearScaleUp
+0x002a59b8  ascii  HSI.HueScale
+0x002a59d8  ascii  HSI.SaturationScale
+0x002a5a00  ascii  HSI.IntensityScale
+0x002a5b78  ascii  JX3ClassicHDR.HDRScale
+0x002a5bc8  ascii  JX3ClassicHDR.BloomScale
+0x002a5db8  ascii  CloudSea.Texture3DScale
+0x002a5dd0  ascii  CloudSea.Noise3DUVScale
+0x002a5e28  ascii  CloudSea.Noise3DScale
+0x002d5af4  ascii  _EXCEPTION_DISPOSITION
+0x002d6c07  ascii  DEVICE_SCALE_FACTOR
+0x002d6e58  ascii  DXGI_MODE_ROTATION
+0x002d76c2  ascii  D3D11_VIDEO_PROCESSOR_ROTATION
+0x002d7e25  ascii  KG3D_BONE_BOUND_TYPE
+0x002d7e3a  ascii  KG3D_BONE_BOUND_UNIQUE
+0x002d7e70  ascii  KG3D_BONE_BOUND_STATE
+0x002d848d  ascii  WMultiPositionType
+0x002d872f  ascii  KG3D_ATTACHMENT_CALC_TYPE
+0x002d8774  ascii  KG3D_BIND_TO_SOCKET_METHOD
+0x002d87ec  ascii  enuBoneTransformationType_Engine
+0x002d99fb  ascii  EnumMetaBoneParamType
+0x002d9ac1  ascii  EnumBoneEditMode
+0x002d9daa  ascii  enumTransformChangeType
+0x002d9e37  ascii  enuBoneTransformationType
+0x002da309  ascii  KG3D_PARTICLE_SYSTEM_OPTION_PROXY
+0x002dc1d6  ascii  KGRL_SOCKET
+0x002dc7c6  ascii  GIZMO_AXIS_TRANSFORM_MODE_CLR
+0x002dc7fb  ascii  GIZMO_AXIS_TRANSFORM_MODE
+0x002e0fff  ascii  KG3D_PARTICLE_DEBUG_INFO
+0x002e11fd  ascii  KG3D_PARTICLE_SYSTEM_OPTION
+0x002e1459  ascii  SFX_LAUNCHER_OPTION
+0x002e47c1  ascii  KG3D_MorphemeBoneTreeNode
+0x002f0cd9  ascii  KG3D_PARTICLE_SYSTEM_OPTION_PROXY.{ctor}
+0x002f18b6  ascii  std._String_val<std::_Simple_types<char> >._Check_offset
+0x002f1920  ascii  std.transform<class std::_String_iterator<class std::_String_val<struct std::_Simple_types<char> > >,class std::_String_iterator<class std::_String_val<struct std::_Simple_types<char> > >,int (__cdecl*)(int)>
+0x002f1dd1  ascii  std._String_const_iterator<std::_String_val<std::_Simple_types<char> > >._Verify_offset
+0x002ff1ff  ascii  KMovieEditor.EnableChildPositionFix
+0x00300059  ascii  KMovieEditorSolid.SyncMainPlayerPosAttachObj
+0x003001ba  ascii  KMovieEditorSolid.EnableChildPositionFix
+0x00301333  ascii  ATL.CHandle.Attach
+0x00301586  ascii  ATL.CRegKey.Attach
+0x003032c6  ascii  D3DXVec3TransformCoord
+0x003032dd  ascii  D3DXMatrixRotationY
+0x003033da  ascii  KMovieEditor.SyncMainPlayerPosAttachObj
+0x00303ab2  ascii  KMovieCore.Attach3DScene
+0x00303acb  ascii  KMovieCore.UnAttach3DScene
+0x00316e29  ascii  __m2mep@??0KG3D_PARTICLE_SYSTEM_OPTION_PROXY@@$$FQEAA@XZ
+0x00317616  ascii  ??_C@_0BI@CFPLBAOH@invalid?5string?5position@
+0x00318046  ascii  __m2mep@?_Check_offset@?$_String_val@U?$_Simple_types@D@std@@@std@@$$FQEBAX_K@Z
+0x003180da  ascii  __m2mep@??$transform@V?$_String_iterator@V?$_String_val@U?$_Simple_types@D@std@@@std@@@std@@V12@P6AHH@Z@std@@$$FYA?AV?$_String_iterator@V?$_String_val@U?$_Simple_types@D@std@@@std@@@0@V10@0V10@P6AHH@Z@Z
+0x0031875e  ascii  __m2mep@?_Verify_offset@?$_String_const_iterator@V?$_String_val@U?$_Simple_types@D@std@@@std@@@std@@$$FQEBAX_J@Z
+0x0032dceb  ascii  __m2mep@?EnableChildPositionFix@KMovieEditor@@$$FQEAAXH@Z
+0x0032f32b  ascii  __m2mep@?SyncMainPlayerPosAttachObj@KMovieEditorSolid@@$$FQEAAJK@Z
+0x0032f519  ascii  __m2mep@?EnableChildPositionFix@KMovieEditorSolid@@$$FQEAAXH@Z
+0x00331823  ascii  ??_C@_1M@KDBONEHP@?$AAe?$AAs?$AA?9?$AAC?$AAR@
+0x00334a28  ascii  ??_C@_0N@HGFAHAOD@HSI?4HueScale@
+0x00334a69  ascii  ??_C@_0BE@MMAOHLMN@HSI?4SaturationScale@
+0x00334aba  ascii  ??_C@_0BD@BFGLBFKF@HSI?4IntensityScale@
+0x00334d32  ascii  ??_C@_0BH@FDKAJNBM@JX3ClassicHDR?4HDRScale@
+0x00334d5e  ascii  ??_C@_0BJ@JGAIOLMI@JX3ClassicHDR?4BloomScale@
+0x003350a4  ascii  ??_C@_0BI@NHOHGCGA@CloudSea?4Texture3DScale@
+0x00335120  ascii  ??_C@_0BI@JHHFNGBM@CloudSea?4Noise3DUVScale@
+0x0033514d  ascii  ??_C@_0BG@KGDMCBAK@CloudSea?4Noise3DScale@
+0x00337631  ascii  DirectX.g_XMsrgbScale
+0x00338100  ascii  __m2mep@?Attach@CHandle@ATL@@$$FQEAAXPEAX@Z
+0x00338304  ascii  __m2mep@?Attach@CRegKey@ATL@@$$FQEAAXPEAUHKEY__@@@Z
+0x0033b3bc  ascii  get_CollisionParentBoneName
+0x0033b3d8  ascii  set_CollisionParentBoneName
+0x0033b471  ascii  szCollisionParentBoneName
+0x0033b48b  ascii  CollisionParentBoneName
+0x0033b605  ascii  get_clampPositionDelta
+0x0033b61c  ascii  set_clampPositionDelta
+0x0033b68f  ascii  get_InitializeVertexPosition
+0x0033b6ac  ascii  set_InitializeVertexPosition
+0x0033b873  ascii  <backing_store>clampPositionDelta
+0x0033b8ca  ascii  initializeVertexPosition
+0x0033b9ab  ascii  InitializeVertexPosition
+0x0033b9ea  ascii  clampPositionDelta
+0x0033bb3b  ascii  EnableFreeRotation
+0x0033bb9e  ascii  gtmRotation
+0x0033c691  ascii  fZRotation
+0x0033c8b3  ascii  fSplashScale
+0x0033c8e9  ascii  fWindScale
+0x0033c905  ascii  strParticleTexture
+0x0033ca41  ascii  fRotationMin
+0x0033cda7  ascii  fScale
+0x0033cdbe  ascii  fRotationSpeed
+0x0033cdcd  ascii  fRotation
+0x0033ce45  ascii  fDiffLodSmoothFilterBeginPosScale
+0x0033cefd  ascii  blurHScale
+0x0033cf1a  ascii  blurVScale
+0x0033d520  ascii  SetEnvironmentMapRotationAxisYAngle
+0x0033d544  ascii  fEnvRotationAngle
+0x0033da6d  ascii  GetEnvironmentMapRotationAxisYAngle_Player
+0x0033daf9  ascii  SetEnvironmentMapRotationAxisYAngle_Player
+0x0033db24  ascii  fRotationAxisY
+0x0033e490  ascii  SetPlayerLightHScale
+0x0033e4a5  ascii  SetPlayerLightVScale
+0x0033e562  ascii  SetSunLightHScale
+0x0033e574  ascii  SetSunLightVScale
+0x0033e8b7  ascii  AttachScene
+0x0033ea84  ascii  AttachMaterialInstance
+0x0033eea9  ascii  bExportSocketAsBone
+0x0033eff3  ascii  SetYOffsetFloatArray
+0x0033f008  ascii  vecYOffset
+0x0033f454  ascii  nScaleUpMode
+0x0033f5bc  ascii  fParticleSystemCullDist
+0x0033f646  ascii  fParticleSystemShadowCullDist
+0x0033f6bc  ascii  nTerrainBakeScaleRate
+0x0033f707  ascii  fSpeedTreeGlobalLodScaleTimes
+0x0033f725  ascii  nSpeedTreeLeafScale
+0x0033fa61  ascii  RC_OPTION_LINEAR_SCALE_UP
+0x0033fe60  ascii  GetAniBoneNum
+0x0033fe6e  ascii  AttachModel
+0x0033fe9f  ascii  nOffset
+0x00340083  ascii  GetModelBoneNum
+0x003404c7  ascii  SyncMainPlayerPosAttachObj
+0x00340577  ascii  EnableChildPositionFix
+0x003b7d28  ascii  .?AVKTransformation@@
+0x003b8170  ascii  .?AVKMovieActionAttachPartAnimation@@
+0x003b8dd0  ascii  .?AVKMovieActionBoneAni@@
+0x003ba040  ascii  .?AVKMovieActionBoneAniRunTime@@
+0x003bb758  ascii  .?AVKFKBoneListener@KActorBone@@
+0x003bb790  ascii  .?AVKBoneListener@KActorBone@@
+0x003bb7c0  ascii  .?AVKActorBone@@

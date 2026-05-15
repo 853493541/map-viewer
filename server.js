@@ -10,12 +10,18 @@
  */
 
 import { createServer } from 'http';
+import koffi from 'koffi';
 import {
+  closeSync,
   readFileSync,
   writeFileSync,
   existsSync,
+  openSync,
+  readSync,
   statSync,
   mkdirSync,
+  createReadStream,
+  createWriteStream,
   copyFileSync,
   readdirSync,
   unlinkSync,
@@ -23,9 +29,14 @@ import {
 import { spawn, execFileSync } from 'child_process';
 import { join, extname, dirname, resolve, basename, relative } from 'path';
 import { fileURLToPath } from 'url';
+import readline from 'readline';
 import os from 'os';
 import { generateCollisionDataForExport } from './tools/collision-generator.js';
 import { createJx3CacheReader } from './tools/jx3-cache-reader.js';
+import { buildAbilityMatcherSearch, buildAbilityPrefixCache } from './tools/ability-matcher.js';
+import { attachAbilitySoundCache, getAbilitySoundCache, getAbilitySoundEntry } from './tools/ability-sound-cache.js';
+import { getAbilityTaniSoundCache, getAbilityTaniSoundEntry, getAbilityTaniSoundReview, updateAbilityTaniSoundReview } from './tools/ability-tani-sound.js';
+import { cleanWwiseEventQuery, decodeWemToOgg, getWemBuffer, getWwiseIndex, resolveWwiseEvent } from './tools/wwise-audio-resolver.mjs';
 import zlib from 'zlib';
 import iconv from 'iconv-lite';
 
@@ -42,7 +53,10 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const PUBLIC_DIR = resolve(join(__dirname, 'public'));
 const NODE_MODULES_DIR = resolve(join(__dirname, 'node_modules'));
 const PORT = Number(process.env.PORT) || 3015;
+const LAUNCH_PARENT_PID = Number(process.ppid) || 0;
+const PARENT_WATCH_INTERVAL_MS = 3000;
 const DESKTOP_EXPORT_ROOT = resolve(join(os.homedir(), 'Desktop', 'JX3FullExports'));
+const ABILITY_SOUND_EXPORT_ROOT = resolve(join(os.homedir(), 'Desktop', 'JX3AbilitySoundPackages'));
 const MOVIE_EDITOR_ROOT = resolve('C:/SeasunGame/MovieEditor');
 const MOVIE_EDITOR_SOURCE_ROOT = join(MOVIE_EDITOR_ROOT, 'source');
 const MOVIE_EDITOR_EXPORT_ROOT = join(MOVIE_EDITOR_SOURCE_ROOT, 'fbx');
@@ -74,8 +88,75 @@ const HXB_DECODE_TMP_DIR = join(PSS_EXTRACT_DIR, '_tex', '_decode_tmp');
 const ACTOR_PLOT_ROOT = resolve('C:/SeasunGame/Game/JX3/bin/zhcn_hd/SeasunDownloaderV2.4/seasun/editortool/movieeditor/source/plot/actor');
 const PLAYER_ANIM_TABLE_DIR = resolve('C:/SeasunGame/Game/JX3/bin/zhcn_hd/SeasunDownloaderV2.4/seasun/editortool/qmodeleditor/scriptlua/settings/represent/player');
 const TANI_RT_PATH = resolve('C:/SeasunGame/MovieEditor/ResourcePack/Tani.rt');
+const CDN_ROOT = 'https://jx3v5hw-editor-update.xoyocdn.com/pkgs_editor/trunk_editor/';
+const CDN_ONLINE_ROOT = resolve(join(__dirname, 'cache-extraction', 'online-cdn'));
+const CDN_DOWNLOAD_DIR = join(CDN_ONLINE_ROOT, 'downloads');
+const CDN_RESOURCE_BROWSER_DIR = join(CDN_ONLINE_ROOT, 'resource-browser');
+const CDN_RESOURCE_INDEX_PATH = join(CDN_RESOURCE_BROWSER_DIR, 'resource-index.jsonl');
+const CDN_PACKAGE_STATUS_PATH = join(CDN_RESOURCE_BROWSER_DIR, 'package-status.jsonl');
+const CDN_RESOURCE_SUMMARY_PATH = join(CDN_RESOURCE_BROWSER_DIR, 'resource-index-summary.json');
+const CDN_BROWSE_MAP_DIR = join(CDN_RESOURCE_BROWSER_DIR, 'browse-map');
+const CDN_BROWSE_MAP_META_PATH = join(CDN_BROWSE_MAP_DIR, 'meta.json');
+const CDN_BROWSE_MAP_BUCKET_COUNT = 64;
+const CDN_SEARCH_MAP_DIR = join(CDN_RESOURCE_BROWSER_DIR, 'search-map');
+const CDN_SEARCH_MAP_META_PATH = join(CDN_SEARCH_MAP_DIR, 'meta.json');
+const CDN_SEARCH_MAP_BUCKET_COUNT = 256;
+const CDN_SEARCH_MAP_SCOPE_DEPTH = 3;
+const CDN_MAKEPACKAGES_URL = `${CDN_ROOT}v/2/MakePackages.bin`;
+const CDN_HPKG_DIR_CACHE_PATH = join(CDN_RESOURCE_BROWSER_DIR, 'hpkg-dir-cache.json');
+const CDN_HPKG_EXTRACTED_DIR = join(CDN_ONLINE_ROOT, 'extracted');
+const WWISE_SOUNDBANK_ROWS_CACHE_VERSION = 1;
+const WWISE_SOUNDBANK_ROWS_CACHE_PATH = join(__dirname, 'log', 'wwise-soundbank-rows-cache.json');
+const WW2OGG_EXE = join(__dirname, 'tools', 'bin', 'ww2ogg', 'ww2ogg.exe');
+const WW2OGG_CODEBOOKS = join(__dirname, 'tools', 'bin', 'ww2ogg', 'packed_codebooks_aoTuV_603.bin');
+const CLIENT_MONITOR_AGENT_PATH = join(__dirname, 'tools', 'frida-audio-agent.js');
+const CLIENT_MONITOR_ATTACH_PATH = join(__dirname, 'tools', 'frida-attach.mjs');
+const CLIENT_MONITOR_LOG_PATH = join(__dirname, 'log', 'frida-audio-client-monitor.jsonl');
+const CLIENT_MONITOR_PROCESS_NAMES = ['JX3ClientX64.exe', 'JX3Client.exe'];
 const GB18030_DECODER = new TextDecoder('gb18030');
 const GB18030_ENCODER = new TextEncoder(); // Note: TextEncoder only does UTF-8; we need iconv for GBK
+let server = null;
+let serverIsShuttingDown = false;
+let parentWatchTimer = null;
+
+function isLaunchParentAlive() {
+  if (LAUNCH_PARENT_PID <= 1) return true;
+  try {
+    process.kill(LAUNCH_PARENT_PID, 0);
+    return true;
+  } catch (error) {
+    return error?.code === 'EPERM';
+  }
+}
+
+function shutdownServer(reason, exitCode = 0) {
+  if (serverIsShuttingDown) return;
+  serverIsShuttingDown = true;
+  if (parentWatchTimer) {
+    clearInterval(parentWatchTimer);
+    parentWatchTimer = null;
+  }
+  try { console.log(`[server-shutdown] ${reason}`); } catch { /* noop */ }
+  if (!server) {
+    process.exit(exitCode);
+    return;
+  }
+  const forceExitTimer = setTimeout(() => process.exit(exitCode), 2000);
+  forceExitTimer.unref?.();
+  server.close(() => process.exit(exitCode));
+}
+
+function startLaunchParentWatch() {
+  if (process.env.JX3_SERVER_PERSIST === '1' || LAUNCH_PARENT_PID <= 1) return;
+  parentWatchTimer = setInterval(() => {
+    if (!isLaunchParentAlive()) shutdownServer(`launch parent ${LAUNCH_PARENT_PID} exited`);
+  }, PARENT_WATCH_INTERVAL_MS);
+  parentWatchTimer.unref?.();
+}
+
+process.on('SIGINT', () => shutdownServer('SIGINT'));
+process.on('SIGTERM', () => shutdownServer('SIGTERM'));
+process.on('SIGHUP', () => shutdownServer('SIGHUP'));
 // PSS sprite-block module names. Each entry is a Chinese-named module
 // marker found in the variable-length section of a type-1 (sprite) block.
 // Verified by binary audit of 80 cached PSS files (see tools/audit-parser-
@@ -186,6 +267,9 @@ const MIME_TYPES = {
   '.fbx': 'application/octet-stream',
   '.glb': 'model/gltf-binary',
   '.gltf': 'model/gltf+json',
+  '.mp3': 'audio/mpeg',
+  '.ogg': 'audio/ogg',
+  '.wav': 'audio/wav',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -348,6 +432,2755 @@ function encodeUrlPathSegments(pathLike) {
     .filter(Boolean)
     .map((segment) => encodeURIComponent(segment))
     .join('/');
+}
+
+function decodeCdnPathBytes(bytes) {
+  const utf8 = bytes.toString('utf8');
+  if (!utf8.includes('\uFFFD')) return { text: utf8, encoding: 'utf8' };
+  return { text: iconv.decode(bytes, 'gb18030'), encoding: 'gb18030' };
+}
+
+function readCdnCString(buffer, start, end) {
+  let stop = start;
+  while (stop < end && buffer[stop] !== 0) stop += 1;
+  return decodeCdnPathBytes(buffer.subarray(start, stop));
+}
+
+function normalizeCdnMemberPath(value) {
+  return String(value || '').replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+/g, '/');
+}
+
+function safeCdnOutputPath(relativePath) {
+  const normalized = normalizeCdnMemberPath(relativePath);
+  if (!normalized || normalized.split('/').some((part) => part === '..')) return null;
+  return safePathUnder(CDN_HPKG_EXTRACTED_DIR, normalized);
+}
+
+function readTailLines(filePath, limit = 8) {
+  if (!existsSync(filePath)) return [];
+  const maxLines = Math.max(1, Number(limit || 0) || 1);
+  const fileSize = statSync(filePath).size;
+  if (!fileSize) return [];
+  const fd = openSync(filePath, 'r');
+  const chunkSize = 64 * 1024;
+  const chunks = [];
+  let position = fileSize;
+  let newlineCount = 0;
+  try {
+    while (position > 0 && newlineCount <= maxLines) {
+      const readLength = Math.min(chunkSize, position);
+      position -= readLength;
+      const buffer = Buffer.allocUnsafe(readLength);
+      readSync(fd, buffer, 0, readLength, position);
+      chunks.unshift(buffer);
+      for (let index = 0; index < readLength; index += 1) {
+        if (buffer[index] === 10) newlineCount += 1;
+      }
+    }
+  } finally {
+    closeSync(fd);
+  }
+  const lines = Buffer.concat(chunks).toString('utf8').split(/\r?\n/).filter(Boolean);
+  return lines.slice(-maxLines);
+}
+
+function formatCdnTailTime(value) {
+  if (!value) return '';
+  const when = new Date(value);
+  if (Number.isNaN(when.getTime())) return '';
+  const pad = (part) => String(part).padStart(2, '0');
+  return `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())} ${pad(when.getHours())}:${pad(when.getMinutes())}:${pad(when.getSeconds())}`;
+}
+
+function readJsonUtf8Loose(filePath, fallback = null) {
+  try { return JSON.parse(readFileSync(filePath, 'utf8')); } catch { return fallback; }
+}
+
+function toCdnNativeBase32(value) {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz234567';
+  let current = BigInt.asUintN(64, BigInt(value));
+  if (current === 0n) return 'a';
+  let out = '';
+  while (current > 0n) {
+    out = alphabet[Number(current & 31n)] + out;
+    current >>= 5n;
+  }
+  return out;
+}
+
+async function fetchCdnResponse(url, options = {}) {
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs || 30_000) || 30_000);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      method: options.method || 'GET',
+      headers: options.headers,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchCdnBuffer(url, options = {}) {
+  const response = await fetchCdnResponse(url, options);
+  const buffer = Buffer.from(await response.arrayBuffer());
+  const maxBytes = Number(options.maxBytes || 64 * 1024 * 1024);
+  if (buffer.length > maxBytes) throw new Error(`response too large: ${buffer.length} bytes`);
+  return { statusCode: response.status, headers: response.headers, buffer };
+}
+
+async function requestCdnHead(url, timeoutMs = 5000) {
+  try {
+    const response = await fetchCdnResponse(url, { method: 'HEAD', timeoutMs });
+    return {
+      statusCode: response.status,
+      contentLength: Number(response.headers.get('content-length') || 0),
+    };
+  } catch (error) {
+    return {
+      statusCode: 0,
+      error: String(error?.message || error),
+      contentLength: 0,
+    };
+  }
+}
+
+function decodeCdnMakePackages(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 8) throw new Error('MakePackages.bin response is too small');
+  const expectedSize = buffer.readUInt32LE(4);
+  const output = Buffer.alloc(expectedSize);
+  const outputLength = [expectedSize >>> 0];
+  const status = getCdnLzhamUncompress()(output, outputLength, buffer.subarray(8), (buffer.length - 8) >>> 0);
+  if (status !== 0) throw new Error(`lzham_z_uncompress failed for MakePackages.bin: ${status}`);
+  return outputLength[0] === output.length ? output : output.subarray(0, outputLength[0]);
+}
+
+let cdnPackageListCache = null;
+async function loadCdnPackageList(force = false, timeoutMs = 30_000) {
+  if (!force && cdnPackageListCache && (Date.now() - cdnPackageListCache.loadedAt) < 5 * 60_000) {
+    return cdnPackageListCache.value;
+  }
+  const fetched = await fetchCdnBuffer(CDN_MAKEPACKAGES_URL, {
+    maxBytes: 8 * 1024 * 1024,
+    timeoutMs,
+  });
+  if (fetched.statusCode !== 200) throw new Error(`MakePackages.bin HTTP ${fetched.statusCode}`);
+  const decoded = decodeCdnMakePackages(fetched.buffer);
+  if (decoded.length % 12 !== 0) throw new Error(`decoded MakePackages size ${decoded.length} is not divisible by 12`);
+  const items = [];
+  for (let offset = 0; offset + 12 <= decoded.length; offset += 12) {
+    const hash = decoded.readBigUInt64LE(offset);
+    const size = decoded.readUInt32LE(offset + 8);
+    if (hash === 0n || size === 0) continue;
+    const packageName = toCdnNativeBase32(hash);
+    items.push({
+      index: items.length + 1,
+      recordIndex: offset / 12,
+      packageName,
+      path: `${packageName}.hpkg`,
+      hashHex: `0x${hash.toString(16).padStart(16, '0')}`,
+      size,
+      kind: 'hpkg',
+      source: 'online-hpkg',
+    });
+  }
+  const value = {
+    source: 'online-makepackages',
+    fetchedBytes: fetched.buffer.length,
+    decodedBytes: decoded.length,
+    items,
+  };
+  cdnPackageListCache = { loadedAt: Date.now(), value };
+  return value;
+}
+
+function deriveCdnPackageDir(packageName) {
+  const cleanName = String(packageName || '').trim();
+  if (cleanName.length < 3) return null;
+  return cleanName.charCodeAt(2);
+}
+
+async function resolveCdnPackageUrl(item, dirCache = {}, timeoutMs = 30_000) {
+  const cacheKey = `${item.packageName}:${item.size}`;
+  const cached = dirCache[cacheKey];
+  if (cached && Number.isInteger(cached.dir)) {
+    return { ...cached, url: `${CDN_ROOT}${cached.relativePath}` };
+  }
+  const derivedDir = deriveCdnPackageDir(item.packageName);
+  if (Number.isInteger(derivedDir)) {
+    const relativePath = `${derivedDir}/${item.packageName}.hpkg`;
+    const url = `${CDN_ROOT}${relativePath}`;
+    const head = await requestCdnHead(url, Math.min(timeoutMs, 5000));
+    if (head.statusCode === 200 && (!head.contentLength || head.contentLength === item.size)) {
+      const result = {
+        dir: derivedDir,
+        relativePath,
+        statusCode: head.statusCode,
+        contentLength: head.contentLength,
+        sizeMatches: head.contentLength === item.size,
+        derived: true,
+      };
+      ensureDir(CDN_RESOURCE_BROWSER_DIR);
+      dirCache[cacheKey] = result;
+      writeFileSync(CDN_HPKG_DIR_CACHE_PATH, JSON.stringify(dirCache, null, 2));
+      return { ...result, url };
+    }
+  }
+  for (let start = 0; start < 256; start += 32) {
+    const probes = await Promise.all(Array.from({ length: 32 }, (_, index) => start + index).map(async (dir) => {
+      const relativePath = `${dir}/${item.packageName}.hpkg`;
+      const url = `${CDN_ROOT}${relativePath}`;
+      const head = await requestCdnHead(url, Math.min(timeoutMs, 5000));
+      return { dir, relativePath, url, ...head };
+    }));
+    const hit = probes.find((probe) => probe.statusCode === 200 && probe.contentLength === item.size)
+      || probes.find((probe) => probe.statusCode === 200);
+    if (hit) {
+      const result = {
+        dir: hit.dir,
+        relativePath: hit.relativePath,
+        statusCode: hit.statusCode,
+        contentLength: hit.contentLength,
+        sizeMatches: hit.contentLength === item.size,
+      };
+      ensureDir(CDN_RESOURCE_BROWSER_DIR);
+      dirCache[cacheKey] = result;
+      writeFileSync(CDN_HPKG_DIR_CACHE_PATH, JSON.stringify(dirCache, null, 2));
+      return { ...result, url: hit.url };
+    }
+  }
+  throw new Error(`No live hpkg URL found for ${item.packageName}.hpkg (${item.size} bytes)`);
+}
+
+async function downloadCdnFile(url, outPath, expectedSize = 0, timeoutMs = 120_000) {
+  if (existsSync(outPath)) {
+    const size = statSync(outPath).size;
+    if (!expectedSize || size === expectedSize) return { skipped: true, size };
+  }
+  ensureDir(dirname(outPath));
+  const response = await fetchCdnResponse(url, { timeoutMs });
+  if (!response.ok) throw new Error(`download HTTP ${response.status}`);
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (expectedSize && buffer.length !== Number(expectedSize)) {
+    throw new Error(`downloaded ${buffer.length} bytes, expected ${expectedSize}`);
+  }
+  writeFileSync(outPath, buffer);
+  return { skipped: false, size: buffer.length };
+}
+
+async function ensureCdnPackageDownloaded(payload = {}) {
+  const packageName = String(payload.packageName || '').trim();
+  const packageSize = Number(payload.packageSize || payload.size || 0) || 0;
+  if (!packageName) throw new Error('packageName is required');
+  const existing = findCdnLocalPackage(packageName, packageSize);
+  if (existing) {
+    return {
+      packageName,
+      packageSize: statSync(existing).size,
+      path: existing,
+      relativePath: normalizeCdnMemberPath(relative(CDN_ONLINE_ROOT, existing)),
+      remotePath: null,
+      remoteUrl: null,
+      verifiedLiveHttp: false,
+    };
+  }
+  const dirCache = readJsonUtf8Loose(CDN_HPKG_DIR_CACHE_PATH, {}) || {};
+  const resolved = await resolveCdnPackageUrl({ packageName, size: packageSize }, dirCache, 30_000);
+  const outPath = join(CDN_DOWNLOAD_DIR, `${resolved.dir}_${packageName}.hpkg`);
+  await downloadCdnFile(resolved.url, outPath, packageSize, 120_000);
+  return {
+    packageName,
+    packageSize: statSync(outPath).size,
+    path: outPath,
+    relativePath: normalizeCdnMemberPath(relative(CDN_ONLINE_ROOT, outPath)),
+    remotePath: resolved.relativePath,
+    remoteUrl: resolved.url,
+    verifiedLiveHttp: true,
+  };
+}
+
+const CDN_LEGACY_TARGETS = {
+  tray: { label: 'Tray Service', port: 0, processName: 'qrmbtrayservicex64.exe' },
+  editor: { label: 'Editor', port: 0, processName: 'JX3ClientX64.exe' },
+  launcher: { label: 'Launcher', port: 0, processName: 'JX3Launcher.exe' },
+};
+
+function buildCdnLegacyStatusResponse() {
+  return {
+    primaryTarget: 'editor',
+    targets: CDN_LEGACY_TARGETS,
+    bridges: Object.fromEntries(Object.keys(CDN_LEGACY_TARGETS).map((key) => [key, {
+      up: false,
+      g_GetPakV5AllFileList: false,
+      g_DownloadHttpFile: false,
+    }])),
+    procs: {},
+    jobs: { fridaTargets: {} },
+    logs: {},
+    recentHighlights: [],
+  };
+}
+
+function buildCdnLegacyReadinessResponse() {
+  return {
+    ready: false,
+    headline: 'Native CDN buffer unavailable',
+    summary: 'Online Package List mode is available, but the native bridge path is not active in this server session.',
+    steps: [
+      {
+        key: 'online-list',
+        label: 'Online Package List',
+        status: 'ok',
+        detail: 'Live MakePackages.bin fetching is available over HTTPS.',
+      },
+      {
+        key: 'native-bridge',
+        label: 'Native bridge',
+        status: 'fail',
+        detail: 'start-capture and g_GetPakV5AllFileList are not wired in this server session.',
+      },
+    ],
+    actions: [
+      'Keep the mode on Online Package List for live HPKG browsing.',
+      'Use the Resource Browser page for downloaded package contents and extracted files.',
+    ],
+    evidence: [
+      'Port 3015 is owned by node server.js.',
+      'Legacy native bridge endpoints were missing from the current server build.',
+    ],
+  };
+}
+
+async function buildCdnLegacyFileListResponse(reqUrl) {
+  const mode = String(reqUrl.searchParams.get('mode') || 'packages').trim().toLowerCase();
+  if (mode !== 'packages') {
+    return {
+      ok: false,
+      error: 'Native CDN buffer mode is not available in this server session. Use Online Package List.',
+    };
+  }
+  const offset = Math.max(0, Number(reqUrl.searchParams.get('offset') || 0) || 0);
+  const limit = Math.min(1000, Math.max(1, Number(reqUrl.searchParams.get('limit') || 200) || 200));
+  const search = String(reqUrl.searchParams.get('search') || '').trim().toLowerCase();
+  const list = await loadCdnPackageList(false, 30_000);
+  const filtered = search
+    ? list.items.filter((item) => `${item.packageName} ${item.hashHex} ${item.size} ${item.recordIndex}`.toLowerCase().includes(search))
+    : list.items;
+  const items = filtered.slice(offset, offset + limit);
+  return {
+    ok: true,
+    source: list.source,
+    target: 'editor',
+    offset,
+    limit,
+    hasNextPage: (offset + items.length) < filtered.length,
+    totalFiltered: filtered.length,
+    totalItems: list.items.length,
+    totalFilteredKnown: true,
+    fetchedBytes: list.fetchedBytes,
+    decodedBytes: list.decodedBytes,
+    items,
+  };
+}
+
+async function buildCdnLegacyHpkgContentsResponse(payload = {}) {
+  const logical = String(payload.logical || '').trim();
+  const packageName = String(payload.packageName || logical.replace(/\.hpkg$/i, '')).trim();
+  const packageSize = Number(payload.size || payload.packageSize || 0) || 0;
+  if (!packageName) throw new Error('packageName is required');
+  if (!packageSize) throw new Error('size is required');
+  const localFile = await ensureCdnPackageDownloaded({ packageName, packageSize });
+  const hpkg = readFileSync(localFile.path);
+  const decoded = decodeCdnHpkgIndex(hpkg);
+  const items = decoded.records.map((record) => {
+    const path = normalizeCdnMemberPath(record.path);
+    const classified = classifyCdnResource(path);
+    const extension = extname(path).toLowerCase();
+    const browserPlayable = ['.ogg', '.wav', '.mp3'].includes(extension);
+    const convertibleAudio = extension === '.wem';
+    return {
+      path,
+      extension,
+      kind: classified.resourceType || 'file',
+      originalSize: record.originalSize,
+      storedSize: record.storedSize,
+      audio: classified.resourceGroup === 'Sound',
+      browserPlayable,
+      convertibleAudio,
+      playable: browserPlayable || convertibleAudio,
+    };
+  });
+  const summary = items.reduce((acc, item) => {
+    acc.total += 1;
+    if (item.audio) acc.audio += 1;
+    if (item.playable) acc.playable += 1;
+    return acc;
+  }, { total: 0, audio: 0, playable: 0 });
+  return {
+    ok: true,
+    packageName,
+    verifiedLiveHttp: localFile.verifiedLiveHttp,
+    remotePath: localFile.remotePath,
+    remoteUrl: localFile.remoteUrl,
+    download: {
+      remotePath: localFile.remotePath,
+      remoteUrl: localFile.remoteUrl,
+    },
+    localFile: {
+      path: localFile.path,
+      relativePath: localFile.relativePath,
+      size: localFile.packageSize,
+    },
+    hpkg: {
+      count: decoded.count,
+      recordSize: decoded.recordSize,
+      payloadSize: decoded.payloadSize,
+    },
+    summary,
+    items,
+  };
+}
+
+const CDN_RESOURCE_TYPE_GROUPS = [
+  { label: 'Animation', color: '#6aa5ff', children: ['ANI', 'TANI'] },
+  { label: 'FBX', color: '#57c0d8', children: ['FBX'] },
+  { label: 'Material', color: '#d8b657', children: ['Material', 'Material Packet'] },
+  { label: 'Model', color: '#6dd0a5', children: ['MDL', 'Mesh', 'Model'] },
+  { label: 'ParticalSystem', color: '#ff8f66', children: ['PSS', 'SFX', 'Track'] },
+  { label: 'Scene', color: '#a2d76f', children: ['Scene'] },
+  { label: 'Sound', color: '#f7c24f', children: ['BNK', 'MP3', 'OGG', 'WAV', 'WEM'] },
+  { label: 'SpeedTree', color: '#84c975', children: ['SRT', 'ST'] },
+  { label: 'Texture', color: '#44b7ff', children: ['BMP', 'DDS', 'HDR', 'HX', 'JPG', 'PNG', 'PSD', 'TGA', 'WEBP'] },
+  { label: 'UnDefine', color: '#aeb5b2', children: ['UnDefine'] },
+];
+
+function classifyCdnResource(pathLike) {
+  const extension = extname(pathLike || '').toLowerCase();
+  const extLabel = extension.replace(/^\./, '').toUpperCase();
+  if (['.ogg', '.wav', '.mp3', '.wem', '.bnk'].includes(extension)) {
+    return { resourceGroup: 'Sound', resourceType: extLabel || 'Sound', playable: ['.ogg', '.wav', '.mp3', '.wem'].includes(extension) };
+  }
+  if (['.dds', '.tga', '.png', '.jpg', '.jpeg', '.bmp', '.webp', '.psd', '.hdr', '.hx'].includes(extension)) {
+    return { resourceGroup: 'Texture', resourceType: extension === '.jpeg' ? 'JPG' : extLabel || 'Texture', playable: false };
+  }
+  if (['.mesh', '.mdl', '.model', '.m2', '.obj', '.smd'].includes(extension)) {
+    return { resourceGroup: 'Model', resourceType: extension === '.mesh' ? 'Mesh' : extLabel || 'Model', playable: false };
+  }
+  if (['.ani', '.tani', '.ska', '.skl', '.anim'].includes(extension)) {
+    return { resourceGroup: 'Animation', resourceType: extLabel || 'Animation', playable: false };
+  }
+  if (['.pss', '.sfx', '.track'].includes(extension)) {
+    return { resourceGroup: 'ParticalSystem', resourceType: extLabel || 'ParticalSystem', playable: false };
+  }
+  if (extension === '.fbx') return { resourceGroup: 'FBX', resourceType: 'FBX', playable: false };
+  if (['.srt', '.st'].includes(extension)) return { resourceGroup: 'SpeedTree', resourceType: extLabel || 'SpeedTree', playable: false };
+  if (['.jsoninspack', '.actmtl', '.mtl', '.mat', '.material'].includes(extension)) {
+    return { resourceGroup: 'Material', resourceType: extension === '.jsoninspack' ? 'Material Packet' : 'Material', playable: false };
+  }
+  return { resourceGroup: 'UnDefine', resourceType: 'UnDefine', playable: false };
+}
+
+let cdnStatusSnapshotCache = { key: '', snapshot: { latest: new Map(), counts: { ok: 0, failed: 0, fullDownloaded: 0, listedOnly: 0 } } };
+
+function readCdnStatusSnapshot() {
+  const statusFile = existsSync(CDN_PACKAGE_STATUS_PATH) ? statSync(CDN_PACKAGE_STATUS_PATH) : null;
+  const cacheKey = statusFile ? `${statusFile.size}:${statusFile.mtimeMs}` : 'missing';
+  if (cdnStatusSnapshotCache.key === cacheKey) return cdnStatusSnapshotCache.snapshot;
+
+  const latest = new Map();
+  if (statusFile) {
+    for (const line of readFileSync(CDN_PACKAGE_STATUS_PATH, 'utf8').split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      try {
+        const row = JSON.parse(line);
+        if (row.packageName) latest.set(row.packageName, row);
+      } catch { /* ignore malformed rows */ }
+    }
+  }
+  const counts = { ok: 0, failed: 0, fullDownloaded: 0, listedOnly: 0 };
+  for (const row of latest.values()) {
+    if (row.ok) counts.ok += 1;
+    else counts.failed += 1;
+    if (row.ok && row.fullDownloaded) counts.fullDownloaded += 1;
+    if (row.ok && !row.fullDownloaded) counts.listedOnly += 1;
+  }
+  const snapshot = { latest, counts };
+  cdnStatusSnapshotCache = { key: cacheKey, snapshot };
+  return snapshot;
+}
+
+function parseCdnIndexRow(line) {
+  if (!line.trim()) return null;
+  try {
+    const row = JSON.parse(line);
+    const path = normalizeCdnMemberPath(row.path || row.memberPath || row.filePath);
+    if (!path) return null;
+    const classified = classifyCdnResource(path);
+    return {
+      ...row,
+      path,
+      name: row.name || basename(path),
+      folder: row.folder || (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''),
+      extension: row.extension || extname(path).toLowerCase(),
+      type: row.type || classified.resourceGroup,
+      resourceGroup: classified.resourceGroup,
+      resourceType: classified.resourceType,
+      playable: Boolean(classified.playable),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function compareCdnBrowseRows(left, right) {
+  return left.path.localeCompare(right.path, undefined, { sensitivity: 'base' });
+}
+
+function insertLimitedSortedCdnRow(rows, row, limit) {
+  if (rows.length === 0) {
+    rows.push(row);
+    return;
+  }
+  if (rows.length < limit) {
+    rows.push(row);
+    rows.sort(compareCdnBrowseRows);
+    return;
+  }
+  if (compareCdnBrowseRows(row, rows[rows.length - 1]) >= 0) return;
+  let insertAt = rows.length;
+  for (let index = 0; index < rows.length; index += 1) {
+    if (compareCdnBrowseRows(row, rows[index]) < 0) {
+      insertAt = index;
+      break;
+    }
+  }
+  rows.splice(insertAt, 0, row);
+  rows.pop();
+}
+
+function hashCdnBrowseFolderKey(value) {
+  let hash = 2166136261;
+  const text = String(value || '');
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function getCdnBrowseMapBucketIndex(folder) {
+  return hashCdnBrowseFolderKey(folder || '') % CDN_BROWSE_MAP_BUCKET_COUNT;
+}
+
+function getCdnBrowseMapBucketPath(kind, bucketIndex) {
+  return join(CDN_BROWSE_MAP_DIR, `${kind}-${String(bucketIndex).padStart(3, '0')}.jsonl`);
+}
+
+function getCdnSearchMapBucketIndex(scope) {
+  return hashCdnBrowseFolderKey(scope || '') % CDN_SEARCH_MAP_BUCKET_COUNT;
+}
+
+function getCdnSearchMapBucketPath(bucketIndex) {
+  return join(CDN_SEARCH_MAP_DIR, `search-${String(bucketIndex).padStart(3, '0')}.jsonl`);
+}
+
+function getCdnSearchScope(folder) {
+  const normalized = normalizeCdnMemberPath(folder || '');
+  if (!normalized) return '';
+  const segments = normalized.split('/');
+  return segments.slice(0, Math.min(CDN_SEARCH_MAP_SCOPE_DEPTH, segments.length)).join('/');
+}
+
+function getCdnSearchScopeKeys(folder) {
+  const normalized = normalizeCdnMemberPath(folder || '');
+  if (!normalized) return [];
+  const segments = normalized.split('/');
+  const scopes = [];
+  const maxDepth = Math.min(CDN_SEARCH_MAP_SCOPE_DEPTH, segments.length);
+  for (let depth = 1; depth <= maxDepth; depth += 1) {
+    scopes.push(segments.slice(0, depth).join('/'));
+  }
+  return scopes;
+}
+
+function buildCdnSearchMapEntry(row, scope) {
+  return {
+    scope,
+    packageName: row.packageName,
+    packageSize: row.packageSize,
+    fullDownloaded: Boolean(row.fullDownloaded),
+    path: row.path,
+    originalSize: row.originalSize,
+    storedSize: row.storedSize,
+    flags: row.flags,
+    payloadOffset: row.payloadOffset,
+  };
+}
+
+async function appendCdnBrowseMapLine(stream, value) {
+  const line = `${JSON.stringify(value)}\n`;
+  if (stream.write(line)) return;
+  await new Promise((resolve, reject) => {
+    const onDrain = () => {
+      stream.off('error', onError);
+      resolve();
+    };
+    const onError = (error) => {
+      stream.off('drain', onDrain);
+      reject(error);
+    };
+    stream.once('drain', onDrain);
+    stream.once('error', onError);
+  });
+}
+
+function closeCdnBrowseMapStream(stream) {
+  return new Promise((resolve, reject) => {
+    stream.once('error', reject);
+    stream.end(resolve);
+  });
+}
+
+async function buildCdnBrowseMap(indexFile) {
+  ensureDir(CDN_BROWSE_MAP_DIR);
+  console.log(`[cdn-browse-map] building persistent folder map from ${CDN_RESOURCE_INDEX_PATH}`);
+  const fileStreams = Array.from({ length: CDN_BROWSE_MAP_BUCKET_COUNT }, (_, bucketIndex) => createWriteStream(getCdnBrowseMapBucketPath('files', bucketIndex), { encoding: 'utf8', flags: 'w' }));
+  const folderChildren = new Map();
+  const input = createReadStream(CDN_RESOURCE_INDEX_PATH, { encoding: 'utf8' });
+  const reader = readline.createInterface({ input, crlfDelay: Infinity });
+  try {
+    for await (const line of reader) {
+      const row = parseCdnIndexRow(line);
+      if (!row) continue;
+      await appendCdnBrowseMapLine(fileStreams[getCdnBrowseMapBucketIndex(row.folder || '')], row);
+
+      const segments = row.path.split('/');
+      let parent = '';
+      for (let index = 0; index < segments.length - 1; index += 1) {
+        const name = segments[index];
+        const childPath = parent ? `${parent}/${name}` : name;
+        let children = folderChildren.get(parent);
+        if (!children) {
+          children = new Map();
+          folderChildren.set(parent, children);
+        }
+        const current = children.get(childPath) || { name, path: childPath, fileCount: 0 };
+        current.fileCount += 1;
+        children.set(childPath, current);
+        parent = childPath;
+      }
+    }
+  } finally {
+    reader.close();
+    input.destroy();
+    await Promise.all(fileStreams.map((stream) => closeCdnBrowseMapStream(stream)));
+  }
+
+  const childStreams = Array.from({ length: CDN_BROWSE_MAP_BUCKET_COUNT }, (_, bucketIndex) => createWriteStream(getCdnBrowseMapBucketPath('children', bucketIndex), { encoding: 'utf8', flags: 'w' }));
+  try {
+    for (const [parent, children] of folderChildren) {
+      const bucketIndex = getCdnBrowseMapBucketIndex(parent);
+      for (const child of children.values()) {
+        await appendCdnBrowseMapLine(childStreams[bucketIndex], { parent, ...child });
+      }
+    }
+  } finally {
+    await Promise.all(childStreams.map((stream) => closeCdnBrowseMapStream(stream)));
+  }
+
+  writeFileSync(CDN_BROWSE_MAP_META_PATH, JSON.stringify({
+    version: 1,
+    bucketCount: CDN_BROWSE_MAP_BUCKET_COUNT,
+    source: {
+      path: CDN_RESOURCE_INDEX_PATH,
+      size: indexFile?.size || 0,
+      mtimeMs: indexFile?.mtimeMs || 0,
+    },
+    builtAt: new Date().toISOString(),
+  }, null, 2));
+  console.log('[cdn-browse-map] persistent folder map ready');
+}
+
+async function buildCdnSearchMap(indexFile) {
+  ensureDir(CDN_SEARCH_MAP_DIR);
+  console.log(`[cdn-search-map] building persistent scoped search map from ${CDN_RESOURCE_INDEX_PATH}`);
+  const searchStreams = Array.from({ length: CDN_SEARCH_MAP_BUCKET_COUNT }, (_, bucketIndex) => createWriteStream(getCdnSearchMapBucketPath(bucketIndex), { encoding: 'utf8', flags: 'w' }));
+  const input = createReadStream(CDN_RESOURCE_INDEX_PATH, { encoding: 'utf8' });
+  const reader = readline.createInterface({ input, crlfDelay: Infinity });
+  try {
+    for await (const line of reader) {
+      const row = parseCdnIndexRow(line);
+      if (!row) continue;
+      for (const scope of getCdnSearchScopeKeys(row.folder || '')) {
+        await appendCdnBrowseMapLine(searchStreams[getCdnSearchMapBucketIndex(scope)], buildCdnSearchMapEntry(row, scope));
+      }
+    }
+  } finally {
+    reader.close();
+    input.destroy();
+    await Promise.all(searchStreams.map((stream) => closeCdnBrowseMapStream(stream)));
+  }
+
+  writeFileSync(CDN_SEARCH_MAP_META_PATH, JSON.stringify({
+    version: 1,
+    bucketCount: CDN_SEARCH_MAP_BUCKET_COUNT,
+    scopeDepth: CDN_SEARCH_MAP_SCOPE_DEPTH,
+    source: {
+      path: CDN_RESOURCE_INDEX_PATH,
+      size: indexFile?.size || 0,
+      mtimeMs: indexFile?.mtimeMs || 0,
+    },
+    builtAt: new Date().toISOString(),
+  }, null, 2));
+  console.log('[cdn-search-map] persistent scoped search map ready');
+}
+
+let cdnBrowseMapBuildPromise = null;
+let cdnSearchMapBuildPromise = null;
+
+async function ensureCdnBrowseMap(indexFile) {
+  if (!indexFile) return null;
+  const meta = readJsonUtf8Loose(CDN_BROWSE_MAP_META_PATH, null);
+  const ready = Boolean(
+    meta
+    && Number(meta.bucketCount || 0) === CDN_BROWSE_MAP_BUCKET_COUNT
+    && Number(meta.source?.size || 0) === Number(indexFile.size || 0)
+    && Number(meta.source?.mtimeMs || 0) === Number(indexFile.mtimeMs || 0)
+    && existsSync(getCdnBrowseMapBucketPath('files', 0))
+    && existsSync(getCdnBrowseMapBucketPath('children', 0))
+  );
+  if (ready) return meta;
+  if (!cdnBrowseMapBuildPromise) {
+    cdnBrowseMapBuildPromise = (async () => {
+      await buildCdnBrowseMap(indexFile);
+      cdnBrowseResponseCache.clear();
+      return readJsonUtf8Loose(CDN_BROWSE_MAP_META_PATH, null);
+    })().finally(() => {
+      cdnBrowseMapBuildPromise = null;
+    });
+  }
+  return cdnBrowseMapBuildPromise;
+}
+
+async function ensureCdnSearchMap(indexFile) {
+  if (!indexFile) return null;
+  const meta = readJsonUtf8Loose(CDN_SEARCH_MAP_META_PATH, null);
+  const ready = Boolean(
+    meta
+    && Number(meta.bucketCount || 0) === CDN_SEARCH_MAP_BUCKET_COUNT
+    && Number(meta.scopeDepth || 0) === CDN_SEARCH_MAP_SCOPE_DEPTH
+    && Number(meta.source?.size || 0) === Number(indexFile.size || 0)
+    && Number(meta.source?.mtimeMs || 0) === Number(indexFile.mtimeMs || 0)
+    && existsSync(getCdnSearchMapBucketPath(0))
+  );
+  if (ready) return meta;
+  if (!cdnSearchMapBuildPromise) {
+    cdnSearchMapBuildPromise = (async () => {
+      await buildCdnSearchMap(indexFile);
+      cdnBrowseResponseCache.clear();
+      return readJsonUtf8Loose(CDN_SEARCH_MAP_META_PATH, null);
+    })().finally(() => {
+      cdnSearchMapBuildPromise = null;
+    });
+  }
+  return cdnSearchMapBuildPromise;
+}
+
+async function readCdnBrowseMapChildren(folder) {
+  const children = [];
+  const bucketPath = getCdnBrowseMapBucketPath('children', getCdnBrowseMapBucketIndex(folder));
+  if (!existsSync(bucketPath)) return children;
+  const input = createReadStream(bucketPath, { encoding: 'utf8' });
+  const reader = readline.createInterface({ input, crlfDelay: Infinity });
+  try {
+    for await (const line of reader) {
+      if (!line.trim()) continue;
+      try {
+        const row = JSON.parse(line);
+        if (String(row.parent || '') !== String(folder || '')) continue;
+        children.push({
+          name: row.name,
+          path: row.path,
+          fileCount: Number(row.fileCount || 0),
+        });
+      } catch {
+        /* ignore malformed rows */
+      }
+    }
+  } finally {
+    reader.close();
+    input.destroy();
+  }
+  children.sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }));
+  return children;
+}
+
+async function readCdnBrowseMapDirectFiles(folder, selectedTypes, limit, status) {
+  const files = [];
+  let totalFiles = 0;
+  const bucketPath = getCdnBrowseMapBucketPath('files', getCdnBrowseMapBucketIndex(folder));
+  if (!existsSync(bucketPath)) return { files, totalFiles };
+  const input = createReadStream(bucketPath, { encoding: 'utf8' });
+  const reader = readline.createInterface({ input, crlfDelay: Infinity });
+  try {
+    for await (const line of reader) {
+      const row = parseCdnIndexRow(line);
+      if (!row) continue;
+      if (String(row.folder || '') !== String(folder || '')) continue;
+      if (selectedTypes && !selectedTypes.has(`${row.resourceGroup}/${row.resourceType}`)) continue;
+
+      totalFiles += 1;
+      const packageStatus = status.latest.get(row.packageName) || null;
+      insertLimitedSortedCdnRow(files, {
+        ...row,
+        packageDownloaded: Boolean(row.fullDownloaded || packageStatus?.fullDownloaded),
+        packageStatus,
+      }, limit);
+    }
+  } finally {
+    reader.close();
+    input.destroy();
+  }
+  return { files, totalFiles };
+}
+
+async function scanCdnBrowseSearchResultsFromIndex(folder, search, selectedTypes, limit, status) {
+  const prefix = folder ? `${folder}/` : '';
+  const files = [];
+  let totalFiles = 0;
+  const input = createReadStream(CDN_RESOURCE_INDEX_PATH, { encoding: 'utf8' });
+  const reader = readline.createInterface({ input, crlfDelay: Infinity });
+  try {
+    for await (const line of reader) {
+      const row = parseCdnIndexRow(line);
+      if (!row) continue;
+      if (folder && row.path !== folder && !row.path.startsWith(prefix)) continue;
+
+      const relativePath = folder ? row.path.slice(prefix.length) : row.path;
+      if (!relativePath) continue;
+
+      const slash = relativePath.indexOf('/');
+      const directFile = slash < 0 && row.path !== folder;
+      const recursiveSearchHit = Boolean(search) && row.path.toLowerCase().includes(search);
+      if (search ? !recursiveSearchHit : !directFile) continue;
+      if (selectedTypes && !selectedTypes.has(`${row.resourceGroup}/${row.resourceType}`)) continue;
+
+      totalFiles += 1;
+      const packageStatus = status.latest.get(row.packageName) || null;
+      insertLimitedSortedCdnRow(files, {
+        ...row,
+        packageDownloaded: Boolean(row.fullDownloaded || packageStatus?.fullDownloaded),
+        packageStatus,
+      }, limit);
+    }
+  } finally {
+    reader.close();
+    input.destroy();
+  }
+  return { files, totalFiles };
+}
+
+async function readCdnSearchMapResults(folder, search, selectedTypes, limit, status) {
+  const searchScope = getCdnSearchScope(folder);
+  if (!searchScope) return scanCdnBrowseSearchResultsFromIndex(folder, search, selectedTypes, limit, status);
+
+  const prefix = folder ? `${folder}/` : '';
+  const files = [];
+  let totalFiles = 0;
+  const bucketPath = getCdnSearchMapBucketPath(getCdnSearchMapBucketIndex(searchScope));
+  if (!existsSync(bucketPath)) return { files, totalFiles };
+  const input = createReadStream(bucketPath, { encoding: 'utf8' });
+  const reader = readline.createInterface({ input, crlfDelay: Infinity });
+  try {
+    for await (const line of reader) {
+      const row = parseCdnIndexRow(line);
+      if (!row) continue;
+      if (String(row.scope || '') !== searchScope) continue;
+      if (folder && row.path !== folder && !row.path.startsWith(prefix)) continue;
+
+      const relativePath = folder ? row.path.slice(prefix.length) : row.path;
+      if (!relativePath) continue;
+
+      const slash = relativePath.indexOf('/');
+      const directFile = slash < 0 && row.path !== folder;
+      const recursiveSearchHit = Boolean(search) && row.path.toLowerCase().includes(search);
+      if (search ? !recursiveSearchHit : !directFile) continue;
+      if (selectedTypes && !selectedTypes.has(`${row.resourceGroup}/${row.resourceType}`)) continue;
+
+      totalFiles += 1;
+      const packageStatus = status.latest.get(row.packageName) || null;
+      insertLimitedSortedCdnRow(files, {
+        ...row,
+        packageDownloaded: Boolean(row.fullDownloaded || packageStatus?.fullDownloaded),
+        packageStatus,
+      }, limit);
+    }
+  } finally {
+    reader.close();
+    input.destroy();
+  }
+  return { files, totalFiles };
+}
+
+async function buildCdnBrowseResponse(reqUrl) {
+  const indexReady = existsSync(CDN_RESOURCE_INDEX_PATH);
+  const indexFile = indexReady ? statSync(CDN_RESOURCE_INDEX_PATH) : null;
+  const statusFile = existsSync(CDN_PACKAGE_STATUS_PATH) ? statSync(CDN_PACKAGE_STATUS_PATH) : null;
+  const status = readCdnStatusSnapshot();
+  const folder = normalizeCdnMemberPath(reqUrl.searchParams.get('folder') || '');
+  const search = String(reqUrl.searchParams.get('search') || '').trim().toLowerCase();
+  const limit = Math.min(2000, Math.max(1, Number(reqUrl.searchParams.get('limit') || 500) || 500));
+  const selectedTypesRaw = String(reqUrl.searchParams.get('types') || '').trim();
+  const selectedTypes = selectedTypesRaw === '__none__'
+    ? new Set()
+    : selectedTypesRaw ? new Set(selectedTypesRaw.split(',').map((value) => value.trim()).filter(Boolean)) : null;
+  const cacheKey = JSON.stringify({
+    folder,
+    search,
+    limit,
+    selectedTypesRaw,
+    indexSize: indexFile?.size || 0,
+    indexMtimeMs: indexFile?.mtimeMs || 0,
+    statusSize: statusFile?.size || 0,
+    statusMtimeMs: statusFile?.mtimeMs || 0,
+  });
+  if (cdnBrowseResponseCache.has(cacheKey)) return cdnBrowseResponseCache.get(cacheKey);
+  const folders = [];
+  let files = [];
+  let totalFiles = 0;
+
+  if (indexReady) {
+    await ensureCdnBrowseMap(indexFile);
+    if (search) await ensureCdnSearchMap(indexFile);
+    else if (!cdnSearchMapBuildPromise) {
+      void ensureCdnSearchMap(indexFile).catch((error) => {
+        console.error('[cdn-search-map]', error?.stack || error);
+      });
+    }
+    folders.push(...await readCdnBrowseMapChildren(folder));
+    if (search) {
+      ({ files, totalFiles } = await readCdnSearchMapResults(folder, search, selectedTypes, limit, status));
+    } else {
+      ({ files, totalFiles } = await readCdnBrowseMapDirectFiles(folder, selectedTypes, limit, status));
+    }
+  }
+
+  const response = {
+    ok: true,
+    indexReady,
+    indexFile: indexFile ? { path: CDN_RESOURCE_INDEX_PATH, size: indexFile.size, mtimeMs: indexFile.mtimeMs } : null,
+    folder,
+    folders,
+    files,
+    totalFolders: folders.length,
+    totalFiles,
+  };
+  cdnBrowseResponseCache.set(cacheKey, response);
+  while (cdnBrowseResponseCache.size > 32) {
+    const oldestKey = cdnBrowseResponseCache.keys().next().value;
+    if (oldestKey == null) break;
+    cdnBrowseResponseCache.delete(oldestKey);
+  }
+  return response;
+}
+
+function compactCdnWemFile(row) {
+  return {
+    path: row.path,
+    name: row.name,
+    folder: row.folder,
+    packageName: row.packageName,
+    packageSize: row.packageSize,
+    packageDownloaded: Boolean(row.packageDownloaded || row.fullDownloaded),
+    fullDownloaded: Boolean(row.fullDownloaded),
+    resourceGroup: row.resourceGroup,
+    resourceType: row.resourceType,
+    playable: Boolean(row.playable),
+    originalSize: row.originalSize || 0,
+    storedSize: row.storedSize || 0,
+  };
+}
+
+function walkWwiseFiles(root, predicate, out = []) {
+  if (!root || !existsSync(root)) return out;
+  const stack = [root];
+  while (stack.length) {
+    const current = stack.pop();
+    let entries;
+    try {
+      entries = readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const fullPath = join(current, entry.name);
+      if (entry.isDirectory()) stack.push(fullPath);
+      else if (entry.isFile() && predicate(fullPath)) out.push(fullPath);
+    }
+  }
+  return out;
+}
+
+function decodeWwiseXmlAttr(value) {
+  return String(value || '')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
+function wwiseXmlAttr(attrText, name) {
+  const match = new RegExp(`${name}="([^"]*)"`).exec(String(attrText || ''));
+  return match ? decodeWwiseXmlAttr(match[1]) : '';
+}
+
+function collectWwiseFileRefsFromBlock(block, streamed, refs) {
+  const fileRe = /<File\s+([^>]*?)>([\s\S]*?)<\/File>/g;
+  let match;
+  while ((match = fileRe.exec(block))) {
+    const id = wwiseXmlAttr(match[1], 'Id');
+    if (!/^\d+$/.test(id)) continue;
+    const body = match[2] || '';
+    const shortName = decodeWwiseXmlAttr((body.match(/<ShortName>([^<]*)<\/ShortName>/) || [])[1] || `${id}.wem`);
+    const sourcePath = decodeWwiseXmlAttr((body.match(/<Path>([^<]*)<\/Path>/) || [])[1] || '');
+    refs.push({ id: String(id), shortName, sourcePath, streamed });
+  }
+}
+
+function parseWwiseEventFileRefs(eventBody) {
+  const refs = [];
+  const sections = [
+    { tag: 'ReferencedStreamedFiles', streamed: true },
+    { tag: 'ExcludedMemoryFiles', streamed: true },
+    { tag: 'IncludedMemoryFiles', streamed: false },
+  ];
+  for (const section of sections) {
+    const sectionRe = new RegExp(`<${section.tag}>\\s*([\\s\\S]*?)<\\/${section.tag}>`, 'g');
+    let sectionMatch;
+    while ((sectionMatch = sectionRe.exec(eventBody))) {
+      collectWwiseFileRefsFromBlock(sectionMatch[1], section.streamed, refs);
+    }
+  }
+  if (!refs.length) collectWwiseFileRefsFromBlock(eventBody, true, refs);
+  return refs;
+}
+
+let cachedWwiseSoundbanksInfo = null;
+let cachedWwiseSoundbanksInfoKey = '';
+
+function getWwiseSoundbanksInfo(index) {
+  const roots = [...new Set([...(index?.roots || []), index?.root].filter(Boolean).map((root) => resolve(root)))];
+  const cacheKey = `${index?.generatedAt || ''}|${roots.join('|')}`;
+  if (cachedWwiseSoundbanksInfo && cachedWwiseSoundbanksInfoKey === cacheKey) return cachedWwiseSoundbanksInfo;
+
+  const eventPaths = new Map();
+  const eventFiles = new Map();
+  for (const [eventName, event] of Object.entries(index?.events || {})) {
+    if (event?.path) eventPaths.set(eventName, event.path);
+  }
+
+  for (const root of roots) {
+    const xmlFiles = walkWwiseFiles(root, (filePath) => extname(filePath).toLowerCase() === '.xml');
+    for (const xmlPath of xmlFiles) {
+      let content;
+      try {
+        content = readFileSync(xmlPath, 'utf8');
+      } catch {
+        continue;
+      }
+      if (!content.includes('<SoundBanksInfo')) continue;
+      const eventRe = /<Event\s+([^>]*?)(?:\/>|>([\s\S]*?)<\/Event>)/g;
+      let match;
+      while ((match = eventRe.exec(content))) {
+        const attrs = match[1] || '';
+        const body = match[2] || '';
+        const name = wwiseXmlAttr(attrs, 'Name');
+        if (!name) continue;
+        const objectPath = wwiseXmlAttr(attrs, 'ObjectPath');
+        if (objectPath) eventPaths.set(name, objectPath);
+        const refs = parseWwiseEventFileRefs(body);
+        if (!refs.length) continue;
+        const existing = eventFiles.get(name) || [];
+        const seen = new Set(existing.map((ref) => String(ref.id)));
+        for (const ref of refs) {
+          if (seen.has(String(ref.id))) continue;
+          seen.add(String(ref.id));
+          existing.push(ref);
+        }
+        eventFiles.set(name, existing);
+      }
+    }
+  }
+
+  cachedWwiseSoundbanksInfo = { eventPaths, eventFiles };
+  cachedWwiseSoundbanksInfoKey = cacheKey;
+  return cachedWwiseSoundbanksInfo;
+}
+
+function buildWwiseMatchedFindings(query, eventName, objectPath, banks, wemRefs) {
+  const normalized = String(query || '').toLowerCase();
+  const findings = [];
+  const seen = new Set();
+  const pushFinding = (field, text, score) => {
+    const value = String(text || '').trim();
+    if (!value) return 0;
+    const key = `${field}:${value.toLowerCase()}`;
+    if (seen.has(key)) return 0;
+    seen.add(key);
+    findings.push({ field, text: value });
+    return score;
+  };
+
+  let score = 0;
+  const eventLower = String(eventName || '').toLowerCase();
+  if (eventLower === normalized) score += pushFinding('event', eventName, 800);
+  else if (eventLower.includes(normalized)) score += pushFinding('event', eventName, 450);
+
+  const objectLower = String(objectPath || '').toLowerCase();
+  if (objectLower === normalized) score += pushFinding('path', objectPath, 600);
+  else if (objectLower.includes(normalized)) score += pushFinding('path', objectPath, 260);
+
+  for (const bank of banks || []) {
+    const lower = String(bank || '').toLowerCase();
+    if (!lower.includes(normalized)) continue;
+    score += pushFinding('bank', bank, lower === normalized ? 220 : 120);
+  }
+
+  for (const ref of wemRefs || []) {
+    const id = String(ref?.id || '');
+    if (id && id.includes(normalized)) score += pushFinding('wem', id, id === normalized ? 360 : 190);
+    const shortName = String(ref?.shortName || '');
+    if (shortName.toLowerCase().includes(normalized)) score += pushFinding('file', shortName, 170);
+    const sourcePath = String(ref?.sourcePath || '');
+    if (sourcePath.toLowerCase().includes(normalized)) score += pushFinding('source', sourcePath, 160);
+  }
+
+  return { score, findings };
+}
+
+let cachedWwiseSoundbankRows = null;
+let cachedWwiseSoundbankRowsKey = '';
+
+function wwiseSoundbankRowsCacheKey(index) {
+  const roots = [...new Set([...(index?.roots || []), index?.root].filter(Boolean).map((root) => resolve(root)))];
+  const stats = index?.stats || {};
+  return [
+    WWISE_SOUNDBANK_ROWS_CACHE_VERSION,
+    index?.generatedAt || '',
+    stats.eventCount || 0,
+    stats.streamedWemFiles || 0,
+    stats.inMemoryWems || 0,
+    roots.join('|'),
+  ].join('::');
+}
+
+function normalizeWwiseSoundbankRow(row) {
+  const wwid = String(row?.wwid || '').trim();
+  const path = String(row?.path || '').trim();
+  const sourcePath = String(row?.sourcePath || '').trim();
+  const shortName = String(row?.shortName || '').trim();
+  const eventName = String(row?.eventName || '').trim();
+  const banks = Array.isArray(row?.banks) ? row.banks.map((bank) => String(bank || '').trim()).filter(Boolean) : [];
+  const playable = row?.playable === true && /^\d+$/.test(wwid);
+  const normalized = {
+    wwid,
+    path,
+    sourcePath,
+    shortName,
+    eventName,
+    eventId: row?.eventId ?? null,
+    bank: String(row?.bank || '').trim(),
+    banks,
+    playable,
+    playbackUrl: playable ? `/api/ability-matcher/wwise-audio?wem=${encodeURIComponent(wwid)}` : '',
+  };
+  normalized.searchText = [
+    normalized.wwid,
+    normalized.path,
+    normalized.sourcePath,
+    normalized.shortName,
+    normalized.eventName,
+    normalized.eventId,
+    normalized.bank,
+    ...normalized.banks,
+  ].join('\n').toLowerCase();
+  return normalized;
+}
+
+function serializeWwiseSoundbankRows(rows) {
+  return rows.map((row) => {
+    const { searchText, ...serialized } = row;
+    return serialized;
+  });
+}
+
+function buildWwiseSoundbankRowsCache(index, cacheKey) {
+  const info = getWwiseSoundbanksInfo(index);
+  const rows = [];
+  for (const [eventName, event] of Object.entries(index.events || {})) {
+    const directRefs = info.eventFiles.get(eventName) || [];
+    const fallbackWemIds = [...(event?.wems?.streamed || []), ...(event?.wems?.inMemory || [])].map((id) => String(id));
+    const wemRefs = directRefs.length
+      ? directRefs
+      : fallbackWemIds.map((id) => ({ id, shortName: '', sourcePath: '', streamed: index.wems?.[id]?.streamed === true }));
+    const objectPath = info.eventPaths.get(eventName) || event?.path || '';
+    for (const ref of wemRefs) {
+      const id = String(ref?.id || '').trim();
+      const wemEntry = id ? index.wems?.[id] || {} : {};
+      const banks = [...new Set([...(event?.banks || []), wemEntry?.bank].map((bank) => String(bank || '').trim()).filter(Boolean))];
+      rows.push(normalizeWwiseSoundbankRow({
+        wwid: id || String(event?.id ?? ''),
+        path: objectPath || ref?.sourcePath || eventName,
+        sourcePath: ref?.sourcePath || '',
+        shortName: ref?.shortName || wemEntry?.name || (id ? `${id}.wem` : ''),
+        eventName,
+        eventId: event?.id ?? null,
+        bank: wemEntry?.bank || '',
+        banks,
+        playable: /^\d+$/.test(id),
+      }));
+    }
+  }
+  rows.sort((left, right) => {
+    const pathCompare = left.path.localeCompare(right.path, undefined, { sensitivity: 'base' });
+    if (pathCompare !== 0) return pathCompare;
+    return left.wwid.localeCompare(right.wwid, undefined, { numeric: true, sensitivity: 'base' });
+  });
+  const payload = {
+    version: WWISE_SOUNDBANK_ROWS_CACHE_VERSION,
+    cacheKey,
+    builtAt: new Date().toISOString(),
+    stats: index.stats || {},
+    rows: serializeWwiseSoundbankRows(rows),
+  };
+  try {
+    ensureDir(dirname(WWISE_SOUNDBANK_ROWS_CACHE_PATH));
+    writeFileSync(WWISE_SOUNDBANK_ROWS_CACHE_PATH, JSON.stringify(payload));
+  } catch (err) {
+    console.warn('[wwise-soundbank-rows-cache] write failed:', err?.message || err);
+  }
+  return { ...payload, rows, fromDisk: false };
+}
+
+function getWwiseSoundbankRowsCache(index) {
+  const cacheKey = wwiseSoundbankRowsCacheKey(index);
+  if (cachedWwiseSoundbankRows && cachedWwiseSoundbankRowsKey === cacheKey) return cachedWwiseSoundbankRows;
+
+  const disk = readJsonUtf8Loose(WWISE_SOUNDBANK_ROWS_CACHE_PATH, null);
+  if (disk?.version === WWISE_SOUNDBANK_ROWS_CACHE_VERSION && disk.cacheKey === cacheKey && Array.isArray(disk.rows)) {
+    cachedWwiseSoundbankRows = {
+      ...disk,
+      rows: disk.rows.map(normalizeWwiseSoundbankRow),
+      fromDisk: true,
+    };
+    cachedWwiseSoundbankRowsKey = cacheKey;
+    return cachedWwiseSoundbankRows;
+  }
+
+  cachedWwiseSoundbankRows = buildWwiseSoundbankRowsCache(index, cacheKey);
+  cachedWwiseSoundbankRowsKey = cacheKey;
+  return cachedWwiseSoundbankRows;
+}
+
+function scoreWwiseSoundbankRow(row, normalizedQuery) {
+  let score = row.playable ? 10 : 0;
+  const wwid = String(row.wwid || '').toLowerCase();
+  const path = String(row.path || '').toLowerCase();
+  const sourcePath = String(row.sourcePath || '').toLowerCase();
+  const shortName = String(row.shortName || '').toLowerCase();
+  const eventName = String(row.eventName || '').toLowerCase();
+  if (wwid === normalizedQuery) score += 1000;
+  else if (wwid.includes(normalizedQuery)) score += 650;
+  if (path === normalizedQuery) score += 800;
+  else if (path.includes(normalizedQuery)) score += 420;
+  if (sourcePath.includes(normalizedQuery)) score += 260;
+  if (shortName.includes(normalizedQuery)) score += 220;
+  if (eventName.includes(normalizedQuery)) score += 180;
+  return score;
+}
+
+function compactWwiseSoundbankRow(row) {
+  const { searchText, banks, bank, shortName, sourcePath, eventName, eventId, ...compact } = row;
+  return compact;
+}
+
+function normalizeWwiseSoundbankPath(value) {
+  return String(value || '').trim().replace(/^[\\/]+/, '').replace(/[\\/]+/g, '\\');
+}
+
+function splitWwiseSoundbankPath(value) {
+  const normalized = normalizeWwiseSoundbankPath(value);
+  return normalized ? normalized.split('\\').filter(Boolean) : [];
+}
+
+function wwiseSoundbankRowFolder(row) {
+  const parts = splitWwiseSoundbankPath(row?.path || '');
+  return parts.length > 1 ? parts.slice(0, -1).join('\\') : '';
+}
+
+function buildWwiseSoundbankFolderRows(rows) {
+  const folders = new Map();
+  const ensureFolder = (folder) => {
+    if (!folder) return null;
+    const parts = splitWwiseSoundbankPath(folder);
+    const existing = folders.get(folder);
+    if (existing) return existing;
+    const entry = {
+      path: folder,
+      name: parts.at(-1) || folder,
+      depth: Math.max(0, parts.length - 1),
+      rowCount: 0,
+      fileCount: 0,
+    };
+    folders.set(folder, entry);
+    return entry;
+  };
+
+  for (const row of rows || []) {
+    const folder = wwiseSoundbankRowFolder(row);
+    const parts = splitWwiseSoundbankPath(folder);
+    let current = '';
+    for (const part of parts) {
+      current = current ? `${current}\\${part}` : part;
+      const entry = ensureFolder(current);
+      if (entry) entry.rowCount += 1;
+    }
+    const exact = ensureFolder(folder);
+    if (exact) exact.fileCount += 1;
+  }
+
+  return [...folders.values()].sort((left, right) => left.path.localeCompare(right.path, undefined, { sensitivity: 'base' }));
+}
+
+function buildWwiseSoundbankRowsResponse(reqUrl) {
+  const index = getWwiseIndex();
+  if (!index) throw new Error('wwise-index-missing');
+
+  const query = String(reqUrl.searchParams.get('q') || '').trim();
+  const normalizedQuery = query.toLowerCase();
+  const terms = normalizedQuery.split(/\s+/).filter(Boolean);
+  const folder = normalizeWwiseSoundbankPath(reqUrl.searchParams.get('folder') || '');
+  const playableOnly = reqUrl.searchParams.get('playable') !== '0';
+  const cache = getWwiseSoundbankRowsCache(index);
+
+  const matches = [];
+  for (const row of cache.rows || []) {
+    if (playableOnly && !row.playable) continue;
+    if (!terms.every((term) => row.searchText.includes(term))) continue;
+    matches.push({ row, score: query ? scoreWwiseSoundbankRow(row, normalizedQuery) : 0 });
+  }
+  matches.sort((left, right) => {
+    if (right.score !== left.score) return right.score - left.score;
+    const pathCompare = left.row.path.localeCompare(right.row.path, undefined, { sensitivity: 'base' });
+    if (pathCompare !== 0) return pathCompare;
+    return left.row.wwid.localeCompare(right.row.wwid, undefined, { numeric: true, sensitivity: 'base' });
+  });
+  const matchedRows = matches.map((match) => match.row);
+  const visibleRows = folder
+    ? matchedRows.filter((row) => wwiseSoundbankRowFolder(row) === folder)
+    : (query ? matchedRows : []);
+  const folders = buildWwiseSoundbankFolderRows(matchedRows);
+
+  return {
+    ok: true,
+    query,
+    folder,
+    playableOnly,
+    totalMatches: matches.length,
+    totalFolders: folders.length,
+    stats: cache.stats || index.stats || {},
+    cache: { path: WWISE_SOUNDBANK_ROWS_CACHE_PATH, builtAt: cache.builtAt, rowCount: cache.rows.length, fromDisk: cache.fromDisk === true },
+    folders,
+    rows: visibleRows.map(compactWwiseSoundbankRow),
+  };
+}
+
+function buildWwiseSoundbankSearchResponse(reqUrl) {
+  const index = getWwiseIndex();
+  if (!index) throw new Error('wwise-index-missing');
+
+  const query = String(reqUrl.searchParams.get('q') || '').trim();
+  const limitValue = Number.parseInt(String(reqUrl.searchParams.get('limit') || '60'), 10);
+  const limit = Number.isFinite(limitValue) ? Math.max(1, Math.min(limitValue, 200)) : 60;
+  const info = getWwiseSoundbanksInfo(index);
+  if (!query) {
+    return {
+      ok: true,
+      query: '',
+      limit,
+      totalMatches: 0,
+      stats: index.stats || {},
+      results: [],
+    };
+  }
+
+  const results = [];
+  for (const [eventName, event] of Object.entries(index.events || {})) {
+    const directRefs = info.eventFiles.get(eventName) || [];
+    const fallbackWemIds = [...(event?.wems?.streamed || []), ...(event?.wems?.inMemory || [])].map((id) => String(id));
+    const wemRefs = directRefs.length
+      ? directRefs.map((ref) => ({ ...ref, traceMode: 'soundbanksinfo' }))
+      : fallbackWemIds.map((id) => ({ id, shortName: '', sourcePath: '', streamed: index.wems?.[id]?.streamed === true, traceMode: 'index-fallback' }));
+    const objectPath = info.eventPaths.get(eventName) || event?.path || '';
+    const { score, findings } = buildWwiseMatchedFindings(query, eventName, objectPath, event?.banks || [], wemRefs);
+    if (!findings.length) continue;
+
+    const wems = wemRefs.map((ref) => {
+      const id = String(ref?.id || '').trim();
+      const wemEntry = id ? index.wems?.[id] || {} : {};
+      return {
+        id,
+        shortName: ref?.shortName || wemEntry?.name || (id ? `${id}.wem` : ''),
+        sourcePath: ref?.sourcePath || '',
+        streamed: ref?.streamed === true || wemEntry?.streamed === true,
+        bank: wemEntry?.bank || '',
+        traceMode: ref?.traceMode || 'index-fallback',
+        playbackUrl: id ? `/api/ability-matcher/wwise-audio?wem=${encodeURIComponent(id)}` : '',
+        cdnLookupUrl: id ? `/api/ability-matcher/tani-sound-cdn?wem=${encodeURIComponent(id)}` : '',
+      };
+    });
+
+    results.push({
+      eventName,
+      eventId: event?.id ?? null,
+      objectPath,
+      banks: event?.banks || [],
+      matchedFindings: findings,
+      score,
+      wemCount: wems.length,
+      playableWemCount: wems.filter((wem) => /^\d+$/.test(String(wem.id))).length,
+      wems,
+    });
+  }
+
+  results.sort((left, right) => {
+    if (right.score !== left.score) return right.score - left.score;
+    if (right.playableWemCount !== left.playableWemCount) return right.playableWemCount - left.playableWemCount;
+    return String(left.eventName || '').localeCompare(String(right.eventName || ''), undefined, { sensitivity: 'base' });
+  });
+
+  return {
+    ok: true,
+    query,
+    limit,
+    totalMatches: results.length,
+    stats: index.stats || {},
+    results: results.slice(0, limit),
+  };
+}
+
+function cdnWemPreference(row) {
+  const path = String(row?.path || '').toLowerCase();
+  let score = 0;
+  if (path.includes('/windows/base/')) score += 100;
+  else if (path.includes('/windows/')) score += 80;
+  else if (path.includes('/android/')) score += 20;
+  else if (path.includes('/ios/')) score += 10;
+  if (row?.packageDownloaded || row?.fullDownloaded) score += 5;
+  return score;
+}
+
+async function lookupCdnWemFiles(wemId, includeAll = false) {
+  const id = String(wemId || '').trim();
+  if (!/^\d+$/.test(id)) throw new Error('wem id required');
+  const lookupUrl = new URL('http://localhost/api/cdn/resource-browser/browse');
+  lookupUrl.searchParams.set('folder', 'data/Wwiseaudio/GeneratedSoundBanks');
+  lookupUrl.searchParams.set('search', id);
+  lookupUrl.searchParams.set('types', 'Sound/WEM');
+  lookupUrl.searchParams.set('limit', includeAll ? '100' : '50');
+  const data = await buildCdnBrowseResponse(lookupUrl);
+  const exactName = `${id}.wem`.toLowerCase();
+  const exact = (data.files || [])
+    .filter((row) => String(row.name || '').toLowerCase() === exactName || String(row.path || '').toLowerCase().endsWith(`/${exactName}`))
+    .sort((left, right) => {
+      const scoreDelta = cdnWemPreference(right) - cdnWemPreference(left);
+      if (scoreDelta !== 0) return scoreDelta;
+      return String(left.path || '').localeCompare(String(right.path || ''), undefined, { sensitivity: 'base' });
+    });
+  const compact = exact.map(compactCdnWemFile);
+  return {
+    ok: true,
+    wem: id,
+    indexReady: data.indexReady,
+    totalMatches: exact.length,
+    defaultFile: compact[0] || null,
+    files: includeAll ? compact : compact.slice(0, 1),
+    all: includeAll,
+  };
+}
+
+async function resolveWwiseAudioOgg(wemId) {
+  const decoded = decodeWemToOgg(wemId);
+  if (!decoded.error && decoded.oggBuffer) return decoded;
+
+  const cdn = await lookupCdnWemFiles(wemId, false);
+  const candidate = cdn?.defaultFile;
+  if (!candidate?.packageName || !candidate?.path) return decoded;
+
+  const extracted = await extractCdnHpkgMember({
+    packageName: candidate.packageName,
+    packageSize: candidate.packageSize || 0,
+    memberPath: candidate.path,
+    convertToOgg: true,
+    download: true,
+  });
+  const playbackRelative = extracted?.playback?.relativePath || '';
+  const playbackPath = playbackRelative ? safeCdnOutputPath(playbackRelative) : null;
+  if (!playbackPath || !existsSync(playbackPath)) {
+    return { error: 'cdn-audio-not-found', detail: candidate.path };
+  }
+  return { oggPath: playbackPath, oggBuffer: readFileSync(playbackPath), cached: true, source: 'cdn' };
+}
+
+async function resolveWwiseRawWem(wemId) {
+  const id = String(wemId || '').trim();
+  if (!/^\d+$/.test(id)) return { error: 'wem id required' };
+  const localBuffer = getWemBuffer(id);
+  if (localBuffer) return { buffer: Buffer.from(localBuffer), source: 'local-index' };
+
+  const cdn = await lookupCdnWemFiles(id, false);
+  const candidate = cdn?.defaultFile;
+  if (!candidate?.packageName || !candidate?.path) return { error: 'wem-not-found', detail: id };
+  const extracted = await extractCdnHpkgMember({
+    packageName: candidate.packageName,
+    packageSize: candidate.packageSize || 0,
+    memberPath: candidate.path,
+    convertToOgg: false,
+    download: true,
+  });
+  const filePath = extracted?.extractedFile?.path || '';
+  if (!filePath || !existsSync(filePath)) return { error: 'cdn-wem-not-found', detail: candidate.path };
+  return { buffer: readFileSync(filePath), source: 'cdn', detail: candidate.path };
+}
+
+function normalizeAbilitySoundExportRows(payload = {}) {
+  const rows = Array.isArray(payload.rows) ? payload.rows : [];
+  const normalized = [];
+  for (const row of rows.slice(0, 512)) {
+    const name = String(row?.name || row?.abilityName || row?.key || '').trim();
+    const wems = [...new Set((Array.isArray(row?.wems) ? row.wems : [])
+      .map((wem) => String(wem || '').trim())
+      .filter((wem) => /^\d+$/.test(wem)))]
+      .slice(0, 128);
+    if (!name || !wems.length) continue;
+    normalized.push({
+      key: String(row?.key || '').trim(),
+      name,
+      status: String(row?.status || '').trim(),
+      wems,
+    });
+  }
+  if (!normalized.length) throw new Error('No final-report rows with WEM IDs to export.');
+  return {
+    scope: sanitizeName(payload.scope || 'report', 'report'),
+    rows: normalized,
+  };
+}
+
+function packageRelativePath(...parts) {
+  return parts.filter(Boolean).join('/');
+}
+
+async function exportAbilityTaniSoundPackage(payload = {}) {
+  const { scope, rows } = normalizeAbilitySoundExportRows(payload);
+  const generatedAt = new Date().toISOString();
+  const timestamp = generatedAt.replace(/[:.]/g, '-');
+  const packageName = sanitizeName(`tani-sound-${scope}-${timestamp}`, 'tani-sound-package');
+  const outputPath = safePathUnder(ABILITY_SOUND_EXPORT_ROOT, packageName);
+  if (!outputPath) throw new Error('Invalid export package path.');
+  ensureDir(outputPath);
+
+  const counts = { abilities: rows.length, wemIds: 0, rawWems: 0, oggs: 0, missingRawWems: 0, missingOggs: 0 };
+  const usedFolders = new Set();
+  const manifest = { ok: true, generatedAt, packageName, scope, outputPath, counts, abilities: [] };
+
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex];
+    const baseFolder = `${pad3(rowIndex + 1)}-${sanitizeName(row.name, `ability-${rowIndex + 1}`)}`;
+    let folderName = baseFolder;
+    let suffix = 2;
+    while (usedFolders.has(folderName.toLowerCase())) {
+      folderName = `${baseFolder}-${suffix}`;
+      suffix += 1;
+    }
+    usedFolders.add(folderName.toLowerCase());
+
+    const abilityDir = safePathUnder(outputPath, folderName);
+    if (!abilityDir) throw new Error(`Invalid ability folder path: ${folderName}`);
+    const wemDir = join(abilityDir, 'wem');
+    const soundDir = join(abilityDir, 'sound');
+    ensureDir(wemDir);
+    ensureDir(soundDir);
+
+    const ability = { key: row.key, name: row.name, status: row.status, folder: folderName, wems: [] };
+    const uniqueWems = [...new Set(row.wems)];
+    counts.wemIds += uniqueWems.length;
+
+    for (const wemId of uniqueWems) {
+      const wemRecord = { id: wemId, files: {}, source: {}, errors: [] };
+      try {
+        const raw = await resolveWwiseRawWem(wemId);
+        if (raw.error || !raw.buffer) {
+          counts.missingRawWems += 1;
+          wemRecord.errors.push(`raw-wem:${raw.error || 'not-found'}`);
+        } else {
+          const target = join(wemDir, `${wemId}.wem`);
+          writeFileSync(target, raw.buffer);
+          counts.rawWems += 1;
+          wemRecord.files.wem = packageRelativePath(folderName, 'wem', `${wemId}.wem`);
+          wemRecord.source.wem = raw.source || 'unknown';
+        }
+      } catch (err) {
+        counts.missingRawWems += 1;
+        wemRecord.errors.push(`raw-wem:${err?.message || String(err)}`);
+      }
+
+      try {
+        const ogg = await resolveWwiseAudioOgg(wemId);
+        if (ogg.error || !ogg.oggBuffer) {
+          counts.missingOggs += 1;
+          wemRecord.errors.push(`ogg:${ogg.error || 'not-found'}`);
+        } else {
+          const target = join(soundDir, `${wemId}.ogg`);
+          writeFileSync(target, ogg.oggBuffer);
+          counts.oggs += 1;
+          wemRecord.files.ogg = packageRelativePath(folderName, 'sound', `${wemId}.ogg`);
+          wemRecord.source.ogg = ogg.source || (ogg.cached ? 'local-cache' : 'local-decode');
+        }
+      } catch (err) {
+        counts.missingOggs += 1;
+        wemRecord.errors.push(`ogg:${err?.message || String(err)}`);
+      }
+      ability.wems.push(wemRecord);
+    }
+
+    writeFileSync(join(abilityDir, 'manifest.json'), JSON.stringify(ability, null, 2));
+    manifest.abilities.push(ability);
+  }
+
+  writeFileSync(join(outputPath, 'manifest.json'), JSON.stringify(manifest, null, 2));
+  writeFileSync(join(outputPath, 'README.txt'), [
+    'JX3 TANI-SOUND final report export',
+    `Generated: ${generatedAt}`,
+    `Scope: ${scope}`,
+    '',
+    'Each ability folder contains:',
+    '- manifest.json: ability metadata and exported file list',
+    '- wem/*.wem: raw Wwise WEM files when available',
+    '- sound/*.ogg: decoded playable audio when available',
+    '',
+    `Abilities: ${counts.abilities}`,
+    `WEM IDs: ${counts.wemIds}`,
+    `Raw WEM files: ${counts.rawWems}`,
+    `OGG files: ${counts.oggs}`,
+  ].join('\r\n'));
+
+  return { ok: true, outputPath, packageName, manifestPath: join(outputPath, 'manifest.json'), counts };
+}
+
+let clientMonitorBridgeChild = null;
+let clientMonitorBridgeJob = null;
+const clientMonitorStdoutTail = [];
+const clientMonitorStderrTail = [];
+const CLIENT_MONITOR_STATUS_CACHE_MS = 1000;
+let clientMonitorStatusCache = null;
+let clientMonitorCapturePausedAt = '';
+let clientMonitorCaptureResumeAt = '';
+let clientMonitorPausedCaptureSnapshot = null;
+
+function pushClientMonitorTail(target, chunk) {
+  const lines = String(chunk || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  target.push(...lines);
+  while (target.length > 80) target.shift();
+}
+
+function isPidAlive(pid) {
+  if (!pid) return false;
+  try {
+    process.kill(Number(pid), 0);
+    return true;
+  } catch (error) {
+    return error?.code === 'EPERM';
+  }
+}
+
+function runClientMonitorPowerShell(command, timeout = 5000) {
+  if (process.platform !== 'win32') return '';
+  try {
+    return execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command], {
+      encoding: 'utf8',
+      timeout,
+      windowsHide: true,
+    }).trim();
+  } catch {
+    return '';
+  }
+}
+
+function parsePowerShellJsonArray(output) {
+  if (!output) return [];
+  try {
+    const parsed = JSON.parse(output);
+    return Array.isArray(parsed) ? parsed : parsed ? [parsed] : [];
+  } catch {
+    return [];
+  }
+}
+
+function getClientMonitorProcesses() {
+  const names = CLIENT_MONITOR_PROCESS_NAMES.map((name) => `'${name.replace(/'/g, "''")}'`).join(',');
+  const command = `$names=@(${names}); Get-CimInstance Win32_Process | Where-Object { $names -contains $_.Name } | Select-Object ProcessId,Name,ExecutablePath,CommandLine | ConvertTo-Json -Compress`;
+  return parsePowerShellJsonArray(runClientMonitorPowerShell(command)).map((proc) => ({
+    pid: Number(proc.ProcessId || 0),
+    name: String(proc.Name || ''),
+    path: String(proc.ExecutablePath || ''),
+    commandLine: String(proc.CommandLine || ''),
+  })).filter((proc) => proc.pid && proc.name);
+}
+
+function getClientMonitorExternalBridge() {
+  const command = "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*frida-attach.mjs*' -and $_.CommandLine -like '*frida-audio-agent.js*' } | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress";
+  const rows = parsePowerShellJsonArray(runClientMonitorPowerShell(command));
+  const row = rows.find((item) => Number(item.ProcessId || 0));
+  if (!row) return null;
+  return {
+    running: true,
+    pid: Number(row.ProcessId),
+    managed: false,
+    commandLine: String(row.CommandLine || ''),
+  };
+}
+
+function getClientMonitorBridge() {
+  if (clientMonitorBridgeChild?.pid && isPidAlive(clientMonitorBridgeChild.pid)) {
+    return {
+      running: true,
+      pid: clientMonitorBridgeChild.pid,
+      managed: true,
+      startedAt: clientMonitorBridgeJob?.startedAt || '',
+      commandLine: clientMonitorBridgeJob?.commandLine || '',
+    };
+  }
+  if (clientMonitorBridgeChild && !isPidAlive(clientMonitorBridgeChild.pid)) clientMonitorBridgeChild = null;
+  const external = getClientMonitorExternalBridge();
+  if (external) return external;
+  return {
+    running: false,
+    pid: 0,
+    managed: false,
+    lastExit: clientMonitorBridgeJob?.lastExit || null,
+  };
+}
+
+function getClientMonitorFridaStatus() {
+  const packagePath = join(__dirname, 'node_modules', 'frida');
+  return {
+    available: existsSync(packagePath),
+    packagePath: existsSync(packagePath) ? packagePath : '',
+    agentPath: CLIENT_MONITOR_AGENT_PATH,
+    agentExists: existsSync(CLIENT_MONITOR_AGENT_PATH),
+    attachPath: CLIENT_MONITOR_ATTACH_PATH,
+    attachExists: existsSync(CLIENT_MONITOR_ATTACH_PATH),
+  };
+}
+
+function listClientMonitorLogFiles() {
+  const logDir = join(__dirname, 'log');
+  if (!existsSync(logDir)) return [];
+  return readdirSync(logDir)
+    .filter((name) => /^frida-audio.*\.jsonl$/i.test(name))
+    .map((name) => join(logDir, name))
+    .filter((filePath) => existsSync(filePath))
+    .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
+}
+
+function getClientMonitorTimestamp(record) {
+  return Number(record?.t || record?.ts || record?.time || 0) || 0;
+}
+
+function readClientMonitorRecords(limit = 600) {
+  const files = listClientMonitorLogFiles();
+  const records = [];
+  for (const filePath of files) {
+    const lines = readTailLines(filePath, Math.max(limit, 1200));
+    for (const line of lines) {
+      try {
+        const parsed = JSON.parse(line);
+        records.push({ ...parsed, logFile: basename(filePath), logPath: filePath });
+      } catch { /* skip malformed log lines */ }
+    }
+  }
+  return records
+    .sort((a, b) => getClientMonitorTimestamp(a) - getClientMonitorTimestamp(b))
+    .slice(-limit);
+}
+
+function uniqNumbers(values) {
+  return [...new Set((values || []).map((value) => Number(value)).filter((value) => Number.isFinite(value) && value > 0))];
+}
+
+function resolveClientMonitorWwise(record) {
+  const queries = [];
+  if (record.eventName) queries.push(String(record.eventName));
+  if (record.eventId != null) queries.push(String(record.eventId));
+  let resolved = null;
+  for (const query of queries) {
+    const candidate = resolveWwiseEvent(query);
+    if (!candidate?.error && candidate?.event) {
+      resolved = candidate;
+      break;
+    }
+  }
+  if (!resolved) return null;
+  const index = getWwiseIndex();
+  const wemIds = uniqNumbers([...(resolved.wems?.streamed || []), ...(resolved.wems?.inMemory || [])]);
+  return {
+    event: resolved.event,
+    eventId: Number(resolved.id || record.eventId || 0) || null,
+    match: resolved.match || '',
+    banks: Array.isArray(resolved.banks) ? resolved.banks : [],
+    wems: wemIds.map((wemId) => {
+      const wemInfo = index?.wems?.[String(wemId)] || index?.wems?.[wemId] || {};
+      return {
+        id: String(wemId),
+        name: String(wemInfo.name || ''),
+        bank: String(wemInfo.bank || ''),
+        streamed: !!wemInfo.streamed,
+        file: String(wemInfo.file || ''),
+        size: Number(wemInfo.size || 0) || null,
+        playbackUrl: `/api/ability-matcher/wwise-audio?wem=${encodeURIComponent(String(wemId))}`,
+      };
+    }),
+  };
+}
+
+function compactClientMonitorStack(stack) {
+  return (Array.isArray(stack) ? stack : [])
+    .map((line) => String(line || ''))
+    .filter(Boolean)
+    .slice(0, 12);
+}
+
+const CLIENT_MONITOR_AUDIO_TYPES = new Set([
+  'animtag-audio-callsite',
+  'wwise-post-event',
+  'wwise-set-switch',
+  'wwise-set-state',
+  'wwise-post-trigger',
+  'wwise-set-rtpc',
+  'wwise-action-event',
+  'wwise-stop-playing-id',
+  'fmod-play-sound',
+  'fmod-event-start',
+]);
+
+function clientMonitorControlName(record) {
+  if (record.switchGroupName || record.switchName) return [record.switchGroupName, record.switchName].filter(Boolean).join(' -> ');
+  if (record.stateGroupName || record.stateName) return [record.stateGroupName, record.stateName].filter(Boolean).join(' -> ');
+  if (record.triggerName) return String(record.triggerName);
+  if (record.rtpcName) return String(record.rtpcName);
+  if (record.eventName) return String(record.eventName);
+  if (record.switchGroupId != null || record.switchId != null) return [record.switchGroupId, record.switchId].filter((value) => value != null).join(' -> ');
+  if (record.stateGroupId != null || record.stateId != null) return [record.stateGroupId, record.stateId].filter((value) => value != null).join(' -> ');
+  if (record.triggerId != null) return String(record.triggerId);
+  if (record.rtpcId != null) return String(record.rtpcId);
+  return '';
+}
+
+function clientMonitorProbeString(probe) {
+  if (!probe || typeof probe !== 'object') return '';
+  const direct = [probe.ansi, probe.utf16, ...(probe.asciiStrings || []), ...(probe.utf16Strings || [])]
+    .map((value) => cleanWwiseEventQuery(value))
+    .find(Boolean);
+  if (direct) return direct;
+  for (const pointerProbe of probe.pointers || []) {
+    const nested = clientMonitorProbeString(pointerProbe);
+    if (nested) return nested;
+  }
+  return '';
+}
+
+function clientMonitorEventName(record) {
+  const raw = record.eventName ||
+    record.stackString ||
+    record.stackStringUtf16 ||
+    clientMonitorProbeString(record.localStringProbe) ||
+    clientMonitorProbeString(record.eventArgProbe) ||
+    clientMonitorProbeString(record.extraArgProbe) ||
+    record.soundName ||
+    record.name ||
+    clientMonitorControlName(record) ||
+    '';
+  return String(cleanWwiseEventQuery(raw));
+}
+
+function isClientMonitorMovementName(name) {
+  return /foot|step|land|walk|run|jump|accel|idle|fall/i.test(String(name || ''));
+}
+
+function isClientMonitorSkillName(name) {
+  const value = String(name || '');
+  return !isClientMonitorMovementName(value) && /(^|_)(zhandou|jineng|skill|shifang)(_|$)/i.test(value);
+}
+
+function classifyClientMonitorCapture(capture) {
+  const stackText = (capture.stack || []).join('\n');
+  const resolvedName = capture.wwise?.event || capture.eventName || capture.controlName || '';
+  if ((capture.type === 'wwise-post-event' || capture.type === 'animtag-audio-callsite') && isClientMonitorMovementName(resolvedName)) {
+    return {
+      id: 'movement-noise',
+      label: 'Movement/footstep',
+      tone: 'amber',
+      title: 'Movement Wwise event',
+      detail: 'Resolved Wwise event name looks like locomotion audio, so it is rejected as the ability sound candidate.',
+      path: 'Animation/movement tag -> AK::SoundEngine::PostEvent',
+    };
+  }
+  if (capture.type === 'wwise-post-event' && capture.wwise?.wems?.length && isClientMonitorSkillName(resolvedName)) {
+    return {
+      id: 'ability-skill-event',
+      label: 'Skill event',
+      tone: 'green',
+      title: 'Skill Wwise event',
+      detail: 'The Wwise event name itself matches the combat skill naming family and resolves to playable WEM files, so it is kept even when scene update frames appear in the stack.',
+      path: 'Wwise event name -> WEM',
+    };
+  }
+  if (capture.type === 'animtag-audio-callsite' && capture.wwise?.wems?.length) {
+    return {
+      id: 'ability-callsite-resolved',
+      label: 'Solved lead',
+      tone: 'green',
+      title: 'Pre-Wwise event resolved',
+      detail: 'The KG3D animation-tag callsite exposed the event before it became a hidden Wwise pointer, and it resolved to local WEM files.',
+      path: 'KG3D_AnimationTagX64 callsite -> Wwise event name -> WEM',
+    };
+  }
+  if (capture.type === 'animtag-audio-callsite' && capture.eventName) {
+    return {
+      id: 'ability-callsite-name',
+      label: 'Pre-Wwise name',
+      tone: 'green',
+      title: 'Pre-Wwise event name captured',
+      detail: 'The animation-tag callsite exposed a candidate event name before Wwise received the hidden pointer, but it did not map to local WEM files yet.',
+      path: 'KG3D_AnimationTagX64 callsite -> Wwise event name',
+    };
+  }
+  if (capture.type === 'animtag-audio-callsite') {
+    return {
+      id: 'ability-callsite-probe',
+      label: 'Pre-Wwise probe',
+      tone: 'green',
+      title: 'Pre-Wwise callsite captured',
+      detail: 'The animation-tag callsite fired. Inspect the pointer probes and raw args to decode the hidden Wwise event source.',
+      path: 'KG3D_AnimationTagX64 callsite before Wwise PostEvent',
+    };
+  }
+  if (capture.type === 'wwise-post-event' && /KG3D_CreateAnimationTagSystem/i.test(stackText) && !capture.wwise && !capture.eventName) {
+    return {
+      id: 'cast-candidate-unresolved',
+      label: 'Good lead',
+      tone: 'green',
+      title: 'Candidate sound call, not solved yet',
+      detail: 'This is the useful lead: the client posted Wwise audio from the animation-tag system on an actor object, but the event argument is an internal pointer instead of a Wwise name/id. The playing ID is a runtime handle, not a WEM file.',
+      path: 'KG3D_CreateAnimationTagSystem -> AK::SoundEngine::PostEvent',
+    };
+  }
+  if (capture.type === 'wwise-post-event' && /KG3D_CreateAnimationTagSystem/i.test(stackText)) {
+    return {
+      id: 'ability-animation-tag',
+      label: 'Likely ability',
+      tone: 'green',
+      title: 'Animation tag Wwise event',
+      detail: 'Animation tag system posted this Wwise event; this is the strongest ability-sound signal in the capture.',
+      path: 'KG3D_CreateAnimationTagSystem -> AK::SoundEngine::PostEvent',
+    };
+  }
+  if (/^wwise-(set-switch|set-state|post-trigger|set-rtpc|action-event|stop-playing-id)$/i.test(capture.type)) {
+    return {
+      id: 'wwise-control',
+      label: 'Wwise control',
+      tone: 'amber',
+      title: 'Wwise control call',
+      detail: 'This is not a playable file and is hidden from the main lead list. It is kept only as supporting trace data.',
+      path: 'AK::SoundEngine control API',
+    };
+  }
+  if (/CreateKGUI/i.test(stackText) || String(capture.gameObject || '').toLowerCase() === '0x1') {
+    return {
+      id: 'ui-noise',
+      label: 'UI/system',
+      tone: 'amber',
+      title: 'UI/system Wwise event',
+      detail: 'KGUI/root-object audio was captured near the cast and is likely UI or system feedback, not the ability sound.',
+      path: 'CreateKGUI -> AK::SoundEngine::PostEvent',
+    };
+  }
+  if (/KG3D_CreateMeshFromApexFile|KG3D_Window|RtBVHManager|CreateRLLoader/i.test(stackText)) {
+    return {
+      id: 'scene-mesh',
+      label: 'Scene/mesh',
+      tone: 'amber',
+      title: 'Scene or mesh Wwise event',
+      detail: 'Scene/mesh update audio was captured near the cast; keep it separate from the animation-tag ability path.',
+      path: 'KG3D scene/mesh update -> AK::SoundEngine::PostEvent',
+    };
+  }
+  if (/^fmod/i.test(capture.type)) {
+    return {
+      id: 'fmod',
+      label: 'FMOD',
+      tone: 'amber',
+      title: 'FMOD fallback event',
+      detail: 'FMOD fallback audio was captured.',
+      path: 'FMOD runtime',
+    };
+  }
+  return {
+    id: 'unclassified',
+    label: 'Unclassified',
+    tone: 'amber',
+    title: 'Unclassified audio event',
+    detail: 'Audio call captured, but the stack does not match the known ability, UI, or scene signatures yet.',
+    path: '',
+  };
+}
+
+function buildClientMonitorCapture(record) {
+  const type = String(record.type || '');
+  const eventName = clientMonitorEventName(record);
+  const capture = {
+    type,
+    ts: getClientMonitorTimestamp(record),
+    time: new Date(getClientMonitorTimestamp(record) || Date.now()).toISOString(),
+    logFile: record.logFile || '',
+    api: String(record.api || record.form || ''),
+    eventId: record.eventId != null ? Number(record.eventId) : null,
+    eventName,
+    controlName: clientMonitorControlName(record),
+    control: {
+      switchGroupId: record.switchGroupId != null ? Number(record.switchGroupId) : null,
+      switchGroupName: String(record.switchGroupName || ''),
+      switchId: record.switchId != null ? Number(record.switchId) : null,
+      switchName: String(record.switchName || ''),
+      stateGroupId: record.stateGroupId != null ? Number(record.stateGroupId) : null,
+      stateGroupName: String(record.stateGroupName || ''),
+      stateId: record.stateId != null ? Number(record.stateId) : null,
+      stateName: String(record.stateName || ''),
+      triggerId: record.triggerId != null ? Number(record.triggerId) : null,
+      triggerName: String(record.triggerName || ''),
+      rtpcId: record.rtpcId != null ? Number(record.rtpcId) : null,
+      rtpcName: String(record.rtpcName || ''),
+      valueRaw: String(record.valueRaw || ''),
+      actionType: record.actionType != null ? Number(record.actionType) : null,
+    },
+    gameObject: record.gameObject || record.gameObjectCandidate || '',
+    playingId: record.playingId != null ? Number(record.playingId) : null,
+    result: record.result != null ? Number(record.result) : null,
+    soundName: String(record.soundName || ''),
+    sound: String(record.sound || ''),
+    stack: compactClientMonitorStack(record.stack),
+    raw: record,
+  };
+  if (type === 'wwise-post-event' || type === 'animtag-audio-callsite') capture.wwise = resolveClientMonitorWwise({ ...record, eventName });
+  capture.classification = classifyClientMonitorCapture(capture);
+  capture.storyTitle = capture.wwise?.event || capture.eventName || capture.classification.title || type || 'capture';
+  capture.storyDetail = capture.classification.detail;
+  if (type === 'wwise-post-event' && !capture.wwise) {
+    capture.unresolvedReason = capture.eventName || capture.eventId != null
+      ? 'The Wwise event did not match the local soundbank index.'
+      : 'The client reached Wwise PostEvent, but Wwise received an internal event pointer. We have a runtime playing ID, not a Wwise event name/id or WEM file yet.';
+  }
+  if (type === 'animtag-audio-callsite' && !capture.wwise) {
+    capture.unresolvedReason = capture.eventName
+      ? 'The pre-Wwise event name was captured, but it did not match the local soundbank index.'
+      : 'The pre-Wwise callsite fired, but no event name was visible in the probed local string/pointer fields yet.';
+  }
+  return capture;
+}
+
+function getClientMonitorPrimaryLeadObjects(captures) {
+  const counts = new Map();
+  for (const capture of captures) {
+    if (capture.classification?.id !== 'cast-candidate-unresolved' || !capture.gameObject) continue;
+    counts.set(capture.gameObject, (counts.get(capture.gameObject) || 0) + 1);
+  }
+  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  if (!sorted.length) return [];
+  const maxCount = sorted[0][1];
+  return sorted.filter((entry) => entry[1] === maxCount).map((entry) => entry[0]);
+}
+
+function isClientMonitorLeadCapture(capture, primaryLeadObjects = []) {
+  const classificationId = capture.classification?.id || '';
+  const primaryLeadObjectSet = new Set(primaryLeadObjects);
+  const matchesPrimaryLead = !primaryLeadObjectSet.size || primaryLeadObjectSet.has(capture.gameObject);
+  if (classificationId === 'cast-candidate-unresolved') return matchesPrimaryLead;
+  if (/^ability-callsite/.test(classificationId)) return true;
+  if (classificationId === 'ability-skill-event') return true;
+  if (classificationId === 'ability-animation-tag') return matchesPrimaryLead;
+  if (capture.wwise?.wems?.length && matchesPrimaryLead && !['movement-noise', 'ui-noise', 'scene-mesh'].includes(classificationId)) return true;
+  return false;
+}
+
+function isClientMonitorAbilityClassification(classificationId) {
+  return classificationId === 'ability-animation-tag' || classificationId === 'ability-skill-event' || /^ability-callsite/.test(classificationId || '');
+}
+
+function buildClientMonitorClusters(captures) {
+  const sorted = [...captures].sort((a, b) => a.ts - b.ts);
+  const clusters = [];
+  for (const capture of sorted) {
+    const last = clusters[clusters.length - 1];
+    if (!last || capture.ts - last.endTs > 2200) {
+      clusters.push({ startTs: capture.ts, endTs: capture.ts, captures: [capture] });
+    } else {
+      last.endTs = capture.ts;
+      last.captures.push(capture);
+    }
+  }
+  return clusters.map((cluster, index) => {
+    const likelyAbility = cluster.captures.filter((capture) => isClientMonitorAbilityClassification(capture.classification?.id));
+    const castCandidates = cluster.captures.filter((capture) => capture.classification?.id === 'cast-candidate-unresolved');
+    const movementNoise = cluster.captures.filter((capture) => capture.classification?.id === 'movement-noise');
+    const uiNoise = cluster.captures.filter((capture) => capture.classification?.id === 'ui-noise');
+    const sceneNoise = cluster.captures.filter((capture) => capture.classification?.id === 'scene-mesh');
+    const unresolved = cluster.captures.filter((capture) => capture.unresolvedReason);
+    const playingIds = [...new Set(cluster.captures.map((capture) => capture.playingId).filter((value) => value != null))];
+    const gameObjects = [...new Set(cluster.captures.map((capture) => capture.gameObject).filter(Boolean))];
+    return {
+      id: index + 1,
+      startTs: cluster.startTs,
+      endTs: cluster.endTs,
+      startTime: new Date(cluster.startTs || Date.now()).toISOString(),
+      endTime: new Date(cluster.endTs || Date.now()).toISOString(),
+      durationMs: Math.max(0, cluster.endTs - cluster.startTs),
+      count: cluster.captures.length,
+      likelyAbility: likelyAbility.length,
+      castCandidates: castCandidates.length,
+      movementNoise: movementNoise.length,
+      uiNoise: uiNoise.length,
+      sceneNoise: sceneNoise.length,
+      unresolved: unresolved.length,
+      playingIds,
+      gameObjects,
+      summary: likelyAbility.length || castCandidates.length
+        ? `${likelyAbility.length} resolved candidate(s), ${castCandidates.length} unresolved candidate(s), ${movementNoise.length} movement call(s)`
+        : `${cluster.captures.length} non-ability audio call(s)`,
+    };
+  });
+}
+
+function summarizeClientMonitorFindings(captures) {
+  const sorted = [...captures].sort((a, b) => a.ts - b.ts);
+  const allCastCandidates = sorted.filter((capture) => capture.classification?.id === 'cast-candidate-unresolved');
+  const primaryLeadObjects = getClientMonitorPrimaryLeadObjects(sorted);
+  const primaryLeadObjectSet = new Set(primaryLeadObjects);
+  const isPrimaryLeadObject = (capture) => !primaryLeadObjectSet.size || primaryLeadObjectSet.has(capture.gameObject);
+  const castCandidates = allCastCandidates.filter(isPrimaryLeadObject);
+  const otherCastCandidates = allCastCandidates.filter((capture) => !isPrimaryLeadObject(capture));
+  const callsiteCaptures = sorted.filter((capture) => /^ability-callsite/.test(capture.classification?.id || ''));
+  const callsiteNames = [...new Set(callsiteCaptures.map((capture) => capture.eventName).filter(Boolean))];
+  const allLikelyAbility = sorted.filter((capture) => ['ability-animation-tag', 'ability-skill-event'].includes(capture.classification?.id));
+  const likelyAbility = allLikelyAbility.filter((capture) => capture.classification?.id === 'ability-skill-event' || isPrimaryLeadObject(capture));
+  const movementNoise = sorted.filter((capture) => capture.classification?.id === 'movement-noise');
+  const uiNoise = sorted.filter((capture) => capture.classification?.id === 'ui-noise');
+  const sceneNoise = sorted.filter((capture) => capture.classification?.id === 'scene-mesh');
+  const wwiseControls = sorted.filter((capture) => capture.classification?.id === 'wwise-control');
+  const resolved = sorted.filter((capture) => Array.isArray(capture.wwise?.wems) && capture.wwise.wems.length);
+  const nonNoiseResolved = resolved.filter((capture) => !['movement-noise', 'ui-noise', 'scene-mesh'].includes(capture.classification?.id));
+  const targetResolved = nonNoiseResolved.filter((capture) => isPrimaryLeadObject(capture) || isClientMonitorAbilityClassification(capture.classification?.id));
+  const otherResolved = nonNoiseResolved.filter((capture) => !isPrimaryLeadObject(capture) && !isClientMonitorAbilityClassification(capture.classification?.id));
+  const resolvedMovement = resolved.filter((capture) => capture.classification?.id === 'movement-noise');
+  const unresolvedPostEvents = sorted.filter((capture) => capture.type === 'wwise-post-event' && !capture.wwise);
+  const clusters = buildClientMonitorClusters(sorted);
+  const candidateCaptures = [...likelyAbility, ...callsiteCaptures, ...castCandidates];
+  const abilityObjects = [...new Set(candidateCaptures.map((capture) => capture.gameObject).filter(Boolean))];
+  const abilityPlayingIds = candidateCaptures.map((capture) => capture.playingId).filter((value) => value != null);
+  const resolvedEventMap = new Map();
+  for (const capture of targetResolved) {
+    const key = String(capture.wwise?.eventId || capture.wwise?.event || capture.playingId || 'event');
+    if (!resolvedEventMap.has(key)) {
+      resolvedEventMap.set(key, {
+        event: String(capture.wwise?.event || ''),
+        eventId: capture.wwise?.eventId || null,
+        match: String(capture.wwise?.match || ''),
+        count: 0,
+        wems: [],
+        wemIds: new Set(),
+      });
+    }
+    const entry = resolvedEventMap.get(key);
+    entry.count += 1;
+    for (const wem of capture.wwise?.wems || []) {
+      const wemId = String(wem.id || '');
+      if (!wemId || entry.wemIds.has(wemId)) continue;
+      entry.wemIds.add(wemId);
+      entry.wems.push({
+        id: wemId,
+        name: String(wem.name || ''),
+        bank: String(wem.bank || ''),
+        file: String(wem.file || ''),
+        playbackUrl: wem.playbackUrl || '',
+      });
+    }
+  }
+  const resolvedEvents = [...resolvedEventMap.values()].map((entry) => ({
+    event: entry.event,
+    eventId: entry.eventId,
+    match: entry.match,
+    count: entry.count,
+    wems: entry.wems,
+  }));
+  const rejectedMovementEvents = [...new Set(resolvedMovement.map((capture) => capture.wwise?.event || capture.eventName).filter(Boolean))];
+  const unrelatedResolvedEvents = [...new Set(otherResolved.map((capture) => capture.wwise?.event || capture.eventName).filter(Boolean))];
+  const resolvedWemIds = [...new Set(resolvedEvents.flatMap((event) => event.wems.map((wem) => wem.id)))];
+  const bullets = [];
+  if (likelyAbility.length) {
+    bullets.push(`Resolved non-movement animation-tag candidate(s): ${likelyAbility.length}${abilityObjects.length ? ` on ${abilityObjects.join(', ')}` : ''}.`);
+  }
+  if (callsiteCaptures.length) {
+    bullets.push(`Pre-Wwise callsite capture(s): ${callsiteCaptures.length}${callsiteNames.length ? `, including ${callsiteNames.slice(0, 3).join(', ')}` : ''}.`);
+  }
+  if (castCandidates.length) {
+    bullets.push(`Good lead: ${castCandidates.length} blank ANSI PostEvent call(s) from KG3D_CreateAnimationTagSystem${primaryLeadObjects.length ? ` on ${primaryLeadObjects.join(', ')}` : ''}; this is the target to decode next.`);
+  }
+  if (otherCastCandidates.length) {
+    bullets.push(`Hidden secondary unresolved candidates: ${otherCastCandidates.length} call(s) from other object(s).`);
+  }
+  if (movementNoise.length) {
+    bullets.push(`Rejected movement/footstep audio: ${movementNoise.length} call(s)${rejectedMovementEvents.length ? `, including ${rejectedMovementEvents.slice(0, 3).join(', ')}` : ''}.`);
+  }
+  if (uiNoise.length || sceneNoise.length) {
+    bullets.push(`Filtered nearby noise: ${uiNoise.length} UI/system call(s), ${sceneNoise.length} scene/mesh call(s).`);
+  }
+  if (wwiseControls.length) {
+    bullets.push(`Hidden low-signal controls: ${wwiseControls.length} Wwise control/stop call(s). They are trace context, not playable sound files.`);
+  }
+  if (otherResolved.length) {
+    bullets.push(`Hidden unrelated resolved events: ${otherResolved.length} call(s) from other object(s)${unrelatedResolvedEvents.length ? `, including ${unrelatedResolvedEvents.slice(0, 3).join(', ')}` : ''}.`);
+  }
+  if (targetResolved.length) {
+    if (resolvedEvents.length) {
+      bullets.push(`Resolved event: ${resolvedEvents.map((event) => `${event.event || 'unknown'}${event.eventId ? ` (${event.eventId})` : ''}`).join(', ')}.`);
+    }
+    if (resolvedWemIds.length) {
+      bullets.push(`WEM IDs: ${resolvedWemIds.slice(0, 12).join(', ')}${resolvedWemIds.length > 12 ? '...' : ''}.`);
+    }
+    bullets.push(`Resolved candidate sound files: ${targetResolved.reduce((sum, capture) => sum + (capture.wwise?.wems?.length || 0), 0)} WEM reference(s).`);
+  } else if (unresolvedPostEvents.length) {
+    bullets.push('No non-movement WEM resolved yet: PostEvent was reached, but the strongest candidate still has blank eventName/eventId.');
+  }
+  const headline = !captures.length
+    ? 'No sound calls captured yet'
+    : targetResolved.length
+      ? 'Captured and resolved non-movement Wwise sound files'
+      : callsiteNames.length
+        ? 'Captured pre-Wwise event name; WEM still unresolved'
+      : castCandidates.length && movementNoise.length
+        ? 'Footsteps rejected; cast candidate still unresolved'
+      : movementNoise.length && !likelyAbility.length
+        ? 'Only movement/footstep audio resolved so far'
+      : likelyAbility.length || castCandidates.length
+        ? 'Captured the ability sound path; WEM still hidden'
+        : 'Captured sound calls, no ability path yet';
+  const verdict = !captures.length
+    ? 'Start the bridge, wait for CAST NOW, then cast the ability.'
+    : targetResolved.length
+      ? 'A non-movement animation-tag sound resolved; inspect the WEMs and compare against the cast.'
+      : callsiteNames.length
+        ? 'The hidden PostEvent pointer has been traced back to a pre-Wwise event name, but that name is not in the local Wwise index yet.'
+      : castCandidates.length
+        ? 'The resolved landing/run event is movement noise. The unresolved blank ANSI animation-tag calls are the better lead.'
+      : likelyAbility.length
+        ? 'The useful signal is animation tag -> Wwise PostEvent. Static Lua/name search is not where this sound is exposed.'
+      : 'The current captures look like UI/system or scene audio; cast again with less surrounding activity.';
+  return {
+    headline,
+    verdict,
+    primaryPath: likelyAbility.length || callsiteCaptures.length || castCandidates.length ? 'KG3D_CreateAnimationTagSystem -> AK::SoundEngine::PostEvent' : '',
+    unresolved: !!unresolvedPostEvents.length && !targetResolved.length,
+    counts: {
+      total: captures.length,
+      likelyAbility: likelyAbility.length,
+      castCandidates: castCandidates.length,
+      movementNoise: movementNoise.length,
+      uiNoise: uiNoise.length,
+      sceneNoise: sceneNoise.length,
+      wwiseControls: wwiseControls.length,
+      callsiteCaptures: callsiteCaptures.length,
+      resolved: targetResolved.length,
+      otherResolved: otherResolved.length,
+      otherCastCandidates: otherCastCandidates.length,
+      resolvedMovement: resolvedMovement.length,
+      unresolvedPostEvents: unresolvedPostEvents.length,
+    },
+    abilityPlayingIds,
+    abilityObjects,
+    callsiteNames,
+    primaryLeadObjects,
+    resolvedEvents,
+    unrelatedResolvedEvents,
+    rejectedMovementEvents,
+    bullets,
+    clusters: clusters.slice(-8).reverse(),
+  };
+}
+
+function readClientMonitorSnapshot(activeSince = '', pausedAt = '') {
+  const records = readClientMonitorRecords(5000);
+  const activeSinceMs = Date.parse(activeSince || '') || 0;
+  const pausedAtMs = Date.parse(pausedAt || '') || 0;
+  const visibleRecords = pausedAtMs
+    ? records.filter((record) => getClientMonitorTimestamp(record) <= pausedAtMs + 1000)
+    : records;
+  const freshRecords = activeSinceMs
+    ? visibleRecords.filter((record) => getClientMonitorTimestamp(record) >= activeSinceMs - 1000)
+    : visibleRecords;
+  const hooks = freshRecords.filter((record) => record.type === 'hooked').slice(-80);
+  const allCaptures = visibleRecords
+    .filter((record) => CLIENT_MONITOR_AUDIO_TYPES.has(record.type))
+    .map(buildClientMonitorCapture);
+  const freshCaptures = freshRecords
+    .filter((record) => CLIENT_MONITOR_AUDIO_TYPES.has(record.type))
+    .map(buildClientMonitorCapture);
+  const primaryLeadObjects = getClientMonitorPrimaryLeadObjects(allCaptures);
+  const captures = allCaptures.filter((capture) => isClientMonitorLeadCapture(capture, primaryLeadObjects)).slice(-200).reverse();
+  const allRecentCaptures = allCaptures.slice(-400).reverse();
+  const errors = freshRecords.filter((record) => record.type === 'agent-error' || record.type === 'error').slice(-30).reverse();
+  const wwiseHooksReady = hooks.some((hook) => /wwise-post-event/i.test(String(hook.label || ''))) || freshCaptures.some((capture) => capture.type === 'wwise-post-event');
+  const fmodHooksReady = hooks.some((hook) => /^fmod/i.test(String(hook.label || '')) || /fmod/i.test(String(hook.module || ''))) || freshCaptures.some((capture) => /^fmod/i.test(capture.type));
+  const agentReady = freshRecords.some((record) => record.type === 'audio-agent-ready');
+  return {
+    records: visibleRecords.length,
+    totalRecords: records.length,
+    freshRecords: freshRecords.length,
+    activeSince: activeSince || '',
+    paused: !!pausedAtMs,
+    pausedAt: pausedAt || '',
+    agentReady,
+    hooks,
+    errors,
+    captures,
+    allCaptures: allRecentCaptures,
+    hiddenCaptures: Math.max(0, allCaptures.length - captures.length),
+    story: summarizeClientMonitorFindings(allCaptures),
+    wwiseHooksReady,
+    fmodHooksReady,
+    hooksReady: wwiseHooksReady || fmodHooksReady,
+    logFiles: listClientMonitorLogFiles().map((filePath) => {
+      const stats = statSync(filePath);
+      return { name: basename(filePath), path: filePath, size: stats.size, mtimeMs: stats.mtimeMs };
+    }),
+  };
+}
+
+function resolveClientMonitorCaptureActiveSince(bridgeStartedAt = '') {
+  const bridgeStartedMs = Date.parse(bridgeStartedAt || '') || 0;
+  const resumeMs = Date.parse(clientMonitorCaptureResumeAt || '') || 0;
+  const activeSinceMs = Math.max(bridgeStartedMs, resumeMs);
+  return activeSinceMs ? new Date(activeSinceMs).toISOString() : '';
+}
+
+function captureClientMonitorSnapshot(bridge, pausedAt = '') {
+  const captureActiveSince = bridge.running && bridge.managed ? resolveClientMonitorCaptureActiveSince(bridge.startedAt) : '';
+  return readClientMonitorSnapshot(captureActiveSince, pausedAt);
+}
+
+function buildClientMonitorStatus() {
+  const frida = getClientMonitorFridaStatus();
+  const clientProcesses = getClientMonitorProcesses();
+  const bridge = getClientMonitorBridge();
+  const capture = clientMonitorCapturePausedAt && clientMonitorPausedCaptureSnapshot
+    ? { ...clientMonitorPausedCaptureSnapshot, paused: true, pausedAt: clientMonitorCapturePausedAt }
+    : captureClientMonitorSnapshot(bridge, clientMonitorCapturePausedAt);
+  const bridgeAgeMs = bridge.running && bridge.startedAt ? Date.now() - (Date.parse(bridge.startedAt) || Date.now()) : 0;
+  const bridgeAttachStuck = !!(bridge.running && bridge.managed && !capture.agentReady && !capture.hooksReady && bridgeAgeMs > 15000);
+  const readyToCast = !!(clientProcesses.length && bridge.running && capture.hooksReady && !bridgeAttachStuck);
+  const castInstruction = !frida.available || !frida.agentExists || !frida.attachExists
+    ? 'Bridge files are missing'
+    : !clientProcesses.length
+      ? 'Waiting for JX3 client'
+      : !bridge.running
+        ? 'Start bridge'
+        : bridgeAttachStuck
+          ? 'Bridge attach stuck; restart JX3 client'
+        : !capture.hooksReady
+          ? 'Waiting for audio hooks'
+          : 'CAST NOW';
+  return {
+    ok: true,
+    now: new Date().toISOString(),
+    targetProcessNames: CLIENT_MONITOR_PROCESS_NAMES,
+    frida,
+    clientProcesses,
+    bridge: {
+      ...bridge,
+      ageMs: bridgeAgeMs,
+      attachStuck: bridgeAttachStuck,
+      stdoutTail: clientMonitorStdoutTail.slice(-20),
+      stderrTail: clientMonitorStderrTail.slice(-20),
+    },
+    checks: [
+      { id: 'server', label: 'Server bridge', status: 'ok', detail: `HTTP API on ${PORT}` },
+      { id: 'frida', label: 'Frida package', status: frida.available ? 'ok' : 'fail', detail: frida.available ? 'available' : 'missing npm package' },
+      { id: 'client', label: 'Client ready', status: clientProcesses.length ? 'ok' : 'wait', detail: clientProcesses.length ? clientProcesses.map((proc) => `${proc.name} ${proc.pid}`).join(', ') : CLIENT_MONITOR_PROCESS_NAMES.join(', ') },
+      { id: 'bridge', label: 'Audio bridge', status: bridge.running ? 'ok' : 'wait', detail: bridge.running ? `pid ${bridge.pid}` : 'not running' },
+      { id: 'hooks', label: 'Hooks armed', status: capture.hooksReady ? 'ok' : bridgeAttachStuck ? 'fail' : bridge.running ? 'wait' : 'idle', detail: capture.hooksReady ? 'Wwise/FMOD hooks active for current bridge' : bridgeAttachStuck ? 'Frida attach did not finish; restart JX3 client and start bridge again' : bridge.running ? 'waiting for current bridge hook log' : 'no hook log yet' },
+      { id: 'capture', label: 'Sound captured', status: capture.captures.length ? 'ok' : 'wait', detail: capture.captures.length ? `${capture.captures.length} event(s)` : 'no sound events yet' },
+    ],
+    readyToCast,
+    castInstruction,
+    capture,
+  };
+}
+
+function getClientMonitorStatus(forceRefresh = false) {
+  const now = Date.now();
+  if (!forceRefresh && clientMonitorStatusCache && now - clientMonitorStatusCache.ts < CLIENT_MONITOR_STATUS_CACHE_MS) {
+    return clientMonitorStatusCache.status;
+  }
+  const status = buildClientMonitorStatus();
+  clientMonitorStatusCache = { ts: now, status };
+  return status;
+}
+
+function startClientMonitorBridge() {
+  const running = getClientMonitorBridge();
+  if (running.running) return { ok: true, note: 'Audio bridge is already running.', status: getClientMonitorStatus(true) };
+  const frida = getClientMonitorFridaStatus();
+  if (!frida.available || !frida.agentExists || !frida.attachExists) {
+    return { ok: false, error: 'Frida bridge files are not ready.', status: getClientMonitorStatus(true) };
+  }
+  const clients = getClientMonitorProcesses();
+  if (!clients.length) return { ok: false, error: 'JX3 client process not found.', status: getClientMonitorStatus(true) };
+  ensureDir(dirname(CLIENT_MONITOR_LOG_PATH));
+  const target = clients[0];
+  const processName = target.name || CLIENT_MONITOR_PROCESS_NAMES[0];
+  const args = ['tools/frida-attach.mjs', '--pid', String(target.pid), '--agent', 'tools/frida-audio-agent.js', '--log', 'log/frida-audio-client-monitor.jsonl'];
+  const child = spawn(process.execPath, args, { cwd: __dirname, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  clientMonitorBridgeChild = child;
+  clientMonitorCapturePausedAt = '';
+  clientMonitorPausedCaptureSnapshot = null;
+  clientMonitorBridgeJob = {
+    pid: child.pid,
+    targetPid: target.pid,
+    processName,
+    startedAt: new Date().toISOString(),
+    commandLine: `${process.execPath} ${args.join(' ')}`,
+    lastExit: null,
+  };
+  clientMonitorCaptureResumeAt = clientMonitorBridgeJob.startedAt;
+  child.stdout.on('data', (chunk) => pushClientMonitorTail(clientMonitorStdoutTail, chunk));
+  child.stderr.on('data', (chunk) => pushClientMonitorTail(clientMonitorStderrTail, chunk));
+  child.on('exit', (code, signal) => {
+    const lastExit = { code, signal, at: new Date().toISOString() };
+    pushClientMonitorTail(clientMonitorStderrTail, `bridge exited code=${code} signal=${signal || ''}`);
+    if (clientMonitorBridgeJob) clientMonitorBridgeJob.lastExit = lastExit;
+    if (clientMonitorBridgeChild === child) clientMonitorBridgeChild = null;
+  });
+  return { ok: true, started: clientMonitorBridgeJob, status: getClientMonitorStatus(true) };
+}
+
+function stopClientMonitorBridge() {
+  const child = clientMonitorBridgeChild;
+  if (child?.pid && isPidAlive(child.pid)) {
+    try { child.kill('SIGTERM'); } catch { /* ignore */ }
+    clientMonitorCapturePausedAt = '';
+    clientMonitorCaptureResumeAt = '';
+    clientMonitorPausedCaptureSnapshot = null;
+    return { ok: true, stopped: child.pid, status: getClientMonitorStatus(true) };
+  }
+  clientMonitorCapturePausedAt = '';
+  clientMonitorCaptureResumeAt = '';
+  clientMonitorPausedCaptureSnapshot = null;
+  return { ok: true, note: 'No managed audio bridge is running.', status: getClientMonitorStatus(true) };
+}
+
+function clearClientMonitorLog() {
+  ensureDir(dirname(CLIENT_MONITOR_LOG_PATH));
+  writeFileSync(CLIENT_MONITOR_LOG_PATH, '');
+  if (clientMonitorCapturePausedAt) {
+    clientMonitorPausedCaptureSnapshot = captureClientMonitorSnapshot(getClientMonitorBridge(), clientMonitorCapturePausedAt);
+  }
+  return { ok: true, cleared: CLIENT_MONITOR_LOG_PATH, status: getClientMonitorStatus(true) };
+}
+
+function pauseClientMonitorCapture() {
+  if (clientMonitorCapturePausedAt) return { ok: true, note: 'Capture is already paused.', status: getClientMonitorStatus(true) };
+  clientMonitorCapturePausedAt = new Date().toISOString();
+  clientMonitorPausedCaptureSnapshot = captureClientMonitorSnapshot(getClientMonitorBridge(), clientMonitorCapturePausedAt);
+  return { ok: true, pausedAt: clientMonitorCapturePausedAt, status: getClientMonitorStatus(true) };
+}
+
+function resumeClientMonitorCapture() {
+  clientMonitorCapturePausedAt = '';
+  clientMonitorCaptureResumeAt = new Date().toISOString();
+  clientMonitorPausedCaptureSnapshot = null;
+  return { ok: true, resumedAt: clientMonitorCaptureResumeAt, status: getClientMonitorStatus(true) };
+}
+
+let cdnBrowseResponseCache = new Map();
+let cdnMirrorJob = null;
+
+function findCdnMirrorProcess() {
+  if (cdnMirrorJob?.pid) {
+    try { process.kill(cdnMirrorJob.pid, 0); return cdnMirrorJob; } catch { cdnMirrorJob = null; }
+  }
+  if (process.platform !== 'win32') return null;
+  try {
+    const command = "$p=Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*mirror-online-hpkg.mjs*' } | Select-Object -First 1 ProcessId,CommandLine; if ($p) { $p | ConvertTo-Json -Compress }";
+    const out = execFileSync('powershell.exe', ['-NoProfile', '-Command', command], { encoding: 'utf8', timeout: 3000, windowsHide: true }).trim();
+    if (!out) return null;
+    const parsed = JSON.parse(out);
+    return { pid: parsed.ProcessId, commandLine: parsed.CommandLine, external: true };
+  } catch {
+    return null;
+  }
+}
+
+async function buildCdnResourceStatusResponse() {
+  let summary = readJsonUtf8Loose(CDN_RESOURCE_SUMMARY_PATH, null);
+  const indexStat = existsSync(CDN_RESOURCE_INDEX_PATH) ? statSync(CDN_RESOURCE_INDEX_PATH) : null;
+  const status = readCdnStatusSnapshot();
+  const downloaded = Number(status.counts.fullDownloaded || status.counts.ok || 0);
+  let total = Number(summary?.totalFiltered || summary?.totalOnlinePackages || summary?.total || 0);
+
+  if (!total) {
+    try {
+      const livePackages = await loadCdnPackageList(false, 30_000);
+      total = Number(livePackages.items.length || 0);
+    } catch {
+      total = 0;
+    }
+  }
+
+  summary = {
+    ...(summary && typeof summary === 'object' ? summary : {}),
+    ok: Number(summary?.ok || downloaded || 0),
+    failed: Number(summary?.failed || status.counts.failed || 0),
+    totalOnlinePackages: Number(summary?.totalOnlinePackages || total || 0),
+    totalFiltered: Number(summary?.totalFiltered || total || 0),
+    total: Number(summary?.total || total || 0),
+    downloadedBytes: Number(summary?.downloadedBytes || 0),
+  };
+
+  return {
+    ok: true,
+    summary,
+    indexFile: indexStat ? { path: CDN_RESOURCE_INDEX_PATH, size: indexStat.size, mtimeMs: indexStat.mtimeMs } : null,
+    statusFile: statusStat ? { path: CDN_PACKAGE_STATUS_PATH, size: statusStat.size, mtimeMs: statusStat.mtimeMs } : null,
+    downloadDir: CDN_DOWNLOAD_DIR,
+    packageCounts: status.counts,
+    progress: {
+      downloaded,
+      total,
+      remaining: Math.max(0, total - downloaded),
+    },
+    mirrorJob: findCdnMirrorProcess(),
+    resourceTypeGroups: CDN_RESOURCE_TYPE_GROUPS,
+    stdoutTail: readTailLines(CDN_PACKAGE_STATUS_PATH, 6).map((line) => {
+      try {
+        const row = JSON.parse(line);
+        const stamp = formatCdnTailTime(row.updatedAt);
+        const prefix = stamp ? `${stamp} ` : '';
+        return row.ok
+          ? `${prefix}ok ${row.packageName}.hpkg records=${row.records || 0}${row.fullDownloaded ? ' downloaded' : ' listed'}`
+          : `${prefix}fail ${row.packageName}.hpkg ${row.error || ''}`;
+      } catch { return line; }
+    }),
+    stderrTail: [],
+  };
+}
+
+function startCdnMirrorProcess(payload = {}) {
+  const mode = String(payload.mode || 'download').toLowerCase();
+  const running = findCdnMirrorProcess();
+  if (running) return { ok: true, note: 'Mirror downloader is already running; resume is active.', mirrorJob: running };
+  const download = mode === 'download' || mode === 'resume';
+  const concurrency = Math.min(16, Math.max(1, Number(payload.concurrency || (download ? 4 : 8)) || 4));
+  ensureDir(CDN_RESOURCE_BROWSER_DIR);
+  ensureDir(CDN_DOWNLOAD_DIR);
+  const args = ['tools/mirror-online-hpkg.mjs', download ? '--download' : '--preview-only', '--concurrency', String(concurrency)];
+  const child = spawn(process.execPath, args, { cwd: __dirname, detached: true, stdio: 'ignore', windowsHide: true });
+  child.unref();
+  cdnMirrorJob = { pid: child.pid, mode: download ? 'download' : 'preview', concurrency, startedAt: new Date().toISOString(), commandLine: `${process.execPath} ${args.join(' ')}` };
+  return { ok: true, note: download ? 'Mirror download resumed.' : 'Mirror index preview started.', started: cdnMirrorJob };
+}
+
+let cdnLzhamUncompress = null;
+function getCdnLzhamUncompress() {
+  if (cdnLzhamUncompress) return cdnLzhamUncompress;
+  const library = koffi.load(JX3_LZHAM_DLL_PATH);
+  cdnLzhamUncompress = library.func('int lzham_z_uncompress(_Out_ uint8_t *dest, _Inout_ uint32_t *destLen, const uint8_t *src, uint32_t srcLen)');
+  return cdnLzhamUncompress;
+}
+
+function decodeCdnHpkgIndex(hpkg) {
+  if (!Buffer.isBuffer(hpkg) || hpkg.length < 64) throw new Error('HPKG file is too small');
+  const magic = hpkg.readUInt32LE(0);
+  const version = hpkg.readUInt32LE(4);
+  const count = hpkg.readUInt32LE(0x10);
+  const indexSize = hpkg.readUInt32LE(0x20);
+  const packedIndexSize = hpkg.readUInt32LE(0x28);
+  const payloadSize = hpkg.readUInt32LE(0x30);
+  if (magic !== 0x9585 || version !== 102) throw new Error(`Unexpected HPKG header: magic=0x${magic.toString(16)} version=${version}`);
+  if (!count || indexSize % count !== 0) throw new Error(`Invalid HPKG index sizing: count=${count} indexSize=${indexSize}`);
+  const packedStart = 64;
+  const payloadStart = packedStart + packedIndexSize;
+  if (payloadStart + payloadSize > hpkg.length) throw new Error('HPKG payload extends beyond file size');
+  const index = Buffer.alloc(indexSize);
+  const outputLength = [indexSize >>> 0];
+  const status = getCdnLzhamUncompress()(index, outputLength, hpkg.subarray(packedStart + 4, payloadStart), (packedIndexSize - 4) >>> 0);
+  if (status !== 0) throw new Error(`HPKG index LZHAM decode failed: ${status}`);
+  const recordSize = indexSize / count;
+  const records = [];
+  for (let row = 0; row < count; row += 1) {
+    const base = row * recordSize;
+    const pathInfo = readCdnCString(index, base + 4, base + 260);
+    records.push({
+      row,
+      index: index.readUInt32LE(base),
+      path: normalizeCdnMemberPath(pathInfo.text),
+      pathEncoding: pathInfo.encoding,
+      originalSize: index.readUInt32LE(base + 280),
+      storedSize: index.readUInt32LE(base + 284),
+      payloadOffset: index.readUInt32LE(base + 288),
+      flags: index.readUInt32LE(base + 292),
+    });
+  }
+  return { count, indexSize, packedIndexSize, payloadSize, payloadStart, recordSize, records };
+}
+
+function findCdnLocalPackage(packageName, packageSize = 0) {
+  const cleanName = String(packageName || '').trim();
+  if (!cleanName || /[\\/]/.test(cleanName)) return null;
+  if (!existsSync(CDN_DOWNLOAD_DIR)) return null;
+  const candidates = readdirSync(CDN_DOWNLOAD_DIR)
+    .filter((name) => name.endsWith(`_${cleanName}.hpkg`) || name === `${cleanName}.hpkg`)
+    .map((name) => join(CDN_DOWNLOAD_DIR, name));
+  return candidates.find((candidate) => !packageSize || statSync(candidate).size === Number(packageSize)) || candidates[0] || null;
+}
+
+function convertCdnWemToOgg(wemPath, packageName, memberPath) {
+  if (!existsSync(WW2OGG_EXE)) throw new Error(`ww2ogg.exe not found: ${WW2OGG_EXE}`);
+  const base = basename(memberPath, extname(memberPath)).replace(/[^a-zA-Z0-9_.-]+/g, '_') || 'audio';
+  const relativePath = normalizeCdnMemberPath(`_audio/${packageName}_${base}.ogg`);
+  const outPath = safeCdnOutputPath(relativePath);
+  if (!outPath) throw new Error('Invalid converted audio path');
+  ensureDir(dirname(outPath));
+  execFileSync(WW2OGG_EXE, [wemPath, '-o', outPath, '--pcb', WW2OGG_CODEBOOKS], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  return { absolutePath: outPath, relativePath };
+}
+
+async function extractCdnHpkgMember(payload = {}) {
+  const packageName = String(payload.packageName || '').trim();
+  const memberPath = normalizeCdnMemberPath(payload.memberPath || payload.path);
+  const packageSize = payload.size || payload.packageSize || 0;
+  if (!packageName) throw new Error('packageName is required');
+  if (!memberPath) throw new Error('memberPath is required');
+  let hpkgPath = findCdnLocalPackage(packageName, packageSize);
+  if (!hpkgPath && payload.download === true) {
+    const downloaded = await ensureCdnPackageDownloaded({ packageName, packageSize });
+    hpkgPath = downloaded.path;
+  }
+  if (!hpkgPath) throw new Error(`Downloaded HPKG not found for ${packageName}`);
+  const hpkg = readFileSync(hpkgPath);
+  const decoded = decodeCdnHpkgIndex(hpkg);
+  const record = decoded.records.find((entry) => entry.path.toLowerCase() === memberPath.toLowerCase());
+  if (!record) throw new Error(`Member not found in ${packageName}.hpkg: ${memberPath}`);
+  const storedStart = decoded.payloadStart + record.payloadOffset;
+  const storedEnd = storedStart + record.storedSize;
+  if (storedEnd > hpkg.length) throw new Error(`Member payload extends beyond file: ${memberPath}`);
+  const memberHeaderSize = record.storedSize - record.originalSize;
+  if (memberHeaderSize < 0 || memberHeaderSize > 64) throw new Error(`Unexpected member header size ${memberHeaderSize} for ${memberPath}`);
+  const raw = hpkg.subarray(storedStart + memberHeaderSize, storedStart + memberHeaderSize + record.originalSize);
+  const extractedRelative = normalizeCdnMemberPath(`${packageName}/${memberPath}`);
+  const extractedPath = safeCdnOutputPath(extractedRelative);
+  if (!extractedPath) throw new Error('Invalid extracted member path');
+  ensureDir(dirname(extractedPath));
+  writeFileSync(extractedPath, raw);
+  const ext = extname(memberPath).toLowerCase();
+  let playback = null;
+  let playbackRelative = extractedRelative;
+  if (ext === '.wem' && payload.convertToOgg !== false) {
+    const converted = convertCdnWemToOgg(extractedPath, packageName, memberPath);
+    playbackRelative = converted.relativePath;
+  }
+  if (['.ogg', '.wav', '.mp3', '.wem'].includes(ext)) {
+    playback = {
+      relativePath: playbackRelative,
+      url: `/api/cdn/hpkg/extracted?file=${encodeURIComponent(playbackRelative)}`,
+    };
+  }
+  return {
+    ok: true,
+    packageName,
+    packagePath: hpkgPath,
+    member: record,
+    extractedFile: { path: extractedPath, relativePath: extractedRelative, size: raw.length },
+    playback,
+  };
+}
+
+function openPathInExplorer(targetPath, selectFile = false) {
+  if (process.platform !== 'win32') throw new Error('Opening local folders is only supported on Windows.');
+  const resolvedTarget = resolve(targetPath);
+  if (!existsSync(resolvedTarget)) throw new Error(`Local path does not exist: ${resolvedTarget}`);
+  const explorerPath = join(process.env.SystemRoot || 'C:\\Windows', 'explorer.exe');
+  if (!existsSync(explorerPath)) throw new Error(`explorer.exe not found: ${explorerPath}`);
+  const child = spawn(explorerPath, selectFile ? [`/select,${resolvedTarget}`] : [resolvedTarget], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: false,
+  });
+  child.unref();
+  return { pid: child.pid, path: resolvedTarget, selectFile };
+}
+
+async function locateCdnLocalMember(payload = {}) {
+  const packageName = String(payload.packageName || '').trim();
+  const memberPath = normalizeCdnMemberPath(payload.memberPath || payload.path);
+  if (!packageName) throw new Error('packageName is required');
+  if (!memberPath) throw new Error('memberPath is required');
+
+  const extractedRelative = normalizeCdnMemberPath(`${packageName}/${memberPath}`);
+  const extractedPath = safeCdnOutputPath(extractedRelative);
+  let extractedFile = extractedPath && existsSync(extractedPath) && statSync(extractedPath).isFile()
+    ? { path: extractedPath, relativePath: extractedRelative, existed: true }
+    : null;
+
+  if (!extractedFile) {
+    const extracted = await extractCdnHpkgMember({ ...payload, convertToOgg: false });
+    extractedFile = { ...extracted.extractedFile, existed: false };
+  }
+
+  const explorer = openPathInExplorer(extractedFile.path, true);
+  return {
+    ok: true,
+    packageName,
+    memberPath,
+    opened: dirname(extractedFile.path),
+    locatedFile: extractedFile,
+    explorer,
+  };
+}
+
+function openCdnLocalFolder() {
+  ensureDir(CDN_ONLINE_ROOT);
+  ensureDir(CDN_DOWNLOAD_DIR);
+  ensureDir(CDN_HPKG_EXTRACTED_DIR);
+  const explorer = openPathInExplorer(CDN_ONLINE_ROOT);
+  return {
+    ok: true,
+    opened: CDN_ONLINE_ROOT,
+    downloads: CDN_DOWNLOAD_DIR,
+    extracted: CDN_HPKG_EXTRACTED_DIR,
+    explorer,
+  };
 }
 
 function readTextUtf8(filePath, fallback = '') {
@@ -6776,7 +9609,7 @@ function sampleFirstDxtBlockColor(buffer) {
   return { hasMagic: true, format: fourCC, reason: 'Unsupported pixel format for sampling' };
 }
 
-const server = createServer(async (req, res) => {
+server = createServer(async (req, res) => {
   const method = req.method || 'GET';
   const rawUrl = req.url || '/';
   const urlPath = decodeURIComponent(rawUrl.split('?')[0]);
@@ -6789,6 +9622,344 @@ const server = createServer(async (req, res) => {
       'Access-Control-Allow-Headers': 'Content-Type',
     });
     res.end();
+    return;
+  }
+
+  if (method === 'GET' && urlPath === '/api/client-monitor/status') {
+    sendJson(res, 200, getClientMonitorStatus());
+    return;
+  }
+
+  if (method === 'POST' && urlPath === '/api/client-monitor/start') {
+    const result = startClientMonitorBridge();
+    sendJson(res, result.ok ? 200 : 409, result);
+    return;
+  }
+
+  if (method === 'POST' && urlPath === '/api/client-monitor/stop') {
+    sendJson(res, 200, stopClientMonitorBridge());
+    return;
+  }
+
+  if (method === 'POST' && urlPath === '/api/client-monitor/pause') {
+    sendJson(res, 200, pauseClientMonitorCapture());
+    return;
+  }
+
+  if (method === 'POST' && urlPath === '/api/client-monitor/resume') {
+    sendJson(res, 200, resumeClientMonitorCapture());
+    return;
+  }
+
+  if (method === 'POST' && urlPath === '/api/client-monitor/clear') {
+    sendJson(res, 200, clearClientMonitorLog());
+    return;
+  }
+
+  if (method === 'GET' && urlPath === '/api/cdn/status') {
+    sendJson(res, 200, buildCdnLegacyStatusResponse());
+    return;
+  }
+
+  if (method === 'GET' && urlPath === '/api/ability-matcher/search') {
+    try {
+      const payload = buildAbilityMatcherSearch({
+        query: reqUrl.searchParams.get('q') || '',
+        limit: reqUrl.searchParams.get('limit') || '',
+      });
+      sendJson(res, 200, attachAbilitySoundCache(payload));
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'GET' && urlPath === '/api/ability-matcher/prefix-cache') {
+    try {
+      const payload = buildAbilityPrefixCache({
+        force: reqUrl.searchParams.get('force') || '',
+      });
+      sendJson(res, 200, attachAbilitySoundCache(payload));
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'GET' && urlPath === '/api/ability-matcher/sound-cache') {
+    try {
+      const force = reqUrl.searchParams.get('force') === '1';
+      const buildIfMissing = reqUrl.searchParams.get('build') === '1';
+      sendJson(res, 200, await getAbilitySoundCache({ force, buildIfMissing }));
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'GET' && urlPath === '/api/ability-matcher/tani-sound-cache') {
+    try {
+      const force = reqUrl.searchParams.get('force') === '1';
+      const buildIfMissing = reqUrl.searchParams.get('build') === '1';
+      const extractTani = reqUrl.searchParams.get('extract') === '1';
+      sendJson(res, 200, await getAbilityTaniSoundCache({ force, buildIfMissing, extractTani }));
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'GET' && urlPath === '/api/ability-matcher/tani-sound') {
+    try {
+      const cache = await getAbilityTaniSoundCache({ buildIfMissing: reqUrl.searchParams.get('build') === '1' });
+      if (!cache.ok) {
+        sendJson(res, 404, cache);
+        return;
+      }
+      const entry = getAbilityTaniSoundEntry(cache, reqUrl.searchParams.get('id') || '', reqUrl.searchParams.get('prefix') || '');
+      if (!entry) {
+        sendJson(res, 404, { ok: false, error: 'Ability TANI sound entry not found' });
+        return;
+      }
+      sendJson(res, 200, { ok: true, generatedAt: cache.generatedAt, cachePath: cache.cachePath, entry });
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'GET' && urlPath === '/api/ability-matcher/tani-sound-cdn') {
+    try {
+      sendJson(res, 200, await lookupCdnWemFiles(reqUrl.searchParams.get('wem') || '', reqUrl.searchParams.get('all') === '1'));
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'POST' && urlPath === '/api/ability-matcher/tani-sound-export-package') {
+    try {
+      sendJson(res, 200, await exportAbilityTaniSoundPackage(await readBodyJson(req)));
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'GET' && urlPath === '/api/audio/wwise/search') {
+    try {
+      sendJson(res, 200, buildWwiseSoundbankSearchResponse(reqUrl));
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'GET' && urlPath === '/api/audio/wwise/rows') {
+    try {
+      sendJson(res, 200, buildWwiseSoundbankRowsResponse(reqUrl));
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'GET' && urlPath === '/api/ability-matcher/tani-sound-review') {
+    try {
+      sendJson(res, 200, getAbilityTaniSoundReview());
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'POST' && urlPath === '/api/ability-matcher/tani-sound-review') {
+    try {
+      sendJson(res, 200, updateAbilityTaniSoundReview(await readBodyJson(req)));
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'GET' && urlPath === '/api/ability-matcher/sounds') {
+    try {
+      const cache = await getAbilitySoundCache({ buildIfMissing: reqUrl.searchParams.get('build') === '1' });
+      if (!cache.ok) {
+        sendJson(res, 404, cache);
+        return;
+      }
+      const entry = getAbilitySoundEntry(cache, reqUrl.searchParams.get('id') || '', reqUrl.searchParams.get('prefix') || '');
+      if (!entry) {
+        sendJson(res, 404, { ok: false, error: 'Ability sound entry not found' });
+        return;
+      }
+      sendJson(res, 200, { ok: true, generatedAt: cache.generatedAt, cachePath: cache.cachePath, entry });
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if ((method === 'GET' || method === 'HEAD') && urlPath === '/api/ability-matcher/wwise-audio') {
+    try {
+      let wemId = String(reqUrl.searchParams.get('wem') || '').trim();
+      const eventQuery = String(reqUrl.searchParams.get('event') || '').trim();
+      if (!wemId && eventQuery) {
+        const resolved = resolveWwiseEvent(eventQuery);
+        if (resolved.error || !resolved.event) {
+          sendJson(res, 404, { ok: false, error: resolved.error || 'event-not-found' });
+          return;
+        }
+        wemId = String([...(resolved.wems?.streamed || []), ...(resolved.wems?.inMemory || [])][0] || '');
+      }
+      if (!/^\d+$/.test(wemId)) {
+        sendJson(res, 400, { ok: false, error: 'wem id required' });
+        return;
+      }
+      const decoded = await resolveWwiseAudioOgg(wemId);
+      if (decoded.error || !decoded.oggBuffer) {
+        sendJson(res, 404, { ok: false, error: decoded.error || 'audio-not-found', detail: decoded.detail || decoded.path || '' });
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': 'audio/ogg',
+        'Content-Length': decoded.oggBuffer.length,
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=3600',
+      });
+      if (method === 'HEAD') res.end();
+      else res.end(decoded.oggBuffer);
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if ((method === 'GET' || method === 'HEAD') && urlPath === '/api/ability-matcher/local-audio') {
+    try {
+      const filePath = reqUrl.searchParams.get('path') || '';
+      if (!/\.(wav|mp3|ogg)$/i.test(filePath)) {
+        sendJson(res, 400, { ok: false, error: 'Invalid audio format' });
+        return;
+      }
+      const abs = safePathUnder(__dirname, filePath);
+      if (!abs || !existsSync(abs)) {
+        sendJson(res, 404, { ok: false, error: `Audio not found: ${filePath}` });
+        return;
+      }
+      serveFile(res, abs, method === 'HEAD');
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'GET' && urlPath === '/api/cdn/live-readiness') {
+    sendJson(res, 200, buildCdnLegacyReadinessResponse());
+    return;
+  }
+
+  if (method === 'GET' && urlPath === '/api/cdn/file-list') {
+    try {
+      sendJson(res, 200, await buildCdnLegacyFileListResponse(reqUrl));
+    } catch (err) {
+      sendJson(res, 502, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'POST' && urlPath === '/api/cdn/hpkg/contents') {
+    try {
+      const payload = await readBodyJson(req);
+      sendJson(res, 200, await buildCdnLegacyHpkgContentsResponse(payload));
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'POST' && urlPath === '/api/cdn/download') {
+    sendJson(res, 501, {
+      ok: false,
+      error: 'Legacy direct download is not available in this server session. Use Online Package List preview or the Resource Browser page.',
+    });
+    return;
+  }
+
+  if (method === 'POST' && urlPath === '/api/cdn/start-capture') {
+    sendJson(res, 501, {
+      ok: false,
+      error: 'Native bridge capture is not available in this server session. Use Online Package List mode instead.',
+    });
+    return;
+  }
+
+  if (method === 'GET' && urlPath === '/api/cdn/resource-browser/status') {
+    try {
+      sendJson(res, 200, await buildCdnResourceStatusResponse());
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'GET' && urlPath === '/api/cdn/resource-browser/browse') {
+    try {
+      sendJson(res, 200, await buildCdnBrowseResponse(reqUrl));
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'POST' && urlPath === '/api/cdn/resource-browser/start') {
+    try {
+      const payload = await readBodyJson(req);
+      sendJson(res, 200, startCdnMirrorProcess(payload));
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'POST' && urlPath === '/api/cdn/hpkg/extract') {
+    try {
+      const payload = await readBodyJson(req);
+      sendJson(res, 200, await extractCdnHpkgMember(payload));
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'POST' && urlPath === '/api/cdn/hpkg/locate-local') {
+    try {
+      const payload = await readBodyJson(req);
+      sendJson(res, 200, await locateCdnLocalMember(payload));
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'GET' && urlPath === '/api/cdn/resource-browser/open-local-folder') {
+    try {
+      sendJson(res, 200, openCdnLocalFolder());
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if ((method === 'GET' || method === 'HEAD') && urlPath === '/api/cdn/hpkg/extracted') {
+    const rel = reqUrl.searchParams.get('file') || '';
+    const abs = safeCdnOutputPath(rel);
+    if (!abs) {
+      sendText(res, 403, 'Forbidden');
+      return;
+    }
+    serveFile(res, abs, method === 'HEAD');
     return;
   }
 
@@ -9169,4 +12340,8 @@ server.listen(PORT, () => {
   ensureDir(DESKTOP_EXPORT_ROOT);
   console.log(`JX3 Map Viewer running at http://localhost:${PORT}`);
   console.log(`Full exports Desktop root: ${DESKTOP_EXPORT_ROOT}`);
+  if (process.env.JX3_SERVER_PERSIST !== '1' && LAUNCH_PARENT_PID > 1) {
+    console.log(`Watching launch parent PID ${LAUNCH_PARENT_PID} for exit`);
+  }
+  startLaunchParentWatch();
 });

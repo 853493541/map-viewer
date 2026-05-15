@@ -17,6 +17,12 @@ This rule applies to:
 The only exception: a single batch of edits to **different files** where
 each file was just read in the same turn.
 
+## Local server rule
+
+- Always run and validate the app on `http://127.0.0.1:3015`.
+- If port `3015` is already in use, kill the process listening on `3015`,
+  then restart the local server on `3015` before giving a working link.
+
 ## PSS audit truth table
 
 - `materialIndex == null` (i.e. the launcher authored

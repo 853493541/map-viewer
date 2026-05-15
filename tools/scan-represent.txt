@@ -1,0 +1,2083 @@
+﻿# Scanning C:\SeasunGame\Game\JX3\bin\zhcn_hd\SeasunDownloaderV2.4\seasun\editortool\movieeditor\bin64\jx3representx64.dll (17150464 bytes) for /Socket|Bone|Attach|Bind|Particle|Effect|SFX|Pss|Trans|Scale|Offset|Mount|Hand|Weapon/i
+# Total hits: 2085
+# Unique strings: 2080
+0x00ca8130  ascii  worldscale
+0x00ca8150  ascii  worldtranslation
+0x00ca83b8  ascii  basetransform
+0x00ca87a0  ascii  solverFlagTwoBone
+0x00ca87f8  ascii  rigBoneNumber
+0x00ca8820  ascii  rigBoneParentsPtr
+0x00ca8838  ascii  rigBindPosePtr
+0x00ca8af8  ascii  inputAndOutputTransforms
+0x00ca8b78  ascii  inputCharacterWorldRootTransform
+0x00ca8ba0  ascii  inputCharacterWorldRootTransformOld
+0x00ca90a0  ascii  HandleCamera
+0x00ca93a8  ascii  HandleCharacterAnimation
+0x00ca95d8  ascii  UpdateCharacterLightBinding
+0x00ca9600  ascii  SetCharacterLightBindingType
+0x00ca9640  ascii  pCharacterTransform
+0x00ca9658  ascii  pFocusTransform
+0x00ca9670  ascii  pLightTransform
+0x00ca9688  ascii  SetCharacterLightTransformFlags
+0x00ca96b0  ascii  pTransform
+0x00ca96e0  ascii  SetCharacterLightTranslation
+0x00ca9778  ascii  HandleCharacterLight
+0x00ca9798  ascii  HandleComponentAction
+0x00ca98a8  ascii  HandleEntityAction
+0x00ca9970  ascii  HandleHomelandNew
+0x00caa078  ascii  Events::Replay::PUSH_SKILL_EFFECT
+0x00caa1c8  ascii  SkillConvexHullEffect
+0x00caa278  ascii  OnSceneSFXControl
+0x00caa338  ascii  SkillEffectResult
+0x00caa360  ascii  UpdateEquipSFXCustomTransform
+0x00caa468  ascii  HandleLogicEvent
+0x00caa4a0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\Action\HandleLogicScene.cpp
+0x00caa5b8  ascii  HandleNewLogicScene
+0x00caa5d0  ascii  HandleLogicSceneApi
+0x00caa5e8  ascii  HandleMessage
+0x00caa5f8  ascii  HandleRLAction
+0x00caa6a0  ascii  HandleSprint
+0x00caa738  ascii  HandleUINewScene
+0x00caa750  ascii  HandleUISceneApi
+0x00caaaa8  ascii  pTransformComponent
+0x00caaad0  ascii  SetTransformFlags
+0x00caaae8  ascii  SetTranslation
+0x00caab00  ascii  HandleRLNodeGraph
+0x00cab138  ascii  ShakeOffsetX
+0x00cab148  ascii  ShakeOffsetY
+0x00cac340  ascii  OnHandLink
+0x00cac368  ascii  OnUseDynamicBones
+0x00cac710  ascii  OnPlaySFX
+0x00cac790  ascii  prlSfxModel
+0x00cac7a0  ascii  OnDeleteSFXBySubtype
+0x00cac7d0  ascii  OnCreateSuperSFX
+0x00cac810  ascii  OnCreateSuperSFXWithTimeLimit
+0x00cac868  ascii  OnDeleteSuperSFX
+0x00cac938  ascii  Scale
+0x00cac968  ascii  AttachPlayerTime
+0x00cac980  ascii  AttachPlayerAnimation
+0x00cacb50  ascii  OnEnableDirectionSfx
+0x00cacb70  ascii  OnSetDirectionSfxState
+0x00cacbb0  ascii  OnAddDiretionSfx
+0x00cacbe8  ascii  OnRemoveDiretionSfx
+0x00cacc00  ascii  OnSetExtendDirectionSfx
+0x00caccd8  ascii  OnSetScale
+0x00cace70  ascii  OnBindCharacterSfx
+0x00cace88  ascii  OnUnbindCharacterSfx
+0x00cacea8  ascii  OnBindDoodadSfx
+0x00cacec0  ascii  OnUnbindDoodadSfx
+0x00cacf78  ascii  OnSetPaintScale
+0x00cad160  ascii  OnSetCameraOffset
+0x00cad190  ascii  OnResetCameraOffset
+0x00cad1b0  ascii  OnSetLookAtOffset
+0x00cad400  ascii  OnShowSelectionSFX
+0x00cad898  ascii  OnOfflineMountHorse
+0x00cad8d8  ascii  OnNewOfflineMountHorse
+0x00cad980  ascii  OnTestCameraReferenceScale
+0x00cad9d8  ascii  _TestNewNpcSocketInfo
+0x00cadb88  ascii  OnPlayLocalOriginSFX
+0x00cadba8  ascii  OnStopLocalOriginSFX
+0x00cade50  ascii  OnEnableSocketLOD
+0x00cadf08  ascii  OnPlayPrivateTimedSFX
+0x00cadf28  ascii  pPrivateSFXModel
+0x00cadf50  ascii  OnPlayPrivateIdentifiableSFX
+0x00cadf78  ascii  OnStopPrivateIdentifiableSFX
+0x00cadfb8  ascii  OnTestControlSFX
+0x00cadfe0  ascii  OnTestHandleSFXLod
+0x00cae040  ascii  OnTestLoadSocket
+0x00cae2f0  ascii  scale
+0x00cae378  ascii  OnLimitNumTagSFX
+0x00cae410  ascii  OnWeaponVisible
+0x00cae458  ascii  OnSetSFXLod
+0x00cae490  ascii  OnSetSFXIntensity
+0x00cae6f0  ascii  OnSetTargetSFXConnection
+0x00cae9f8  ascii  OnSetHomelandCameraOffset
+0x00caea40  ascii  OnSetHomelandCameraDirOffset
+0x00caeae8  ascii  SetSFXLodDist
+0x00caeb50  ascii  OnHidePlaySFX
+0x00caefb0  ascii  g_pRL->m_pGameWorldUIHandler
+0x00caf158  ascii  -play sfx
+0x00caf168  ascii  -play subland sfx
+0x00caf1d0  ascii  -create guide sfx
+0x00caf1e8  ascii  -destroy guide sfx
+0x00caf298  ascii  -range offset
+0x00caf448  ascii  OnEnableTargetBraceSfx
+0x00caf580  ascii  OnUpdatePreviewEquipTransform
+0x00caf5d0  ascii  nSocketIndex != -1
+0x00caf940  ascii  !s_DialogLightSfx[nIndex]
+0x00caf960  ascii  data\public\sceneeditor\p_light.sfx
+0x00cafb58  ascii  sfx lod error
+0x00cafc60  ascii  hand link
+0x00cafc88  ascii  use dynamicbones
+0x00cb0208  ascii  play sfx
+0x00cb0218  ascii  delete sfx by subtype
+0x00cb0238  ascii  create private super sfx
+0x00cb0258  ascii  delete private super sfx
+0x00cb0278  ascii  create private super sfx with time limit
+0x00cb0600  ascii  enable direction sfx
+0x00cb0620  ascii  set direction sfx state
+0x00cb0640  ascii  add direction sfx
+0x00cb0658  ascii  remove direction sfx
+0x00cb0678  ascii  set extend direction sfx
+0x00cb0710  ascii  set scale
+0x00cb0880  ascii  bind character sfx
+0x00cb0898  ascii  unbind character sfx
+0x00cb08b8  ascii  bind doodad sfx
+0x00cb08d0  ascii  unbind doodad sfx
+0x00cb0930  ascii  open camera offset
+0x00cb0948  ascii  close camera offset
+0x00cb09a8  ascii  set paint scale
+0x00cb0b70  ascii  set look at offset
+0x00cb0c30  ascii  set camera offset
+0x00cb0c48  ascii  reset camera offset
+0x00cb0db0  ascii  show selection sfx
+0x00cb0fc0  ascii  offline mount horse
+0x00cb0fd8  ascii  mount horse
+0x00cb1128  ascii  play local origin sfx
+0x00cb1148  ascii  stop local origin sfx
+0x00cb1258  ascii  play private timed sfx
+0x00cb1278  ascii  play private identifiable sfx
+0x00cb12a0  ascii  stop private identifiable sfx
+0x00cb12e8  ascii  enable weapon visible
+0x00cb1328  ascii  set sfx lod
+0x00cb1398  ascii  enable socket lod
+0x00cb14d8  ascii  set sfx intensity
+0x00cb1510  ascii  set socket visible param
+0x00cb15a8  ascii  max socket lod0 counts
+0x00cb15c8  ascii  max socket lod1 counts
+0x00cb1738  ascii  set target sfx connection
+0x00cb1980  ascii  set homeland camera offset
+0x00cb19a0  ascii  set homeland camera dir offset
+0x00cb1a60  ascii  set sfx lod dist
+0x00cb1a88  ascii  footprint sfx
+0x00cb1ac8  ascii  hide play sfx
+0x00cb1d60  ascii  enable special npc sfx no clip
+0x00cb1e08  ascii  enable target brace sfx
+0x00cb1f48  ascii  update preview local player equip transform
+0x00cb22f8  ascii  set remotesimpleskillsfx
+0x00cb2318  ascii  enable remote sfx
+0x00cb25f8  ascii  disable attach target
+0x00cb28a0  ascii  _hide character water effect relation
+0x00cb28d0  ascii  hide sfx by character relation
+0x00cb28f8  ascii  enable preview equipsfx
+0x00cb2918  ascii  update preview equipsfx transform
+0x00cb2af0  ascii  scene switch sfx load
+0x00cb2b10  ascii  scene switch sfx prepare
+0x00cb2b30  ascii  scene switch sfx play
+0x00cb2b50  ascii  scene switch sfx stop
+0x00cb2d60  ascii  set player weather effect
+0x00cb2e50  ascii  test camera reference scale
+0x00cb2ea8  ascii  new npc socket info
+0x00cb2f74  ascii  tsfx
+0x00cb2fb8  ascii  limit tag sfx
+0x00cb5cf0  ascii  KRLMorpheme::GetNumBones
+0x00cb5d10  ascii  KRLMorpheme::GetBoneNames
+0x00cb5d30  ascii  KRLMorpheme::GetTransforms
+0x00cb5e20  ascii  KRLMorpheme::GetWorldRootTransform
+0x00cb5e50  ascii  KRLMorpheme::SetWorldRootTransform
+0x00cb61b0  ascii  KRLSkeleton::SetBoneCount
+0x00cb61d0  ascii  dwBoneCount
+0x00cb61e0  ascii  pSkeletonBoneInfoTable
+0x00cb6200  ascii  pBoneInfoTable
+0x00cb6218  ascii  pParentBoneIndexTable
+0x00cb6238  ascii  pBoneMatrixTable
+0x00cb62c0  ascii  dwThighIndex < m_dwBoneCount
+0x00cb6f18  ascii  RLNTEventAPI::HandleEvent
+0x00cb6f50  ascii  RLActorHelper::LoadSocket
+0x00cb72c8  ascii  RLActorNT::LoadSfx
+0x00cb72e0  ascii  m_prlModel->LoadModel(rLoadSFXParam.szSFX, nullptr, false, m_ModelLoadArgs, 0, rLoadSFXParam.bSync, false, m_nLODLevel) != ModelLoadResult::Error
+0x00cb7660  ascii  RLActorNT::_RebindSockets
+0x00cb76a8  ascii  RLActorNT::LoadPartSFX
+0x00cb76c8  ascii  nIndex >= 0 && nIndex < RLACTOR_NT_MODEL_PART_INFO_SFX_SIZE
+0x00cb7710  ascii  *pprlSfx
+0x00cb7720  ascii  (*pprlSfx)->LoadModel(szSFX, nullptr, false, m_ModelLoadArgs, 0, false, false, m_nLODLevel) != ModelLoadResult::Error
+0x00cb77b0  ascii  RLActorNT::UnloadPartSFX
+0x00cb7930  ascii  RLActorNT::LoadSocket
+0x00cb7950  ascii  it->second.m_prlModel->LoadModel(rLoadSocketParam.szModel, rLoadSocketParam.szMtl, rLoadSocketParam.bCommonMaterial != 0, m_ModelLoadArgs, 0, rLoadSocketParam.bSync, false, bCanLod ? nLODLevel : 0) != ModelLoadResult::Error
+0x00cb7a60  ascii  socketInfo.m_prlModel
+0x00cb7a80  ascii  socketInfo.m_prlModel->LoadModel(rLoadSocketParam.szModel, rLoadSocketParam.szMtl, rLoadSocketParam.bCommonMaterial != 0, m_ModelLoadArgs, 0, rLoadSocketParam.bSync, false, bCanLod ? nLODLevel : 0) != ModelLoadResult::Error
+0x00cb7ba0  ascii  RLActorNT::SetSocketVisible
+0x00cb7bc8  ascii  RLActorNT::ChangeSocketName
+0x00cb7bf0  ascii  RLActorNT::LoadSocketMaterial
+0x00cb7c18  ascii  RLActorNT::PlaySocketAnimation
+0x00cb7c40  ascii  RLActorNT::SetSocketAlwaysRenderTwice
+0x00cb7c70  ascii  RLActorNT::LoadSocketSFX
+0x00cb7c90  ascii  (*pprlSfx)->LoadModel(szSFX, nullptr, false, m_ModelLoadArgs, 0, false, false, m_nSocketLODLevel) != ModelLoadResult::Error
+0x00cb7d28  ascii  RLActorNT::UnloadSocketSFX
+0x00cb7d48  ascii  RLActorNT::SetSocketDetail
+0x00cb7d68  ascii  RLActorNT::HasSocketName
+0x00cb7d88  ascii  _ValidString(szSocket)
+0x00cb7da8  ascii  RLActorNT::SetSocketSubsetVisible
+0x00cb7dd0  ascii  RLActorNT::SetSocketSfxMinimalLODLevel
+0x00cb7e00  ascii  RLActorNT::SetSocketSfxAlpha
+0x00cb7e28  ascii  RLActorNT::SetSocketSfxIntensity
+0x00cb7e50  ascii  RLActorNT::SetSocketPlayerControlVisibleState
+0x00cb7e88  ascii  RLActorNT::LoadModelSFX
+0x00cb7ec0  ascii  prlModel->LoadModel(rModelSFXParam.szSFX, nullptr, false, m_ModelLoadArgs, 0, false, false, m_nLODLevel) != ModelLoadResult::Error
+0x00cb7f60  ascii  RLActorNT::UnloadModelSFX
+0x00cb7f80  ascii  RLActorNT::HasModelSFX
+0x00cb7fa0  ascii  RLActorNT::SetModelSfxPosition
+0x00cb7fc8  ascii  RLActorNT::SetModelSfxRotation
+0x00cb7ff0  ascii  RLActorNT::SetModelSfxMinimalLODLevel
+0x00cb8020  ascii  RLActorNT::ModelSfxAdjustWorldDirection
+0x00cb8050  ascii  RLActorNT::SetModelSfxAlpha
+0x00cb8078  ascii  RLActorNT::SetModelSfxIntensity
+0x00cb80a0  ascii  RLActorNT::SetModelSfxPositionOnlyFlag
+0x00cb81c8  ascii  RLActorNT::EnableForceHideSocket
+0x00cb81f0  ascii  strlen(szSocketName) < sizeof(socketInfo.szSocketName)
+0x00cb8238  ascii  RLActorNT::_OnForceHideSocket
+0x00cb83c8  ascii  pmatTransform
+0x00cb9040  ascii  HandleRequestArgv
+0x00cb9058  ascii  HandleRequestQuit
+0x00cb9070  ascii  HandleRequestStop
+0x00cb9088  ascii  HandleRequestArgs
+0x00cb90a0  ascii  HandleResponseArgs
+0x00cb9100  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\RLAsyncTask.cpp,HandleXhgEvent:337
+0x00cb97e8  ascii  effect visible
+0x00cb98d0  ascii  super sfx type
+0x00cb98e8  ascii  sfx socket name
+0x00cb98fc  ascii  sfx1
+0x00cb9908  ascii  sfx socket name1
+0x00cb99e8  ascii  socket lod
+0x00cb9ad0  ascii  npc fur0 amount
+0x00cb9ae8  ascii  npc fur1 amount
+0x00cb9b00  ascii  npc fur2 amount
+0x00cb9b78  ascii  player fur0 amount
+0x00cb9b90  ascii  player fur1 amount
+0x00cb9ba8  ascii  player fur2 amount
+0x00cb9c20  ascii  socket lod0 distance
+0x00cb9c40  ascii  socket lod1 distance
+0x00cb9c60  ascii  socket lod2 distance
+0x00cb9d78  ascii  max socket lod2 counts
+0x00cb9e28  ascii  actor on bind
+0x00cb9ea8  ascii  sockets
+0x00cb9ef0  ascii  super sfx scale
+0x00cb9f68  ascii  sfx minimum lod
+0x00cb9f80  ascii  sfx caster type
+0x00cb9f98  ascii  sfx intensity
+0x00cb9fa8  ascii  sfx alpha
+0x00cb9fb8  ascii  sfx lod dist0
+0x00cb9fc8  ascii  sfx lod dist1
+0x00cb9fd8  ascii  sfx lod dist2
+0x00cb9fe8  ascii  texture scale
+0x00cba0c8  ascii  offset
+0x00cba130  ascii  animation sfx
+0x00cba288  ascii  socket name
+0x00cba298  ascii  socket offset
+0x00cba338  ascii  bind
+0x00cba3c8  ascii  event handler
+0x00cba3e0  ascii  water effect
+0x00cba408  ascii  bone lod
+0x00cba450  ascii  offset direction
+0x00cba4f0  ascii  bone position
+0x00cba5d0  ascii  try bind until succeed
+0x00cba608  ascii  force load sfx
+0x00cba650  ascii  reset transform
+0x00cba680  ascii  enable sfx sound
+0x00cba6b8  ascii  request model sfx key
+0x00cba6d8  ascii  model sfx key
+0x00cba798  ascii  request bone number
+0x00cba7b0  ascii  bone number
+0x00cba7c0  ascii  request get split animation offset
+0x00cba7f0  ascii  split animation offset
+0x00cba810  ascii  bind to rlmodel
+0x00cba828  ascii  bind rlmodel
+0x00cba838  ascii  bind to actor
+0x00cba848  ascii  bind info
+0x00cba858  ascii  bind to socket
+0x00cba870  ascii  bind to socket name
+0x00cba898  ascii  sfx play type
+0x00cba8a8  ascii  sfx play speed
+0x00cba908  ascii  model sfx
+0x00cbaa40  ascii  request bone info
+0x00cbaa58  ascii  bone info
+0x00cbaa68  ascii  bone matrix
+0x00cbaa78  ascii  bone offset
+0x00cbaaa0  ascii  request bone index
+0x00cbaab8  ascii  bone index
+0x00cbaad8  ascii  part offset
+0x00cbaaf8  ascii  sfx lod
+0x00cbab08  ascii  sfx stop type
+0x00cbab18  ascii  sfx stop soon
+0x00cbab28  ascii  sfx client add
+0x00cbab40  ascii  sfx position only
+0x00cbab58  ascii  sfx pss stop play type
+0x00cbab78  ascii  sfx request restart
+0x00cbab90  ascii  channel effect pos src
+0x00cbabb0  ascii  channel effect pos dest
+0x00cbabd0  ascii  channel effect pos changed
+0x00cbad48  ascii  weapon visible
+0x00cbad88  ascii  socket wait anim
+0x00cbada0  ascii  socket wait anim sec
+0x00cbadc0  ascii  weapon socket
+0x00cbadd0  ascii  weapon name
+0x00cbb190  ascii  KRLAnimationFactory::CreateSFXTag
+0x00cbb1c0  ascii  KRLAnimationFactory::ReactivatedCreateSFXTag
+0x00cbb720  ascii  KRLAnimationSFXTag::Apply
+0x00cbb740  ascii  KRLAnimationSFXTag::ApplyParam
+0x00cbb788  ascii  KRLAnimationSFXTag::Interrupt
+0x00cbb7b0  ascii  KRLAnimationSFXTag::Motion
+0x00cbb7d0  ascii  KRLAnimationSFXTag::Reactivated
+0x00cbb7f8  ascii  KRLAnimationSFXTag::Init
+0x00cbb840  ascii  KRLAnimationSFXTag::BindSFX
+0x00cbb880  ascii  KRLAnimationSFXTag::Show
+0x00cbb8c8  ascii  !m_SFXRuntime.bVisible
+0x00cbb940  ascii  pSFXTag
+0x00cbba98  ascii  GetPlayerWeaponLoadOptimization
+0x00cbbb18  ascii  GetPlayerSocket
+0x00cbbb30  ascii  pcEquipTransform
+0x00cbbb48  ascii  nSocketIndex < CHARACTER_SOCKET_COUNT
+0x00cbbb78  ascii  pWeaponOptimization
+0x00cbbb90  ascii  GetNpcSocket
+0x00cbbc00  ascii  TransformPlayerEquip
+0x00cbbc30  ascii  Transform
+0x00cbbc40  ascii  tabTransform
+0x00cbbc50  ascii  GetWeaponParam
+0x00cbbc68  ascii  dwWeaponRepresentIDs
+0x00cbbc88  ascii  nWeapons
+0x00cbbef0  ascii  ResetSocketResource
+0x00cbbfe8  ascii  RLActorSfx::Init
+0x00cbc018  ascii  RLActorSfx::AddSfx
+0x00cbc058  ascii  tabSfxData
+0x00cbc068  ascii  SfxPath
+0x00cbc078  ascii  LoadModelSFXParam.szSFX
+0x00cbc098  ascii  LoadModelSFXParam.szSocketName
+0x00cbc0e8  ascii  RLActorSfx::AddSocketSfx
+0x00cbc108  ascii  nIndex >= 0 && nIndex < CHARACTER_SOCKET_COUNT
+0x00cbc140  ascii  prlSfxActor
+0x00cbc3b0  ascii  MountHorse
+0x00cbc608  ascii  tag sfx
+0x00cbc65c  ascii  handle
+0x00cbc8c8  ascii  RLModel::AttachTo
+0x00cbc910  ascii  m_eBindType == BindType::Standlone
+0x00cbc960  ascii  prlParent->GetModel()->AttachModel(m_piModel) != -1
+0x00cbc9a0  ascii  m_pRLModelMgr->Attach(this, prlParent)
+0x00cbc9d0  ascii  RLModel::BindTo
+0x00cbc9e8  ascii  szSocket
+0x00cbc9f8  ascii  ::BindTo(m_piModel, prlParent->GetModel(), szSocket)
+0x00cbca38  ascii  m_pRLModelMgr->Bind(this, prlParent, szSocket, bBindHide)
+0x00cbcaa0  ascii  m_eBindType == BindType::Attach || m_eBindType == BindType::Bind
+0x00cbcb10  ascii  m_eBindState3D != BindState3D::SubActor
+0x00cbcb50  ascii  piParentModel->AttachModel(m_piModel) != -1
+0x00cbcb88  ascii  m_pRLModelMgr->Attach(this, m_prlParent)
+0x00cbcbd0  ascii  m_szSocket
+0x00cbcbe0  ascii  ::BindTo(m_piModel, piParentModel, m_szSocket)
+0x00cbcc18  ascii  m_pRLModelMgr->Bind(this, m_prlParent, m_szSocket)
+0x00cbcc58  ascii  RLModel::_CommitAttachNBind
+0x00cbcc98  ascii  m_bInAttachNBindList
+0x00cbccb8  ascii  eType != BindType::Error
+0x00cbcd28  ascii  m_eBindType == BindType::Attach
+0x00cbcd50  ascii  prlHost->GetModel()->AttachModel(m_piModel) != -1
+0x00cbcd90  ascii  m_eBindType == BindType::Bind
+0x00cbcdb8  ascii  ::BindTo(m_piModel, prlHost->GetModel(), szSocket)
+0x00cbcee0  ascii  BindTo(prlParent, snapshoot.szSocket)
+0x00cbd098  ascii  pBonePosition
+0x00cbfae0  ascii  RLModelMgr::Attach
+0x00cbfb18  ascii  !prlModel->_InAttachNBindList()
+0x00cbfb40  ascii  RLModelMgr::Bind
+0x00cbfb58  ascii  RLModelMgr::RemoveAttachNBind
+0x00cbfba8  ascii  m_hashAttachNBind.size() == 0 && m_mapRLModel.size() == 0
+0x00cc1ab0  ascii  Param.pRLUIHandler
+0x00cc1ac8  ascii  m_pGameWorldUIHandler == nullptr
+0x00cc1fe0  ascii  RL_WEAPON_LH
+0x00cc1ff0  ascii  RL_WEAPON_RH
+0x00cc2000  ascii  RL_WEAPON_DART
+0x00cc2018  ascii  RL_WEAPON_RACK
+0x00cc3e60  ascii  SO3RL::GetResourceByHandle
+0x00cc3ed0  ascii  SO3RL::GetCombinedResourcesByHandle
+0x00cc3f28  ascii  SO3RL::GetMaterialByHandle
+0x00cc3fa0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\Backend\RLBackend.cpp,SO3RL::BindTo:519
+0x00cc4040  ascii  SO3RL::BindTo
+0x00cc4060  ascii  SO3RL::GetBindExtraInfo
+0x00cc4080  ascii  pszSocketOrBone
+0x00cc4098  ascii  pBindExtraInfo
+0x00cc4ab0  ascii  title offset y
+0x00cc4af0  ascii  model scale
+0x00cc4b00  ascii  socket scale
+0x00cc4b10  ascii  selection scale
+0x00cc4b28  ascii  effect type
+0x00cc4b38  ascii  effect scale
+0x00cc4b60  ascii  enter scene sfx id
+0x00cc4b98  ascii  weapon color channel
+0x00cc4bb8  ascii  weapon color index
+0x00cc4c68  ascii  effect result scale
+0x00cc4d50  ascii  load default socket
+0x00cc5358  ascii  KGRLLoader::GetEquipmentScale
+0x00cc5598  ascii  curSocketIdx <= pUnit->uSocketCount
+0x00cc5a98  ascii  BehaviorComponent::OnAttach
+0x00cc5ce8  ascii  CameraComponent::OnAttach
+0x00cc5d98  ascii  CameraComponent::AttachCamera
+0x00cc63b0  ascii  PlaySFX
+0x00cc6490  ascii  LoadSocketSFX
+0x00cc64a0  ascii  UnloadSocketSFX
+0x00cc64b8  ascii  UnbindFromOthers
+0x00cc64e8  ascii  UpdateChannelEffectPos
+0x00cc6508  ascii  GetSocketPosition
+0x00cc6878  ascii  RendererComponent::LuaScale
+0x00cc68e0  ascii  _ApplyAnchorPointFromLocal(dwCharacterID, pszSocket, vOutSocketPosition)
+0x00cc6938  ascii  RendererComponent::LuaPlaySFX
+0x00cc69f8  ascii  RendererComponent::LuaLoadSocketSFX
+0x00cc6a40  ascii  szSFX && szSFX[0] != '\0'
+0x00cc6a60  ascii  LoadSocketSFX(szSFX, szSocket)
+0x00cc6a88  ascii  RendererComponent::LuaUnloadSocketSFX
+0x00cc6ad0  ascii  RendererComponent::LuaUnbindFromOthers
+0x00cc6b30  ascii  RendererComponent::LuaUpdateChannelEffectPos
+0x00cc6b80  ascii  RendererComponent::LuaGetSocketPosition
+0x00cc6bb0  ascii  pszSocket
+0x00cc6cd8  ascii  PhysxComponent::UpdateTransformFromSimulation
+0x00cc6de8  ascii  RendererComponent::SetScale
+0x00cc6e10  ascii  RendererComponent::LoadSocketSFX
+0x00cc6e38  ascii  strSocket
+0x00cc6e44  ascii  pRLSfx
+0x00cc6e50  ascii  pRLSfx->LoadModel(szSFX, nullptr, false, ModelLoadArguments()) != ModelLoadResult::Error
+0x00cc6ec0  ascii  pRLSfx->BindTo(m_rlActor.GetRLModel(), strSocket)
+0x00cc6f00  ascii  RendererComponent::UnloadSocketSFX
+0x00cc6f30  ascii  RendererComponent::BindTo
+0x00cc6f60  ascii  RendererComponent::UnbindFromOthers
+0x00cc6f90  ascii  RendererComponent::UpdateChannelEffectPos
+0x00cc6fc8  ascii  RendererComponent::GetSocketPosition
+0x00cc6ff8  ascii  m_rlActor.GetBonePosition(pszSocket, rvPos, vOffset)
+0x00cc72c0  ascii  m_piComRenderer->OnAttach(this)
+0x00cc7358  ascii  m_piComPhysx->OnAttach(this)
+0x00cc73e0  ascii  m_piComCamera->OnAttach(this)
+0x00cc7468  ascii  piCom->OnAttach(this)
+0x00cc7678  ascii  !m_bInDummyTraverse
+0x00cc7750  ascii  KRLDummyMgr::DummyMutualBind
+0x00cc7810  ascii  piChildRender->BindTo(piParentRender->GetActor().GetRLModel(), szSocket)
+0x00cc78e0  ascii  m_bInDummyTraverse
+0x00cc7ef0  ascii  GetBindPos
+0x00cc7f00  ascii  Bind
+0x00cc8138  ascii  GetRootBoneTransform
+0x00cc8158  ascii  GetBoneTransform
+0x00cc816c  ascii  szBone
+0x00cc82c0  ascii  GetSocketTransformation
+0x00cc82e0  ascii  szSocket[0] != '\0'
+0x00cc82f8  ascii  GetAnimationTransformationAt
+0x00cc88d0  ascii  DeleteSFX
+0x00cc8958  ascii  LoadPlayerSocket
+0x00cc8970  ascii  LoadSFXBySocket
+0x00cc89a0  ascii  UnLoadSFXBySocket
+0x00cc8a50  ascii  UpdateAnchorPointTransform
+0x00cc9268  ascii  HangPetCore::GetRootBoneTransform
+0x00cc92a0  ascii  HangPetCore::GetBoneTransform
+0x00cc92c8  ascii  HangPetCore::LoadSFXBySocket
+0x00cc92ec  ascii  szSFX
+0x00cc92f8  ascii  HangPetCore::UnLoadSFXBySocket
+0x00cc9608  ascii  HangPetCore::UpdateAnchorPointTransform
+0x00cc9758  ascii  bone
+0x00cc977c  ascii  socket
+0x00cc9788  ascii  GetSocketScaleAdjust
+0x00cc97a8  ascii  socket_scale
+0x00cc97b8  ascii  by_socket
+0x00cc98a0  ascii  HangPetRide::BindPet
+0x00cc98c0  ascii  HangPetRide::UnBindPet
+0x00cc98e0  ascii  m_rlRide.GetPartInfo(m_szSocket, matSocket, vOffset)
+0x00cc9920  ascii  matSocket.decompose(nullptr, &qRot, &vPos)
+0x00cc99e0  ascii  data/source/item/weapon/halter/halter01.Mesh
+0x00cc9a20  ascii  HangPetRide::UpdateAnchorPointTransform
+0x00cc9d60  ascii  KRLCharacterWeatherEffectMgr::Init
+0x00cc9d90  ascii  g_pRL->m_TableList.m_tabCharacterWeatherEffect
+0x00cc9e50  ascii  share_head_cover_height_offset
+0x00cc9e78  ascii  KRLCharacterWeatherEffectMgr::UnInit
+0x00cca170  ascii  rl_ab::ActionHandler::Unapply
+0x00cca1a0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\actionobject\KRLActionHandler.h
+0x00cca350  ascii  ApplyBindModel
+0x00cca368  ascii  pBindModel
+0x00cca378  ascii  pBindModel->szModelFile
+0x00cca394  ascii  isBind
+0x00cca480  ascii  ApplyBindChainSfx
+0x00cca498  ascii  szSfxFile
+0x00cca520  ascii  pChainSfx
+0x00cca8a0  ascii  m_pLightningSFXActor
+0x00cca8d8  ascii  m_pSFXActor
+0x00cca905  ascii  /Pss/
+0x00cca91f  ascii  01.pss
+0x00cca9a8  ascii  KRLChainBlade::UpdateBoneCount
+0x00cca9d0  ascii  m_pSkeletonBoneInfoTable
+0x00cca9f0  ascii  m_pBoneTable
+0x00ccaa00  ascii  m_pBoneMatrixTable
+0x00ccaa18  ascii  KRLChainBlade::UpdateBoneInfo
+0x00ccaaa0  ascii  pRLSources->m_rlActor.GetPartInfo(m_szSocketName, matPart, vOffset)
+0x00ccab60  ascii  KRLChainBlade::TryLoadSpecialWeaponsSFX
+0x00ccab90  ascii  m_pSpecialWeaponsSFXActor
+0x00ccabb8  ascii  chainBone001
+0x00ccabc8  ascii  strSocketName
+0x00ccae38  ascii  KRLGroupRideLink::AttachRLCharacter
+0x00ccafc8  ascii  m_nLinkCount <= _countof(m_listBindInfo)
+0x00ccb030  ascii  BindAni
+0x00ccb138  ascii  KRLGroupRideLink::UnbindCharacter
+0x00ccb168  ascii  KRLGroupRideLink::ForceRebind
+0x00ccb190  ascii  KRLGroupRideLink::ForceRebind Failed, nPos(%d), dwDependID(%d)
+0x00ccb330  ascii  EnterOffsetY
+0x00ccb430  ascii  KRLGroupRideLink::BindCharacter
+0x00ccb4d0  ascii  KRLHandLink::AttachRLCharacter
+0x00ccb538  ascii  KRLHandLink::AttachCloudType
+0x00ccb560  ascii  KRLHandLink::CloudUnbindCharacter
+0x00ccb588  ascii  KRLHandLink::Active
+0x00ccb5a0  ascii  KRLHandLink::PrepareHoldHands
+0x00ccb5c8  ascii  KRLHandLink::ApplyTaniIKTag
+0x00ccb5f0  ascii  pHandLinkModel
+0x00ccb608  ascii  KRLHandLink::SetMovePosition
+0x00ccb660  ascii  KRLHandLink::LoadCloudModel
+0x00ccb688  ascii  cpHandLinkModel
+0x00ccb6d0  ascii  KRLHandLink::CloudForceBind
+0x00ccb6f8  ascii  KRLHandLink::DependBindToCloud
+0x00ccb720  ascii  KRLHandLink::EnterUpdateClose
+0x00ccb748  ascii  KRLHandLink::UpdateClose
+0x00ccb768  ascii  KRLHandLink::UpdateClosePosition
+0x00ccb790  ascii  KRLHandLink::PrepareUpdateDirection
+0x00ccb7c0  ascii  KRLHandLink::EnterUpdateDirection
+0x00ccb7e8  ascii  KRLHandLink::UpdateDirection
+0x00ccb828  ascii  KRLHandLink::PlayBindingAnimation
+0x00ccb850  ascii  KRLHandLink::PlayDependAnimation
+0x00ccb878  ascii  KRLHandLink::PlayAnimation
+0x00ccb8b0  ascii  [RLHandLink] Play Depend Animation(%s) Failed.
+0x00ccb8e8  ascii  KRLHandLink::Update
+0x00ccb900  ascii  KRLHandLink::GetLinkResource
+0x00ccbac0  ascii  krlPlayerEquipSfx::Init
+0x00ccbaf0  ascii  krlPlayerEquipSfx::Show
+0x00ccbb10  ascii  krlPlayerEquipSfx::Reset
+0x00ccbb30  ascii  krlPlayerEquipSfx::UpdatePosition
+0x00ccc110  ascii  prlBindCharacter
+0x00ccc128  ascii  piBindModel
+0x00ccc150  ascii  [KRLReferenceCameraAni]PlayObjPlot bBind = %d, vPos = (%f, %f, %f), vScale = (%f, %f, %f), qRot = (%f, %f, %f, %f)
+0x00ccc220  ascii  [KRLReferenceCameraAni]EnableCameraReferenceScale = true, Scale = (%f, %f, %f)
+0x00ccc280  ascii  [KRLReferenceCameraAni]EnableCameraReferenceScale = false
+0x00ccc368  ascii  KRLSlotLink::Attach
+0x00ccc380  ascii  KRLSlotLink::AttachEmpty
+0x00ccc3a0  ascii  KRLSlotLink::AttachRLCharacter
+0x00ccc438  ascii  KRLSlotLink::AttachEmptyCharacter
+0x00ccc570  ascii  KRLSlotLink::ForceBind
+0x00ccc640  ascii  KRLSlotLink::BindCharacter
+0x00ccc660  ascii  m_BaseInfo.szBindSocket
+0x00ccc680  ascii  KRLSlotLink::UnbindCharacter
+0x00ccc6e0  ascii  cpSlotLinkModel->nBindPos >= erlLinkPos_First && cpSlotLinkModel->nBindPos < m_nLinkCount
+0x00ccc838  ascii  KRLDirectionSfx::Create
+0x00ccc858  ascii  KRLDirectionSfx::LoadActor
+0x00ccc89c  ascii  pSFX
+0x00ccc8a8  ascii  KRLDirectionSfx::ReloadActors
+0x00ccc8d0  ascii  KRLDirectionSfx::AddExtend
+0x00ccc8f0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\actionobject\KRLDirectionSfx.cpp,KRLDirectionSfx::Active:230
+0x00ccc9b0  ascii  KRLDirectionSfx::Active
+0x00ccca10  ascii  KRLSocketDynamicObject::OnPlayAnimationFinish
+0x00ccca48  ascii  KRLSocketDynamicObject::Init
+0x00ccca80  ascii  m_rlActor.Create(g_pRL->GenerateID(dwSceneID), eratEffect)
+0x00cccac8  ascii  KRLSocketDynamicObject::UpdateModel
+0x00cccb40  ascii  KRLSocketDynamicObject::Update
+0x00cccbd8  ascii  KRLSocketDynamicObject::GetIdleState
+0x00cccc28  ascii  KRLSocketDynamicObject::BindToMaster
+0x00cccc58  ascii  KRLSocketDynamicObject::PlayAnimation
+0x00cccc88  ascii  KRLSocketDynamicObject::UnbindFromMaster
+0x00ccccc0  ascii  pRLBindModel
+0x00cccfe0  ascii  GetTransform
+0x00ccd028  ascii  SetSocketVisible
+0x00ccd290  ascii  KRLCharacter::LuaSetSocketVisible
+0x00ccd8b8  ascii  GetCurrentShapeCanBindRust
+0x00ccd980  ascii  KRLRide::LuaGetCurrentShapeCanBindRust
+0x00ccdab8  ascii  UnitScale.x
+0x00ccdac8  ascii  UnitScale.y
+0x00cceaf8  ascii  m_pResourceSfx
+0x00ccebc0  ascii  pcSocketResource
+0x00ccebe0  ascii  VirtualNPC Load Socket[%s] Failed, SocketIndex(%d), ModelID(%d)
+0x00ccec88  ascii  RLVirtualNPC::LoadSocket
+0x00cceca8  ascii  RLVirtualNPC::CheckEquipsSDResource
+0x00ccecd8  ascii  pcSocketResurce
+0x00cced20  ascii  RLVirtualNPC::GetPlayerSocketOffset
+0x00cced50  ascii  pvOffset
+0x00ccf040  ascii  KRLBuffBullet::PlayHitSFX
+0x00ccf078  ascii  KRLBuffBullet::BindBullet
+0x00ccf098  ascii  KRLBuffBullet::UnbindBullet
+0x00ccf508  ascii  m_listBindInfo[nPos].pCharacter
+0x00ccf6a0  ascii  KRLObjectLink::UpdateSocketVisible
+0x00ccf740  ascii  KRLObjectLink::EnableForceHideSocket
+0x00ccf7d8  ascii  m_nLinkCount >= 0 && m_nLinkCount <= _countof(m_listBindInfo)
+0x00ccf850  ascii  pRLHandLink
+0x00ccf910  ascii  KRLAnimationShadow::AttachPlayer
+0x00ccfa98  ascii  KRLRushFullScreenSfx::CreateSFX
+0x00ccfaf0  ascii  pRushFullScreenSFXParam
+0x00ccfb10  ascii  KRLRushFullScreenSfx::Update
+0x00ccfb38  ascii  KRLRushFullScreenSfx::CheckCamera
+0x00ccfbb8  ascii  KRLPlayerLink::AttachRLCharacter
+0x00ccfea8  ascii  KRLPlayerLink::BeginTransRepresent
+0x00ccfed8  ascii  KRLPlayerLink::EndTransRepresent
+0x00ccff80  ascii  KRLNpcLink::AttachRLCharacter
+0x00cd0028  ascii  !m_listBindInfo[erlPos].dwCharacterID
+0x00cd00b0  ascii  KRLNpcLink::BindingLink
+0x00cd00f8  ascii  KRLNpcLink::BindingNpcLink
+0x00cd0280  ascii  KRLNpcLink::BindCharacter
+0x00cd02a0  ascii  pcszSocketName
+0x00cd02c0  ascii  m_listBindInfo[i].eState == erlLinkState_Enter || m_listBindInfo[i].eState == erlLinkState_None
+0x00cd0360  ascii  KRLNpcLink::UnbindCharacter
+0x00cd0388  ascii  KRLNpcLink::BindToMounts
+0x00cd03a8  ascii  prlBindSocketModel
+0x00cd03d0  ascii  KRLNpcLink::UnBindToMounts
+0x00cd0510  ascii  m_listBindInfo[erlLinkPos_First].pCharacter
+0x00cd0548  ascii  IsPlayer(m_listBindInfo[erlLinkPos_First].dwCharacterID)
+0x00cd0918  ascii  m_dwCharacterNumBones
+0x00cd0950  ascii  m_pUpdateBuffer->Create(m_dwCharacterNumBones)
+0x00cd09a8  ascii  m_pUpdateResultBuffer->Create(m_dwCharacterNumBones)
+0x00cd0ba4  ascii  Offset
+0x00cd15d0  ascii  KRLSummit::UpdateSocket
+0x00cd15f0  ascii  KRLSummit::LoadSocket
+0x00cd1690  ascii  KRLSuperSFX::Create
+0x00cd16a8  ascii  rSuperSFXParam.dwID > 0
+0x00cd16c8  ascii  KRLSuperSFX::UpdateParam
+0x00cd16e8  ascii  prlSuperSFX
+0x00cd1700  ascii  KRLVisualHelper::AddSfx
+0x00cd1aa8  ascii  KRLMissile::PlayHitSfx
+0x00cd1ac8  ascii  m_HitSfxEntity
+0x00cd1fb8  ascii  PrepareEffectResultMissileParam
+0x00cd2240  ascii  KRLRideRush::HandleAnimationFinish
+0x00cd27e0  ascii  KRLRushState::GetTransSocketParam
+0x00cd2840  ascii  dwSocketType < PLAYER_RUSH_SOCKET_TYPE_COUNT
+0x00cd2878  ascii  KRLRushState::GetSocketParam
+0x00cd2a38  ascii  KRLRushState::GetBonePosition
+0x00cd2a60  ascii  m_szCameraBone
+0x00cd2ee0  ascii  KRLRushState::UpdateSocketParam
+0x00cd2f08  ascii  KRLRushState::IsSocketParamChanged
+0x00cd2f38  ascii  pSocketParam
+0x00cd2f58  ascii  KRLRushState::LoadSocket
+0x00cd2f78  ascii  KRLRushState::UpdateTransSocket
+0x00cd2fa0  ascii  KRLRushState::UpdateTransSocketParam
+0x00cd2fd0  ascii  pTransSocketParam
+0x00cd2fe8  ascii  KRLRushState::UnloadSocket
+0x00cd3008  ascii  pcszPreSocketName
+0x00cd3020  ascii  pcszTransSocketName
+0x00cd3cf0  ascii  KRLRushState::PlayerRushSFX
+0x00cd3d18  ascii  KRLRushState::UpdateRushSFX
+0x00cd3d40  ascii  KRLRushState::BeginRushSFX
+0x00cd3d60  ascii  KRLRushState::EndRushSFX
+0x00cd41e0  ascii  KRLShadow::UpdateSocket
+0x00cd4610  ascii  nBBox >= 0 && nBBox < CHARACTER_SFX_BBOX_END - CHARACTER_SFX_BBOX_BEGIN
+0x00cd4668  ascii  KRLOption::IsHeadSfxEnabled
+0x00cd47e0  ascii  !m_pResourceSfx
+0x00cd47f8  ascii  !m_pCustomSfxMgr
+0x00cd4810  ascii  m_pCustomSfxMgr
+0x00cd49c8  ascii  nIndex >= CHARACTER_SFX_TITLE_MARK_BEGIN
+0x00cd4a00  ascii  nIndex < CHARACTER_SFX_TITLE_MARK_END
+0x00cd4a30  ascii  pGlobalEffect
+0x00cd4ca8  ascii  KRLCharacter::PlaySFX
+0x00cd4cc8  ascii  pSFXModel
+0x00cd4cd8  ascii  KRLCharacter::PlayECSSFX
+0x00cd4cf8  ascii  eSFXType >= 0 && eSFXType < SFX_TYPE_TOTAL
+0x00cd4d30  ascii  s_character_sfx_origin
+0x00cd4d50  ascii  KRLCharacter::PlaySocketSFX
+0x00cd4d78  ascii  dwSfxID
+0x00cd4d88  ascii  m_SocketSfx.cpSfxData
+0x00cd4da8  ascii  socket sfx
+0x00cd4db8  ascii  KRLCharacter::ClearCharacterRLECSSfx
+0x00cd4de8  ascii  KRLCharacter::ClearCharacterRLECSSfxBySocket
+0x00cd4e20  ascii  KRLCharacter::ClearCharacterRLECSSfxBySubType
+0x00cd4e68  ascii  KRLCharacter::FreezeCharacterRLECSSfx
+0x00cd4e98  ascii  KRLCharacter::GetCharacterRLECSSfxBySubType
+0x00cd4f08  ascii  KRLCharacter::PlaySocketAnimation
+0x00cd4f30  ascii  nCastID >= 0 && nCastID < RL_SOCKET_ANIMATION_COUNT
+0x00cd4f70  ascii  !cstr_path_null(SocketParam.pszSocketAni[nCastID])
+0x00cd5168  ascii  KRLCharacter::UpdateSkillEffect
+0x00cd5500  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\src\case\actionobject\krlcharacter.cpp,KRLCharacter::HideSocket:5321
+0x00cd56a8  ascii  KRLCharacter::UpdateIdleRandomSFX
+0x00cd56d0  ascii  KRLCharacter::UpdateIdleRandomSFXByAutoTime
+0x00cd5828  ascii  KRLCharacter::UpdateEquipSFX
+0x00cd5850  ascii  KRLCharacter::UpdatePlayerEquipSFXCustomTransform
+0x00cd5b38  ascii  KRLCharacter::UpdatePlayerWeaponSocket
+0x00cd5b68  ascii  szSheathSocket
+0x00cd5b80  ascii  szWeaponSocket
+0x00cd5b98  ascii  KRLCharacter::UpdateNPCWeaponSocket
+0x00cd5bd0  ascii  nWeaponShape == RL_WEAPON_SHAPE_LH || nWeaponShape == RL_WEAPON_SHAPE_RH
+0x00cd5c28  ascii  KRLCharacter::MountRide
+0x00cd5c48  ascii  KRLCharacter::OfflineMountRide
+0x00cd5ce8  ascii  pcszSFX
+0x00cd5de0  ascii  Character Load Socket[%s] Failed, SocketIndex(%d), ObjectType(%d), ModelID(%d)
+0x00cd5fb0  ascii  KRLCharacter::UpdateSocket
+0x00cd5fd0  ascii  KRLCharacter::UpdateSocketTransform
+0x00cd6000  ascii  cnSocektIndex >= 0 && cnSocektIndex < CHARACTER_SOCKET_COUNT
+0x00cd6050  ascii  pRLSocketModel
+0x00cd6068  ascii  KRLCharacter::CheckEquipsSDResource
+0x00cd6258  ascii  KRLCharacter::LoadSocket
+0x00cd62d0  ascii  KRLCharacter::ParseSocket
+0x00cd62f0  ascii  KRLCharacter::ChangePlayerWeaponPoseState
+0x00cd6328  ascii  KRLCharacter::UpdatePlayerWeaponModel
+0x00cd6528  ascii  KRLCharacter::UpdateExtendSocket
+0x00cd65f0  ascii  RandomSFXInterval
+0x00cd6618  ascii  KRLCharacter::GetRandomSFXPlayInterval
+0x00cd6670  ascii  KRLCharacter::PlaySkillEffectResultAnimation
+0x00cd66a8  ascii  KRLCharacter::PlayUnBindSkillEffectResultSFX
+0x00cd6760  ascii  KRLCharacter::OnWeaponAnimtionFinish
+0x00cd6868  ascii  CreateAnimationOffset
+0x00cd6a80  ascii  KRLCharacter::UpdateUpBodyLowTrackAnimationOffset
+0x00cd6ac0  ascii  KRLCharacter::UpdateDownBodyLowTrackAnimationOffset
+0x00cd6b00  ascii  KRLCharacter::UpdateWholeBodyLowTrackAnimationOffset
+0x00cd6be0  ascii  m_rlSkillBuffLoadActor.Create(g_pRL->GenerateID(GetSceneID()), eratEffect)
+0x00cd6c40  ascii  KRLCharacter::PlayEquipSFXSequence
+0x00cd6cb0  ascii  dwSequenceID >= 0 && dwSequenceID < EQUIP_SFX_SEQUENCE_COUNT
+0x00cd6d18  ascii  pSFXModelParam
+0x00cd6d30  ascii  GetRLPetBonePos
+0x00cd72b0  ascii  KRLCharacter::PlayFullScreenSFX
+0x00cd72d8  ascii  pSfxModel
+0x00cd7400  ascii  KRLCharacter::BindSfx
+0x00cd7420  ascii  pSfxModel->szFilePath[0]
+0x00cd7618  ascii  KRLCharacter::GetBonePosition
+0x00cd7640  ascii  m_Interaction.szCameraBone
+0x00cd77d8  ascii  KRLCharacter::PlayOriginSFX
+0x00cd7800  ascii  pSfxData
+0x00cd7954  ascii  Socket
+0x00cd7960  ascii  pcszSocket
+0x00cd7a28  ascii  KRLCharacter::MountMannedSpace
+0x00cd7b18  ascii  KRLCharacter::IsOnHandLinkCloud
+0x00cd7c88  ascii  Dismount
+0x00cd7c98  ascii  DismountParam_%d
+0x00cd7cf0  ascii  KRLCharacter::PlayDismountAnimation
+0x00cd7d40  ascii  KRLCharacter::GetPlayerSocketOffset
+0x00cd7f30  ascii  SFXFilePath
+0x00cd7f40  ascii  cpszSFXFilePath
+0x00cd8260  ascii  KRLCharacter::LoadTeamKungFuSFX
+0x00cd8290  ascii  m_rlTeamIDSFX.Create(g_pRL->GenerateID(GetSceneID()), eratUnknown)
+0x00cd82e0  ascii  m_rlKungFuIDSFX.Create(g_pRL->GenerateID(GetSceneID()), eratUnknown)
+0x00cd8390  ascii  KRLCharacter::PlaySkillCasterEffect
+0x00cd8490  ascii  KRLCharacter::ChangePlayerWeaponSelect
+0x00cd84c0  ascii  KRLCharacter::ChangePlayerWeaponSheath
+0x00cd8588  ascii  dwIndex < RL_WEAPON_ANIMATION_SOCKET_COUNT
+0x00cd8850  ascii  KRLCharacter::SetSkillSkinSFXRelation
+0x00cd8880  ascii  KRLCharacter::SetSkillSkinSFXRelation GetSkillSkinSFXReplaceModel Error
+0x00cd8a28  ascii  KRLCharacter::UpdateSocketDynamicObject
+0x00cd8a60  ascii  m_nSelectWeapon < RL_EQUIP_WEAPON_COUNT && m_nSelectWeapon >= RL_EQUIP_WEAPON_HEAVY
+0x00cd8ba8  ascii  use_color_scale
+0x00cd8c18  ascii  color_scale
+0x00cd8e18  ascii  KRLCharacter::UpdateFootprintIdleSFX
+0x00cd8e48  ascii  pcFootprintIdleSFXModel
+0x00cd8f30  ascii  KRLCharacter::UpdatePlayerEquipSFXForceBindToBone
+0x00cd9048  ascii  enable_local_player_effect
+0x00cd9068  ascii  enable_remote_player_effect
+0x00cd9090  ascii  enable_npc_effect
+0x00cd90a8  ascii  KRLCharacter::UpdateWeatherEffect
+0x00cd9198  ascii  bottom_snow_offset_min
+0x00cd91b8  ascii  bottom_snow_offset_max
+0x00cd91d8  ascii  effect_interpolate_speed
+0x00cd91f8  ascii  KRLCharacter::SetWeatherEffect
+0x00cd9220  ascii  effect_arg_name
+0x00cd9238  ascii  tabEffectArgName
+0x00cd92b8  ascii  bottom_snow_offset
+0x00cd92d0  ascii  pcszBottomSnowOffsetArgName
+0x00cd93c8  ascii  enable_face_effect
+0x00cd93e0  ascii  enable_hat_effect
+0x00cd93f8  ascii  EnableCharacterEnvSFX
+0x00cd9418  ascii  KRLCharacter::UpdateEnvSFX
+0x00cd9438  ascii  KRLCharacter::UpdateEnvSFXEntity
+0x00cd9460  ascii  uIndex < RLCHARACTER_ENV_SFX_COUNT
+0x00cd9c38  ascii  ShowRLCursorEffect
+0x00cd9c50  ascii  pcCursorEffectModel
+0x00cd9c68  ascii  pcCursorEffectModel->szFilePath
+0x00cd9ce8  ascii  KRLRideLink::AttachRLCharacter
+0x00cd9d10  ascii  KRLRideLink::DirectAttachCharacter
+0x00cd9ec8  ascii  KRLRideLink::Rebinding
+0x00cd9ee8  ascii  KRLRideLink::PullRideRebinding
+0x00cda118  ascii  m_listBindInfo[erlLinkPos_First].pCharacter == nullptr
+0x00cda160  ascii  m_listBindInfo[erlLinkPos_Second].pCharacter == nullptr
+0x00cda248  ascii  KRLRideLink::UnbindCharacter
+0x00cda298  ascii  KRLRideLink::ForceRebind
+0x00cda528  ascii  KRLDoodad::UpdateQuestEffect
+0x00cda6a8  ascii  KRLDoodad::LoadCorpseSocket
+0x00cda6d0  ascii  KRLDoodad::LoadDoodadEffect
+0x00cda930  ascii  m_prlFaceDefinition->BindTo(m_rlActorHelper.GetRLModel(), "s_face")
+0x00cdaa88  ascii  KRLDoodad::BindSfx
+0x00cdae50  ascii  KRLFaceDefinition::LoadTransformFace
+0x00cdaf10  ascii  m_prlModel->BindTo(m_pCharacter->m_rlActor.GetRLModel(), "s_face")
+0x00cdb030  ascii  uBoneCount > 0
+0x00cdb630  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\src\case\actionobject\krllocalcharacter.cpp,KRLLocalCharacter::MountHorse:1444
+0x00cdb6f8  ascii  KRLLocalCharacter::MountHorse
+0x00cdb80c  ascii  tabSfx
+0x00cdb818  ascii  CenterSfxID
+0x00cdb840  ascii  CenterSfxScale
+0x00cdb858  ascii  KRLLocalCharacter::MountMannedSpace
+0x00cdbaa0  ascii  KRLLocalCharacter::EnablePreviewEquipSFX
+0x00cdbad8  ascii  KRLLocalCharacter::UpdatePreviewEquipSFXTransform
+0x00cdbb18  ascii  m_sPreviewEquipSFXData.bPreview
+0x00cdbb40  ascii  KRLLocalCharacter::UpdateLogicPlayerEquipSFXTransform
+0x00cdbb80  ascii  KRLLocalCharacter::ProcessPreviewEquipSFXData
+0x00cdbc28  ascii  KRLLocalCharacter::UpdatePreviewEquipTransform
+0x00cdbc60  ascii  cnSokcketIndex >= 0 && cnSokcketIndex < CHARACTER_SOCKET_COUNT
+0x00cdbd00  ascii  m_sPreviewEquipData[i].sCustomData.nSocketIndex != cnSokcketIndex
+0x00cdbd60  ascii  nEquiptransformIndex != -1
+0x00cdbd80  ascii  sLogicTransformData.fScale > FLT_EPSILON
+0x00cdbdb8  ascii  KRLLocalCharacter::EquipSocketApplyLogicTransform
+0x00cdbed0  ascii  PrimaryBone
+0x00cdbef0  ascii  OffsetY
+0x00cdbf00  ascii  KeepCharacterScale
+0x00cdbf68  ascii  KRLMannedSpace::BindCharacter
+0x00cdbfb8  ascii  KRLMannedSpace::UnbindCharacter
+0x00cdc178  ascii  FrontSightOffsetY
+0x00cdc1d8  ascii  FrontSightScale
+0x00cdc260  ascii  SocketName
+0x00cdc270  ascii  szSocketName
+0x00cdc3d8  ascii  OffsetHeight
+0x00cdc568  ascii  pEffectModel
+0x00cdc730  ascii  KRLPainting::PlayPaintingSFX
+0x00cdc850  ascii  nSfxID > 0
+0x00cdc860  ascii  nSfxID <= SFX_KIND
+0x00cdc878  ascii  MainSfxID
+0x00cdc888  ascii  m_PaintParam.nMainSfxID != 0
+0x00cdc8b0  ascii  ReserveSfxID
+0x00cdc8c0  ascii  m_PaintParam.nReserveSfxID != 0
+0x00cdc8e8  ascii  DotSfxID
+0x00cdc8f8  ascii  m_PaintParam.nDotSfxID != 0
+0x00cdc920  ascii  ThinSfxID
+0x00cdc930  ascii  m_PaintParam.nThinSfxID != 0
+0x00cdc958  ascii  SfXLife
+0x00cdc968  ascii  m_PaintParam.nSfxLife
+0x00cdca58  ascii  DotSfxScale
+0x00cdca68  ascii  BackwardOffset
+0x00cdcaf8  ascii  SfxScale
+0x00cdd508  ascii  KRLRemoteCharacter::MountHorse
+0x00cdd6b8  ascii  KRLRemoteCharacter::MountMannedSpace
+0x00cdda90  ascii  KRLRepresentCharacter::LoadSockets
+0x00cddac0  ascii  rlScoket.nIndex < CHARACTER_SOCKET_COUNT
+0x00cddf20  ascii  prlSocket->nIndex < CHARACTER_SOCKET_COUNT
+0x00cddf58  ascii  KRLRepresentCharacter::LoadSocket
+0x00cddf80  ascii  prlSocket
+0x00cddfa0  ascii  KRLRepresentCharacter::AttachToSocket
+0x00cddfd0  ascii  KRLRepresentCharacter::TransferToCorpse
+0x00cde180  ascii  HorseRopePosOffset
+0x00cde1b0  ascii  InitPositionOffset
+0x00cde290  ascii  BeginPosOffsetX
+0x00cde2a8  ascii  BeginPosOffsetZ
+0x00cde340  ascii  BindToHorse
+0x00cde4e8  ascii  KRLRide::LoadPartSFX
+0x00cde508  ascii  KRLRide::LoadSockets
+0x00cde528  ascii  KRLRide::PlaySocketAnimation
+0x00cde550  ascii  KRLRide::LoadSocketSFX
+0x00cde570  ascii  KRLRide::LoadSocket
+0x00cde588  ascii  KRLRide::UnloadSocket
+0x00cde5e8  ascii  KRLRide::BindCharacter
+0x00cde608  ascii  KRLRide::UnbindCharacter
+0x00cde6c8  ascii  KRLRide::LoadSFX
+0x00cde6e0  ascii  KRLRide::UnloadSFX
+0x00cde9f0  ascii  KRLRide::IsBindCharacter
+0x00cdea88  ascii  HideSocket
+0x00cdec68  ascii  DismountParam_%lu
+0x00cded28  ascii  KRLRide::UpdateCharacterSocketVisible
+0x00cdedc8  ascii  KRLRide::SetPullRideTransform
+0x00cdef60  ascii  KRLRide::UpdateHorseRopePointTransform
+0x00cdf120  ascii  KRLRide::CheckBindRustAnimation
+0x00cdf250  ascii  KRLSfx::Init
+0x00cdf260  ascii  m_rlActor.Create(m_uID, eratEffect)
+0x00cdf290  ascii  KRLSfx::Bind
+0x00cdf2a0  ascii  szAdjustSocketName
+0x00cdf2b8  ascii  KRLSfxMgr::GetHandle
+0x00cdf2e8  ascii  MaxSfxCount
+0x00cdf2f8  ascii  KRLSfxMgr::CreateSFX
+0x00cdf334  ascii  pSfx
+0x00cdf340  ascii  KRLSfxMgr::CreateCharacterSfx
+0x00cdf368  ascii  KRLSfxMgr::CreateIdentifiableSFX
+0x00cdf3c0  ascii  KRLSfxMgr::m_rlSfxList
+0x00cdf3e0  ascii  KRLSfxMgr::m_CharacterSfxList
+0x00cdf408  ascii  KRLSfxEx::Load
+0x00cdf420  ascii  KRLFullScreenSfx::Load
+0x00cdf468  ascii  KRLFullScreenSfx::Unload
+0x00cdf488  ascii  KRLSceneSwitchSfx::Init
+0x00cdf4a8  ascii  KRLSceneSwitchSfx::Prepare
+0x00cdf4f0  ascii  m_TextureHandle
+0x00cdf508  ascii  KRLSceneSwitchSfx::LoadSfx
+0x00cdf528  ascii  pSceneSwitchSfxModel
+0x00cdf548  ascii  KRLSceneSwitchSfx::PlaySfx
+0x00cdf7a0  ascii  m_rlActor[nIndex].Create(g_pRL->GenerateID(m_pRLScene->m_dwScene), eratEffect)
+0x00cdf800  ascii  m_rlEnemyExActor[nIndex].Create(g_pRL->GenerateID(m_pRLScene->m_dwScene), eratEffect)
+0x00cdf868  ascii  KRLTarget::AttachSceneObject
+0x00cdf890  ascii  KActionTarget::AttachSceneObject(%u, %u)
+0x00cdf8f0  ascii  KRLTarget::GetDefaultScale
+0x00cdf910  ascii  KRLTarget::GetCharcterScale
+0x00cdf948  ascii  NPC_Scale
+0x00cdf958  ascii  KRLTarget::EnableBraceSfx
+0x00cdf9d0  ascii  pSFXConnection
+0x00cdfd30  ascii  RLExtend::TransFrom
+0x00cdfd48  ascii  unbind
+0x00cdfe18  ascii  RLHenchman::Attach
+0x00ce0848  ascii  RLVehicle::Rebind
+0x00ce0b48  ascii  RLVehicle::Bind
+0x00ce0b68  ascii  RLVehicle::Unbind
+0x00ce1280  ascii  SoundEffects
+0x00ce13c0  ascii  OffsetZ
+0x00ce13d0  ascii  OffsetX
+0x00ce1f58  ascii  KRLScene::CreateSceneSFX
+0x00ce1f78  ascii  m_SceneSFXMap.find(uSceneSFXKey) == m_SceneSFXMap.end()
+0x00ce1fc0  ascii  prlSceneSFXModel
+0x00ce1fd8  ascii  KRLScene::SetSceneSFXPosition
+0x00ce2000  ascii  m_SceneSFXMap.find(uSceneSFXKey) != m_SceneSFXMap.end()
+0x00ce2048  ascii  KRLScene::SetSceneSFXRotation
+0x00ce2070  ascii  KRLScene::DestroySceneSFX
+0x00ce2090  ascii  KRLScene::CreateMultiSceneSFX
+0x00ce25d8  ascii  szSrcBone
+0x00ce25e8  ascii  szDstBone
+0x00ce25f8  ascii  szSFXPath
+0x00ce2a20  ascii  CommitSkillEffect
+0x00ce2a38  ascii  KRLSkillEffectResult::KSkillEffectResultData::InvokeResult
+0x00ce2a80  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\src\case\actionobject\krlskilleffectresult.cpp,KRLSkillEffectResult::Activate:117
+0x00ce2b50  ascii  PlaySkillEffectText
+0x00ce2b78  ascii  PlayImmediatelyMissileEffect
+0x00ce2ba0  ascii  RegisterSkillEffectResult
+0x00ce2bc0  ascii  GetEffectPlayType
+0x00ce2be8  ascii  pbSFX
+0x00ce2bf0  ascii  ProcessSkillEffectSound
+0x00ce2c90  ascii  PlaySkillEffectResult
+0x00ce2cb0  ascii  DoSkillEffectText
+0x00ce2cc8  ascii  pGameWorldUIHandler
+0x00ce2db0  ascii  pcszBone
+0x00ce30a8  ascii  krlCustomSfx::Init
+0x00ce30f0  ascii  KRLCustomSfxMgr::Init
+0x00ce3120  ascii  m_arrPlayerEquipSfx
+0x00ce3138  ascii  m_arrNPCSkillSfx
+0x00ce3150  ascii  KRLCustomSfxMgr::Reset
+0x00ce3170  ascii  pICustomSfx
+0x00ce3180  ascii  pPlayerEquipSfx
+0x00ce3198  ascii  KRLCustomSfxMgr::Active
+0x00ce31b8  ascii  KRLCustomSfxMgr::OnCharacterPlayAnimationFinish
+0x00ce31f8  ascii  pRLPlayerEquipSfx
+0x00ce3210  ascii  KRLCustomSfxMgr::CheckDelayInfo
+0x00ce3250  ascii  KRLCustomSfxMgr::Dispatch
+0x00ce3280  ascii  KRLCustomSfxMgr::NotifySkill
+0x00ce32a8  ascii  pCustomSfxTab
+0x00ce32d8  ascii  TargetSfx
+0x00ce32e8  ascii  KRLCustomSfxMgr::NotifyBeenHit
+0x00ce3310  ascii  pBeenHitSfxTab
+0x00ce3328  ascii  KRLCustomSfxMgr::AddSfx
+0x00ce3358  ascii  pSfxTab
+0x00ce3368  ascii  SfxParam.csPosition
+0x00ce3390  ascii  SfxParam.csPath
+0x00ce33b8  ascii  pCustomSfx
+0x00ce33d0  ascii  KRLCustomSfxMgr::AddBullet
+0x00ce3490  ascii  BeenHitSfx
+0x00ce34b0  ascii  KRLCustomSfxMgr::AddChain
+0x00ce34e0  ascii  strSrcBone
+0x00ce34f0  ascii  strDstcBone
+0x00ce3540  ascii  KRLCustomSfxMgr::AddTargetSfx
+0x00ce3568  ascii  pTargetSfxTab
+0x00ce3578  ascii  KRLCustomSfxMgr::CallAdd
+0x00ce3598  ascii  KRLCustomSfxMgr::UpdatePlayerEquipSFX
+0x00ce35c8  ascii  KRLCustomSfxMgr::NotifyPlayerEquipSFX
+0x00ce35f8  ascii  nSFXIDs
+0x00ce3608  ascii  tDesignationSfx
+0x00ce3620  ascii  KRLCustomSfxMgr::AddPlayerEquipSfx
+0x00ce3650  ascii  param.szBindPos
+0x00ce3668  ascii  param.szSFXFilePath
+0x00ce3680  ascii  StandardMaleScale
+0x00ce3698  ascii  StandardFemaleScale
+0x00ce36b0  ascii  LittleBoyScale
+0x00ce36c8  ascii  LittleGirlScale
+0x00ce36e0  ascii  ForceBindInfo
+0x00ce36f0  ascii  StandardMaleBoneToOriginOffset
+0x00ce3718  ascii  StandardFemaleBoneToOriginOffset
+0x00ce3740  ascii  LittleBoyBoneToOriginOffset
+0x00ce3768  ascii  LittleGirlBoneToOriginOffset
+0x00ce3790  ascii  BindBone
+0x00ce37a0  ascii  param.szForceBineBonePos
+0x00ce3818  ascii  OriginalSFX
+0x00ce3828  ascii  KRLCustomSfxMgr::DeletePlayerEquipSfx
+0x00ce3858  ascii  KRLCustomSfxMgr::DispatchPlayerEquipSfx
+0x00ce3888  ascii  KRLCustomSfxMgr::ResetPlayerEquipSFX
+0x00ce38b8  ascii  pDesignationSfx
+0x00ce38d0  ascii  KRLCustomSfxMgr::UpdatePlayerEquipSfxTransform
+0x00ce3908  ascii  KRLCustomSfxMgr::UpdatePlayerEquipSFXForceBindToBone
+0x00ce3948  ascii  FireCustomSfxEvent
+0x00ce4160  ascii  CasterBoneName
+0x00ce4178  ascii  TargetBoneName
+0x00ce41c8  ascii  FinishEffectID
+0x00ce4580  ascii  SkillID(%d) CasterType(%s) Cannot find bone [%s]
+0x00ce4828  ascii  nIndex >= 0 && nIndex < MISSILE_PHASE_SFX_COUNT
+0x00ce48a8  ascii  KModelMissileProcessor::SetLightningSFXModel
+0x00ce48e0  ascii  KModelMissileProcessor::SetSFXModelParam
+0x00ce4a58  ascii  SkillID(%d) TargetType(%s) Cannot find bone [%s]
+0x00ce4cc8  ascii  HandleCustomAction
+0x00ce5580  ascii  HAND_LINK
+0x00ce5720  ascii  pbyOffset
+0x00ce5970  ascii  LuaGetSocketTransform
+0x00ce5bc8  ascii  LuaDummyMutualBind
+0x00ce5d5c  ascii  fScale
+0x00ce6298  ascii  GetSocketTransform
+0x00ce6330  ascii  DummyMutualBind
+0x00ce6f78  ascii  nSelectWeapon
+0x00ce71e8  ascii  invalid bytes length: %d (at offset %d)
+0x00ce7218  ascii  un-finished bytes (len %d at offset %d)
+0x00ce72e8  ascii  invalid varint value at offset %d
+0x00ce7310  ascii  invalid fixed32 value at offset %d
+0x00ce7340  ascii  invalid fixed64 value at offset %d
+0x00ce7578  ascii  invalid bytes value at offset %d
+0x00ce75c0  ascii  invalid sub string at offset %d
+0x00ce7650  ascii  bytes wireformat expected at offset %d
+0x00ce7860  ascii  type mismatch for %s%sfield '%s' at offset %d, %s expected for type %s, got %s
+0x00ce7c70  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlSfxInWater.cpp,SfxInWaterManager::Active:38
+0x00ce7d28  ascii  SfxInWaterManager::Active
+0x00ce7d58  ascii  SfxInWaterManager::_UpdateSFX
+0x00ce7de0  ascii  sfx_config
+0x00ce7df0  ascii  pSfxConfig
+0x00ce7e48  ascii  min_scale
+0x00ce7e58  ascii  max_scale
+0x00ce8260  ascii  FilePaletted->uOffset < m_Header.uSlotCount
+0x00ce9bd8  ascii  KRLOption::EnableHeadSfx
+0x00ce9c00  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\src\case\gameworld\kgameworldhandler.cpp,ActivateFrame:138
+0x00ce9d00  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\src\case\gameworld\kgameworldhandler.cpp,KGameWorldHandler::UpdateBackend:224
+0x00ce9dc8  ascii  KGameWorldHandler::UpdateBackend
+0x00ce9df0  ascii  KGameWorldHandler::SetGasFieldSkillVisible
+0x00ce9e40  ascii  KGameWorldHandler::OnUpdateTeamKungFuVisible
+0x00ce9e78  ascii  KGameWorldHandler::AddSceneOutputWindow
+0x00ce9ea8  ascii  KGameWorldHandler::RemoveSceneOutputWindow
+0x00ce9ee0  ascii  KGameWorldHandler::NewScene
+0x00ce9f08  ascii  KGameWorldHandler::LoadScene
+0x00ce9f30  ascii  KGameWorldHandler::DeleteScene
+0x00ce9f58  ascii  KGameWorldHandler::ZoomCamera
+0x00ce9f80  ascii  KGameWorldHandler::ZoomCharacterCamera
+0x00ce9fb0  ascii  KGameWorldHandler::BeginDragCamera
+0x00ce9fe0  ascii  KGameWorldHandler::EndDragCamera
+0x00cea008  ascii  KGameWorldHandler::SetCameraDragParams
+0x00cea038  ascii  KGameWorldHandler::SetCameraParams
+0x00cea068  ascii  KGameWorldHandler::GetCameraParams
+0x00cea0c0  ascii  KGameWorldHandler::SetCameraDragSpeed
+0x00cea0f0  ascii  KGameWorldHandler::SetCameraMaxDistance
+0x00cea120  ascii  KGameWorldHandler::SetCameraSpringResetSpeed
+0x00cea158  ascii  KGameWorldHandler::SetCameraResetSpeed
+0x00cea188  ascii  KGameWorldHandler::SetCameraResetMode
+0x00cea1b8  ascii  KGameWorldHandler::SetCameraRTParams
+0x00cea1e8  ascii  KGameWorldHandler::GetCameraRTParams
+0x00cea218  ascii  KGameWorldHandler::EnableControlCamera
+0x00cea248  ascii  KGameWorldHandler::ToggleControlCamera
+0x00cea278  ascii  KGameWorldHandler::EnableControlCameraOnly
+0x00cea2b0  ascii  KGameWorldHandler::UpdateEnableControlCamera
+0x00cea2e8  ascii  KGameWorldHandler::ForceResetCamera
+0x00cea318  ascii  KGameWorldHandler::SetView
+0x00cea338  ascii  KGameWorldHandler::TurnToFaceDirection
+0x00cea368  ascii  KGameWorldHandler::GetCameraYawPitchRoll
+0x00cea3a0  ascii  KGameWorldHandler::SwitchCameraMode
+0x00cea3d0  ascii  KGameWorldHandler::IsCharacterMoving
+0x00cea400  ascii  KGameWorldHandler::MouseControlMoveEnable
+0x00cea438  ascii  KGameWorldHandler::LockControl
+0x00cea460  ascii  KGameWorldHandler::StartFollow
+0x00cea488  ascii  KGameWorldHandler::StopFollow
+0x00cea4b0  ascii  KGameWorldHandler::IsFollowing
+0x00cea508  ascii  KGameWorldHandler::AutoMoveToPoint
+0x00cea538  ascii  KGameWorldHandler::AutoMoveToTarget
+0x00cea568  ascii  KGameWorldHandler::IsAutoMoving
+0x00cea590  ascii  KGameWorldHandler::ShowCursorEffect
+0x00cea5c0  ascii  KGameWorldHandler::CommitInput
+0x00cea608  ascii  KGameWorldHandler::PlaySkillShadow
+0x00cea680  ascii  socketUpdate
+0x00cea73c  ascii  tagSFX
+0x00cea758  ascii  tagWeaponAnimation
+0x00cea798  ascii  KGameWorldHandler::OnCharacterDisplayData
+0x00cea7d0  ascii  KGameWorldHandler::OnDisplayName
+0x00cea838  ascii  KGameWorldHandler::OnNewCharacterDisplayData
+0x00cea870  ascii  KGameWorldHandler::OnCharacterPrepareEndMannedSpace
+0x00cea8b0  ascii  KGameWorldHandler::OnCharacterSkillEffectResult
+0x00cea8f0  ascii  KGameWorldHandler::OnCharacterSkillChainDisplay
+0x00cea930  ascii  KGameWorldHandler::OnPublicChainDisplay
+0x00cea970  ascii  KGameWorldHandler::OnCharacterPlayAnimation
+0x00cea9a8  ascii  KGameWorldHandler::OnCharacterPlayAnimationEnd
+0x00cea9e0  ascii  KGameWorldHandler::OnCharacterFollowTarget
+0x00ceaa18  ascii  KGameWorldHandler::SetSceneObjectTitleEffect
+0x00ceaa68  ascii  KGameWorldHandler::OnCharacterOpenDoodad
+0x00ceaab0  ascii  KGameWorldHandler::OnCharacterBeginPickDoodad
+0x00ceaae8  ascii  KGameWorldHandler::OnCharacterEndPickDoodad
+0x00ceab20  ascii  KGameWorldHandler::OnCharacterBeginCraftAnimation
+0x00ceab70  ascii  KGameWorldHandler::OnCharacterEndCraftAnimation
+0x00ceabb0  ascii  KGameWorldHandler::OnCharacterLevelUp
+0x00ceabe0  ascii  KGameWorldHandler::OnCharacterSound
+0x00ceac0c  ascii  .pss
+0x00ceac18  ascii  KGameWorldHandler::OnCharacterPlaySFX
+0x00ceac48  ascii  SfxID
+0x00ceac60  ascii  KGameWorldHandler::OnCharacterPainting
+0x00ceacb0  ascii  KGameWorldHandler::OnCharacterTurnTo
+0x00ceace0  ascii  KGameWorldHandler::OnCharacterScale
+0x00cead10  ascii  KGameWorldHandler::OnDoodadLootList
+0x00cead40  ascii  KGameWorldHandler::OnUpdateDoodadModelFromCharacter
+0x00cead80  ascii  KGameWorldHandler::OnDoodadIdle
+0x00ceada8  ascii  KGameWorldHandler::OnDoodadAfterHit
+0x00ceadd8  ascii  KGameWorldHandler::OnDoodadBeHit
+0x00ceae00  ascii  KGameWorldHandler::GetScene
+0x00ceae28  ascii  KGameWorldHandler::GetScene(%u, %u)
+0x00ceae58  ascii  KGameWorldHandler::GetRLScene
+0x00ceae80  ascii  KGameWorldHandler::GetRLScene(%u, %u)
+0x00ceaeb0  ascii  KGameWorldHandler::SelectPtInScene
+0x00ceaef0  ascii  KGameWorldHandler::SelectPtInGround
+0x00ceaf20  ascii  KGameWorldHandler::SelectRayPtInGround
+0x00ceaf58  ascii  KGameWorldHandler::ScenePointToScreenPoint
+0x00ceaf90  ascii  KGameWorldHandler::ScenePosToScreenXYZ
+0x00ceafc0  ascii  KGameWorldHandler::GameWorldPositionToScreenPoint
+0x00ceb000  ascii  KGameWorldHandler::GameWorldPositionToScreenPoint(%d, %f, %f, %f, %d)
+0x00ceb058  ascii  KGameWorldHandler::GameWorldPositionToScenePosition
+0x00ceb0a0  ascii  KGameWorldHandler::GameWorldPositionToScenePosition(%d, %f, %f, %f, %d)
+0x00ceb0f8  ascii  KGameWorldHandler::ScenePositionToGameWorldPosition
+0x00ceb138  ascii  KGameWorldHandler::SetScreenPosForViewSpaceDepth
+0x00ceb178  ascii  KGameWorldHandler::GetViewSpaceDepthFromScreenPos
+0x00ceb1b8  ascii  KGameWorldHandler::SetSceneObjectSelectable
+0x00ceb1f0  ascii  KGameWorldHandler::GetPlayerAdjustAnimationByIdleActionID
+0x00ceb2d0  ascii  KGameWorldHandler::GetPlayerEquipStyleCount
+0x00ceb308  ascii  KGameWorldHandler::GetPlayerEquipCanAdjustTransform
+0x00ceb358  ascii  KGameWorldHandler::GetPlayerEquipHideParam
+0x00ceb390  ascii  KGameWorldHandler::GetPlayerMysteryHatResource
+0x00ceb3c8  ascii  KGameWorldHandler::GetPlayerMysteryHairParam
+0x00ceb428  ascii  KGameWorldHandler::GetPlayerHairSubsetHideResource
+0x00ceb468  ascii  KGameWorldHandler::GetPlayerChestSubsetHideResource
+0x00ceb4a8  ascii  KGameWorldHandler::GetResourceSfx
+0x00ceb4d0  ascii  resourceSfxs[dwOutputCount].cpszPath
+0x00ceb500  ascii  resourceSfxs[dwOutputCount].cpszPosition
+0x00ceb578  ascii  KGameWorldHandler::ShowSelectionSFX
+0x00ceb5a8  ascii  KGameWorldHandler::HideSelectionSFX
+0x00ceb5e8  ascii  KGameWorldHandler::AttachTargetSceneObject
+0x00ceb620  ascii  KGameWorldHandler::AttachTargetSceneObject(%u, %u, %u)
+0x00ceb668  ascii  KGameWorldHandler::DetachTargetSceneObject
+0x00ceb6a0  ascii  KGameWorldHandler::ShowTargetSelectionSFX
+0x00ceb6d8  ascii  KGameWorldHandler::HideTargetSelectionSFX
+0x00ceb710  ascii  KGameWorldHandler::EnableHeadSFX
+0x00ceb738  ascii  KGameWorldHandler::OnFinishQuest
+0x00ceb760  ascii  KGameWorldHandler::OnReputationLevelUp
+0x00ceb790  ascii  KGameWorldHandler::GetMinimapLayer
+0x00ceb7c0  ascii  KGameWorldHandler::ExecuteCommand
+0x00ceb7f8  ascii  KGameWorldHandler::ExecutePerfCommand
+0x00ceb828  ascii  KGameWorldHandler::ExecuteMovieCommand
+0x00ceb858  ascii  KGameWorldHandler::PlayAnimation
+0x00ceb880  ascii  KGameWorldHandler::StopAnimation
+0x00ceb8a8  ascii  KGameWorldHandler::PlaySpeechFile
+0x00ceb8d0  ascii  KGameWorldHandler::PlaySpeech
+0x00ceb8f8  ascii  KGameWorldHandler::GetCameraInitParams
+0x00ceb988  ascii  KGameWorldHandler::GetWeaponAnimation
+0x00ceb9b8  ascii  KGameWorldHandler::GetLocalCharacterRegionArea
+0x00ceb9f0  ascii  KGameWorldHandler::OnChangeCarrierState
+0x00ceba20  ascii  KGameWorldHandler::OnOTActionProcessBreak
+0x00ceba58  ascii  KGameWorldHandler::OnPlayMovie
+0x00ceba98  ascii  KGameWorldHandler::OnStopMovie
+0x00cebac0  ascii  KGameWorldHandler::OnFollow
+0x00cebb78  ascii  KGameWorldHandler::OnRelationShip
+0x00cebba0  ascii  KGameWorldHandler::OnPlayCameraAnimation
+0x00cebbd8  ascii  KGameWorldHandler::OnTreadRespond
+0x00cebc00  ascii  KGameWorldHandler::OnFireMissile
+0x00cebc28  ascii  KGameWorldHandler::OnReflectMissile
+0x00cebc58  ascii  KGameWorldHandler::OnAddSwitchesEvent
+0x00cebc88  ascii  KGameWorldHandler::OnCharacterBeginAlphaControl
+0x00cebcc8  ascii  KGameWorldHandler::OnCharacterEndAlphaControl
+0x00cebd00  ascii  KGameWorldHandler::OnCharacterDropDeath
+0x00cebd30  ascii  KGameWorldHandler::ShowDoodadBalloon
+0x00cebd60  ascii  KGameWorldHandler::OnDrawNavigateLine
+0x00cebd90  ascii  KGameWorldHandler::FindPath
+0x00cebdb8  ascii  KGameWorldHandler::OnFindPathResult
+0x00cebe08  ascii  KGameWorldHandler::Test_NavigateLine
+0x00cebe38  ascii  KGameWorldHandler::OnCharacterBeHitted
+0x00cebe68  ascii  KGameWorldHandler::SetDoodadOutline
+0x00cebe98  ascii  KGameWorldHandler::BindSfxToCharacter
+0x00cebec8  ascii  KGameWorldHandler::UnbindSfxFromCharacter
+0x00cebf00  ascii  KGameWorldHandler::BindSfxToDoodad
+0x00cebf30  ascii  KGameWorldHandler::UnbindSfxFromDoodad
+0x00cebf60  ascii  KGameWorldHandler::AttachCharacterToCtrl
+0x00cebf98  ascii  KGameWorldHandler::AjustCtrlInput
+0x00cebfc0  ascii  KGameWorldHandler::InvalidCtrlInput
+0x00cebff0  ascii  KGameWorldHandler::OnBeginPrefetchCtrl
+0x00cec020  ascii  KGameWorldHandler::OnEndPrefetchCtrl
+0x00cec050  ascii  KGameWorldHandler::OnCommitCtrl
+0x00cec078  ascii  KGameWorldHandler::OnCharacterMountHorse
+0x00cec0b0  ascii  KGameWorldHandler::OnCharacterChangeRideShape
+0x00cec0e8  ascii  KGameWorldHandler::OnNewScene
+0x00cec110  ascii  KGameWorldHandler::OnCharacterCastSkill
+0x00cec1b8  ascii  KGameWorldHandler::OnAddCharacter
+0x00cec268  ascii  KGameWorldHandler::OnGasFieldFilter
+0x00cec298  ascii  KGameWorldHandler::OnRemoveCharacter
+0x00cec2c8  ascii  KGameWorldHandler::OnAddDoodad
+0x00cec2f0  ascii  KGameWorldHandler::OnRemoveDoodad
+0x00cec318  ascii  KGameWorldHandler::OnCharacterPlayFullScreenSFX
+0x00cec358  ascii  KGameWorldHandler::OnInteractBegin
+0x00cec398  ascii  KGameWorldHandler::OnInteractEnd
+0x00cec3c0  ascii  KGameWorldHandler::OnLoadDynamicWeather
+0x00cec3f0  ascii  KGameWorldHandler::SetTimeOfDay
+0x00cec418  ascii  KGameWorldHandler::ResetTimeOfDay
+0x00cec440  ascii  KGameWorldHandler::GetTimeOfDay
+0x00cec468  ascii  KGameWorldHandler::OnUnloadDynamicWeather
+0x00cec4a0  ascii  KGameWorldHandler::IsDynamicWeatherEnable
+0x00cec4d8  ascii  KGameWorldHandler::SetTimeOfYear
+0x00cec500  ascii  KGameWorldHandler::ResetTimeOfYear
+0x00cec530  ascii  KGameWorldHandler::GetTimeOfYear
+0x00cec558  ascii  KGameWorldHandler::EnablePostRenderFilter
+0x00cec590  ascii  KGameWorldHandler::SetDynamicWeatherSpeed
+0x00cec5c8  ascii  KGameWorldHandler::SetDynamicWeatherIndex
+0x00cec600  ascii  KGameWorldHandler::SetRefleshEnvironmentCircle
+0x00cec638  ascii  KGameWorldHandler::OnPlayDynamicWeatherRainSnow
+0x00cec678  ascii  KGameWorldHandler::OnStopDynamicWeatherRainSnow
+0x00cec6b8  ascii  KGameWorldHandler::OnPlayEmotionAction
+0x00cec6e8  ascii  KGameWorldHandler::OnStopEmotionAction
+0x00cec718  ascii  KGameWorldHandler::OnCharacterResetSkillMove
+0x00cec750  ascii  KGameWorldHandler::DoPreloadSceneResource
+0x00cec788  ascii  KGameWorldHandler::UndoPreloadSceneResource
+0x00cec7c0  ascii  KGameWorldHandler::OnUpdateCharacterJumpCount
+0x00cec7f8  ascii  KGameWorldHandler::OnBreakVehicle
+0x00cec820  ascii  KGameWorldHandler::OnArriveVehicle
+0x00cec850  ascii  KGameWorldHandler::OnSyncRepresentCharacterList
+0x00cec8a0  ascii  KGameWorldHandler::OnSyncPlayerFaceLiftData
+0x00cec8d8  ascii  KGameWorldHandler::ProcessFaceLiftUpdate
+0x00cec910  ascii  KGameWorldHandler::OnCharacterFlyJumpEnd
+0x00cec948  ascii  KGameWorldHandler::OnNotifySkillBullet
+0x00cec978  ascii  KGameWorldHandler::OnNotifySkillBullet Type Error!
+0x00cec9b8  ascii  KGameWorldHandler::OnReviseCameraYaw
+0x00cec9e8  ascii  KGameWorldHandler::OnStopCharacterSecondaryAni
+0x00ceca20  ascii  KGameWorldHandler::OnBeginSwitchController
+0x00ceca80  ascii  KGameWorldHandler::OnEndSwitchController
+0x00cecae0  ascii  KGameWorldHandler::OnSetRemoteCameraMode
+0x00cecb18  ascii  KGameWorldHandler::OnSetGodCameraMode
+0x00cecb48  ascii  KGameWorldHandler::OnResetCameraMode
+0x00cecb78  ascii  KGameWorldHandler::OnNewNpcSocketInfo
+0x00cecbb0  ascii  dwSocketIndex < erlLinkPos_Count || (dwSocketIndex >= 10000 && dwSocketIndex - 10000 < erlLinkPos_Count)
+0x00cecc98  ascii  KGameWorldHandler::OnSyncNpcSocketInfo
+0x00ceccd0  ascii  KGameWorldHandler::SetOfflineRepresentIDs
+0x00cecd28  ascii  KGameWorldHandler::SetLocalFaceDetail
+0x00cecd58  ascii  KGameWorldHandler::OnQinggongSummit
+0x00cecd88  ascii  KGameWorldHandler::SetCharacterEmployer
+0x00cecdc8  ascii  KGameWorldHandler::GetPlayerSocketOffset
+0x00cece00  ascii  KGameWorldHandler::OnGetCharacterPoseStateSocket
+0x00cece40  ascii  pPoseStateSocket
+0x00cece58  ascii  KGameWorldHandler::OnGetCharacterSheathTypeSocket
+0x00cece98  ascii  pSheathTypeSocket
+0x00ceceb0  ascii  KGameWorldHandler::LogicWeaponTypeToRLWeapon
+0x00cecee8  ascii  KGameWorldHandler::OnSyncStaticFontInfo
+0x00ced030  ascii  KGameWorldHandler::LoadSIMWorld
+0x00ced1b8  ascii  KGameWorldHandler::InitHomeLand
+0x00ced218  ascii  KGameWorldHandler::UpdateBFPlayerHeadTopParam
+0x00ced250  ascii  KGameWorldHandler::OnPlayChannelSkill
+0x00ced280  ascii  KGameWorldHandler::OnCharacterLookAt
+0x00ced2b0  ascii  KGameWorldHandler::OnBindCharacterSlot
+0x00ced2e0  ascii  KGameWorldHandler::OnUnBindCharacterSlot
+0x00ced318  ascii  KGameWorldHandler::OnGetCameraInfo
+0x00ced348  ascii  KGameWorldHandler::GetSceneFloor
+0x00ced370  ascii  KGameWorldHandler::SetEngineOption
+0x00ced3a0  ascii  KGameWorldHandler::GetRLModelPolygonCount
+0x00ced420  ascii  nModelSoceketIndex != -1 && nModelSoceketIndex < STATISTICS_RLMODEL_SOCKET_COUNT
+0x00ced580  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleAddNewCharacter:236
+0x00ced650  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleNewNPCDisplay:265
+0x00ced718  ascii  krlEventAdaptor::HandleNewNPCDisplay
+0x00ced760  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleNewPlayerDisplay:324
+0x00ced830  ascii  krlEventAdaptor::HandleNewPlayerDisplay
+0x00ced860  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleCharacterDisplay:395
+0x00ced930  ascii  krlEventAdaptor::HandleCharacterDisplay
+0x00ced960  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleCharacterChangeEquip:419
+0x00ceda30  ascii  krlEventAdaptor::HandleCharacterChangeEquip
+0x00ceda70  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleDeleteCharacter:474
+0x00cedb40  ascii  krlEventAdaptor::HandleDeleteCharacter
+0x00cedb70  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleSyncCharacterData:520
+0x00cedc40  ascii  krlEventAdaptor::HandleSyncCharacterData
+0x00cedc80  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleRemoteCharacterFrameData:563
+0x00cedd58  ascii  krlEventAdaptor::HandleRemoteCharacterFrameData
+0x00cedda0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleLocalCharacterFrameData:608
+0x00cede78  ascii  krlEventAdaptor::HandleLocalCharacterFrameData
+0x00cedeb0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleAddNewDoodad:669
+0x00cedf80  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleDeleteDoodad:689
+0x00cee048  ascii  krlEventAdaptor::HandleDeleteDoodad
+0x00cee080  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleSyncDoodadVisible:714
+0x00cee150  ascii  krlEventAdaptor::HandleSyncDoodadVisible
+0x00cee190  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleCharacterMountHorse:747
+0x00cee260  ascii  krlEventAdaptor::HandleCharacterMountHorse
+0x00cee2a0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleCharacterChangeRideShape:776
+0x00cee378  ascii  krlEventAdaptor::HandleCharacterChangeRideShape
+0x00cee3c0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleCharacterAttrChanged:805
+0x00cee490  ascii  krlEventAdaptor::HandleCharacterAttrChanged
+0x00cee4d0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleCharacterSkillBuffer:849
+0x00cee5a0  ascii  krlEventAdaptor::HandleCharacterSkillBuffer
+0x00cee5e0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleSetTitleEffect:889
+0x00cee6b0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleTurnDirection:908
+0x00cee778  ascii  krlEventAdaptor::HandleTurnDirection
+0x00cee7b0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandlePrepareCastSkill:931
+0x00cee880  ascii  krlEventAdaptor::HandlePrepareCastSkill
+0x00cee8b0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleCastSkill:961
+0x00cee978  ascii  krlEventAdaptor::HandleCastSkill
+0x00cee9a0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleSkillEffectResult:1005
+0x00ceea70  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleSkillChainDisplay:1024
+0x00ceeb40  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandlePlayAnimation:1045
+0x00ceec10  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandlePlayAnimationEnd:1070
+0x00ceece0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleCharacterSound:1113
+0x00ceedb0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleCharacterPlaySFX:1132
+0x00ceee80  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleCharacterPainting:1156
+0x00ceef50  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleCharacterPrepareEnd:1175
+0x00cef020  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleOpenDoodad:1194
+0x00cef0e8  ascii  krlEventAdaptor::HandleOpenDoodad
+0x00cef110  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleBeginPickDoodad:1224
+0x00cef1e0  ascii  krlEventAdaptor::HandleBeginPickDoodad
+0x00cef210  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleEndPickDoodad:1254
+0x00cef2d8  ascii  krlEventAdaptor::HandleEndPickDoodad
+0x00cef310  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleBeginCraftAnimation:1284
+0x00cef3e0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleEndCraftAnimation:1303
+0x00cef4b0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleFollowTarget:1322
+0x00cef578  ascii  krlEventAdaptor::HandleFollowTarget
+0x00cef5b0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleDoodadIdle:1346
+0x00cef678  ascii  krlEventAdaptor::HandleDoodadIdle
+0x00cef6a0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleDoodadAfterHit:1375
+0x00cef770  ascii  krlEventAdaptor::HandleDoodadAfterHit
+0x00cef7a0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleDoodadBeHit:1404
+0x00cef868  ascii  krlEventAdaptor::HandleDoodadBeHit
+0x00cef8a0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleDoodadLootList:1433
+0x00cef970  ascii  krlEventAdaptor::HandleDoodadLootList
+0x00cef9a0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleFinishQuest:1481
+0x00cefa70  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleReputationLevel:1500
+0x00cefb40  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleDisconnect:1519
+0x00cefc10  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleReconnected:1538
+0x00cefce0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleChangeCarrierState:1557
+0x00cefdb0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleBreakActionProcess:1579
+0x00cefe80  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandlePlayMovie:1598
+0x00ceff50  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleStopMovie:1617
+0x00cf0020  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleCameraAnimation:1636
+0x00cf00f0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleRelationShip:1689
+0x00cf01c0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleTreadRespond:1713
+0x00cf0290  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleFireMissile:1732
+0x00cf0360  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleReflectMissile:1756
+0x00cf0430  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleResetActiveObject:1845
+0x00cf0500  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleZoomCamera:1864
+0x00cf05d0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleZoomCharacterCamera:1883
+0x00cf06a0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleSetCameraDragSpeed:1902
+0x00cf0770  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleSetCameraMaxDistance:1921
+0x00cf0840  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleSetCameraSpringResetSpeed:1940
+0x00cf0920  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleSetCameraParam:1995
+0x00cf09f0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleSetCameraRTParam:2014
+0x00cf0ac0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleEnableControlCamera:2033
+0x00cf0b90  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleToggleControlCamera:2059
+0x00cf0c60  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleSetCameraView:2078
+0x00cf0d30  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleTureCameraToFaceDirection:2097
+0x00cf0e10  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleSwitchCameraMode:2116
+0x00cf0ee0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleMouseMoveEnable:2135
+0x00cf0fb0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleLockFrameControl:2154
+0x00cf1080  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleStartFollow:2173
+0x00cf1150  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleStopFollow:2192
+0x00cf1220  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleAutoMoveToPoint:2211
+0x00cf12f0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleAutoMoveToTarget:2240
+0x00cf13c0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleShowCursorEffect:2259
+0x00cf1490  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleSetObjectSelectable:2278
+0x00cf1560  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleShowSelectedSFX:2297
+0x00cf1630  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleHideSelectedSFX:2316
+0x00cf1700  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleAttachSceneObject:2335
+0x00cf17d0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleDetachSceneObject:2354
+0x00cf18a0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleShowTargetSelectedSFX:2373
+0x00cf1980  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleHideTargetSelectedSFX:2392
+0x00cf1a60  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandlePlayCharacterAnimation:2411
+0x00cf1b40  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleStopCharacterAnimation:2430
+0x00cf1c20  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandlePlayCharacterSpeechFile:2449
+0x00cf1cf8  ascii  krlEventAdaptor::HandlePlayCharacterSpeechFile
+0x00cf1d30  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandlePlayCharacterSpeech:2470
+0x00cf1e00  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleStopCharacterSpeech:2489
+0x00cf1ed0  ascii  krlEventAdaptor::HandleStopCharacterSpeech
+0x00cf1f10  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleEnableHeadSFX:2513
+0x00cf1fe0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleEnableSmartLifeDispaly:2534
+0x00cf20c0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleExecuteCommand:2553
+0x00cf2190  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleExecuteMovieCommand:2572
+0x00cf2260  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleUpdateHeadTop:2609
+0x00cf2330  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandlePlayFullScreenSFX:2627
+0x00cf2400  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleStopFullScreenSFX:2646
+0x00cf24d0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleCharacterBeHitted:2665
+0x00cf25a0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleQinggongSummit:2684
+0x00cf2670  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleInteractBegin:2703
+0x00cf2740  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleInteractEnd:2722
+0x00cf2810  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleResetSkillMove:2741
+0x00cf28e0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleDisplayName:2760
+0x00cf29b0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleBreakVehicle:2797
+0x00cf2a80  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleArriveVehicle:2816
+0x00cf2b50  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleSyncCharacterRepresentBaseInfoList:2835
+0x00cf2c40  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleSyncCharacterRepresentBaseInfo:2854
+0x00cf2d90  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandlePlayerFaceLiftData:2919
+0x00cf2e60  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleCharacterFlyJumpEnd:2942
+0x00cf2f30  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleNotifySkillBullet:2962
+0x00cf3000  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleStopCharacterSecondaryAni:2991
+0x00cf30e0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleNotifyDynamicWeather:3010
+0x00cf31b0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleSetOfflineRepresentIDs:3032
+0x00cf3290  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleSetLocalFaceDetail:3053
+0x00cf3360  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleRepresentAPI:3074
+0x00cf3430  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleGetBFPlayerKungfuID:3095
+0x00cf3500  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleGetBFPlayerParam:3114
+0x00cf35d0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleSkillEarlyWarning:3134
+0x00cf36a0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleChannelSkill:3155
+0x00cf3770  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleCharacterLookAt:3174
+0x00cf3840  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleSceneTimeSetTOD:3193
+0x00cf3910  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleSceneTimeResetTOD:3212
+0x00cf39e0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleQuit:3231
+0x00cf3ad0  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\case\gameworld\krlEventAdaptor.cpp,krlEventAdaptor::HandleCharacterScale:3281
+0x00cf3ba0  ascii  krlEventAdaptor::HandlePlayBrightMark
+0x00cf3bd0  ascii  krlEventAdaptor::HandlePlayVirtualAnimation
+0x00cf3c08  ascii  krlEventAdaptor::HandleCreatePublicShadow
+0x00cf3c40  ascii  krlEventAdaptor::HandlePostReplayData
+0x00cf3d70  ascii  krlEventAdaptor::HandleCharacterSkillSkin
+0x00cf3da8  ascii  krlEventAdaptor::HandleCharacterBodyReshaping
+0x00cf3de0  ascii  krlEventAdaptor::HandleUpdateCharacterImmediately
+0x00cf3e20  ascii  krlEventAdaptor::HandlePublicChainDisplay
+0x00cf3e58  ascii  krlEventAdaptor::HandleUpdateRepresentHideFlag
+0x00cf3e90  ascii  krlEventAdaptor::HandlePlayReferenceCameraAni
+0x00cf3ec8  ascii  krlEventAdaptor::HandleStopReferenceCameraAni
+0x00cf3f00  ascii  krlEventAdaptor::HandlePauseReferenceCameraAni
+0x00cf3f38  ascii  krlEventAdaptor::HandleCharacterMysteryHair
+0x00cf40d8  ascii  KRLCharacterFrameData::UpdateEquipTransformData
+0x00cf4118  ascii  pEquipTransformData
+0x00cf41f0  ascii  KRLCharacterFrameData::UpdateJumpOffsetY
+0x00cf4228  ascii  KRLCharacterFrameData::GetSingleJumpEndOffset
+0x00cf4260  ascii  pfBeginOffsetY != nullptr
+0x00cf4280  ascii  pfEndOffsetY != nullptr
+0x00cf42b8  ascii  KRLCharacterFrameData::GetDoubleJumpEndOffset
+0x00cf4320  ascii  KRLCharacterFrameData::GetEquipTransform
+0x00cf4358  ascii  pEquipTransform
+0x00cf43a0  ascii  KRLCharacterFrameData::GetEquipTransformByType
+0x00cf4418  ascii  KRLCharacterFrameData::GetEquipSFXs
+0x00cf4448  ascii  nEquipsSFXs
+0x00cf4700  ascii  hand_link_adjust_ani
+0x00cf57a0  ascii  SkillEffectResultTimeout
+0x00cf5948  ascii  CameraRideYawOffset
+0x00cf5ae0  ascii  PlayerIdleRandomSFXTimeIntervalMin
+0x00cf5b10  ascii  PlayerIdleRandomSFXTimeIntervalMax
+0x00cf5cb8  ascii  StrollYOffset
+0x00cf5cc8  ascii  SprintCameraOffset
+0x00cf5ce0  ascii  SprintCameraOffsetSmoothTime
+0x00cf5d90  ascii  SprintCameraMaxOffset
+0x00cf5de0  ascii  PlayerSwingWeaponID
+0x00cf5e38  ascii  NavigateEffectID
+0x00cf5e80  ascii  NavigateOffset
+0x00cf6080  ascii  CYReflectSfxID
+0x00cf60b0  ascii  nNpcAdjustSlipOffsetY
+0x00cf60d0  ascii  nNpcAdjustOffsetY
+0x00cf6140  ascii  InteractTitleEffectID
+0x00cf61e0  ascii  GroundEffectDis
+0x00cf61f8  ascii  LocalPlayerEnvironmentOffset
+0x00cf6260  ascii  SocketLOD0Distance
+0x00cf6278  ascii  SocketLOD1Distance
+0x00cf6290  ascii  HitMissAdjustOffset
+0x00cf6880  ascii  KTableList::GetNpcBehitTransferAnimation
+0x00cf68b8  ascii  m_tabNpcBehitTransfer
+0x00cf6b20  ascii  KTableList::GetPlayerSFXModel
+0x00cf6b48  ascii  pPlayerEquipSFXData
+0x00cf6b98  ascii  CommonCharacterSFX
+0x00cf6be8  ascii  CommonCharacterFullScreenSFX
+0x00cf6c18  ascii  CommonPrivateSFX
+0x00cf6c98  ascii  CommonGloballEffect
+0x00cf6cb8  ascii  CommonCursorEffect
+0x00cf6cd8  ascii  CommonSceneSFX
+0x00cf6cf0  ascii  NpcDirectionSfx
+0x00cf6dc0  ascii  SkillEffectModel
+0x00cf6e80  ascii  NpcSkillBuffEffectModel
+0x00cf6f00  ascii  iiiiipssfpsfpfiiiiiipfpfpfpfpfpfpf
+0x00cf6fd8  ascii  DoodadEffectModel
+0x00cf7188  ascii  HandLink
+0x00cf71a0  ascii  HandLinkAdjustAni
+0x00cf71b8  ascii  HandLinkDependAnimation
+0x00cf71d8  ascii  HandLinkAnimationFusion
+0x00cf7218  ascii  LingXueWeaponSFX
+0x00cf72f8  ascii  SFXOptimizeBlackList
+0x00cf75d0  ascii  PlayerWeaponAnimationTable
+0x00cf7600  ascii  PlayerSpecialWeaponAni
+0x00cf7870  ascii  PlayerWeaponOptimization
+0x00cf7898  ascii  PlayerWeaponAnimation
+0x00cf79c8  ascii  PlayerRushFullScreenSFX
+0x00cf7a18  ascii  PlayerRushSfx
+0x00cf7dd8  ascii  BeHitEffect
+0x00cf7e98  ascii  RideLinkBindSocket
+0x00cf8060  ascii  PlayerSocketAnimation
+0x00cf8088  ascii  PlayerAnimationWeaponAdjust
+0x00cf81f8  ascii  PlayerSocketOffset
+0x00cf82b8  ascii  PlayerAnimationOffsetAdjust
+0x00cf8300  ascii  SuperSfx
+0x00cf83a8  ascii  SfxLodReplace
+0x00cf83b8  ascii  SfxLodNpc
+0x00cf83c8  ascii  SfxLodSFX
+0x00cf83d8  ascii  SfxLodTani
+0x00cf83e8  ascii  SfxLodDist
+0x00cf83f8  ascii  RemoteSimpleSkillSfx
+0x00cf8598  ascii  DisableRemoteSFXNPCModel
+0x00cf8618  ascii  NPCAnimationBindSocketModel
+0x00cf8660  ascii  SkillSkinSfxReplaceModel
+0x00cf86e0  ascii  EnemyTargetExSFX
+0x00cf8744  ascii  ipssff
+0x00cf87a0  ascii  PlayerAnimationUseOriginRootTrans
+0x00cf87f8  ascii  TransmitFurniture
+0x00cf8890  ascii  iipfsspppssppp
+0x00cf88a8  ascii  PlayerSocketDynamicObjectModel
+0x00cf8910  ascii  NpcUniformSocketModel
+0x00cf8b78  ascii  PlayerFootprintIdleSFX
+0x00cf8db0  ascii  PlayerEquipSFXForceBindAnimation
+0x00cf8de8  ascii  NpcFootprintIdleSFX
+0x00cf8e30  ascii  SceneSwitchSfx
+0x00cf8e58  ascii  CharacterEnvSFX
+0x00cf9018  ascii  RideLinkAnimationSocket
+0x00cf9038  ascii  m_pRideLinkAnimationSocketFile
+0x00cf9060  ascii  m_tabRideLinkAnimationSocket
+0x00cf9220  ascii  PlayerAnimationSocketHideConfig
+0x00cf9248  ascii  m_pPlayerAniSocketHideConfig
+0x00cf9270  ascii  m_tabPlayerAniSocketHideConfig
+0x00cf9338  ascii  ResourceSfx
+0x00cf9348  ascii  m_tabResourceSfx
+0x00cf9360  ascii  CustomSfx
+0x00cf9370  ascii  m_pCustomSfx
+0x00cf9380  ascii  m_tabCustomSfx
+0x00cf9520  ascii  PlayerEquipSfx
+0x00cf9538  ascii  m_pPlayerEquipSfx
+0x00cf9550  ascii  m_tabPlayerEquipSfx
+0x00cf9880  ascii  SkillCasterEffect
+0x00cf9898  ascii  m_pSkillCasterEffect
+0x00cf98b8  ascii  m_tabSkillCasterEffect
+0x00cf9960  ascii  PlayerExtendSocketAdjust
+0x00cf9980  ascii  m_pPlayerExtendSocketAdjust
+0x00cf99a8  ascii  m_tabPlayerExtendSocketAdjust
+0x00cf9a28  ascii  PlayerEquipTransform
+0x00cf9a68  ascii  m_tabPlayerEquipTransform
+0x00cf9bb0  ascii  BehitTransfer
+0x00cf9bc0  ascii  m_pNpcBehitTransfer
+0x00cf9c18  ascii  SfxUnderWater
+0x00cf9c28  ascii  m_pSfxUnderWater
+0x00cf9c40  ascii  m_tabSfxUnderWater
+0x00cf9eb8  ascii  CharacterWeatherEffect
+0x00cf9ed8  ascii  m_pCharacterWeatherEffect
+0x00cf9ef8  ascii  m_tabCharacterWeatherEffect
+0x00cfa128  ascii  HomelandGuideSFX
+0x00cfa840  ascii  ColorScaleName
+0x00cfa898  ascii  HighLightOffsetName
+0x00cfa8d0  ascii  ColorOffsetMapName
+0x00cfaa50  ascii  KTableList::LoadRidesEquipAndSocketModel
+0x00cfaaf8  ascii  SOCKET_CONFIG_FILE_NAME
+0x00cfab18  ascii  nValue == MODEL_RIDES_SOCKET_COUNT
+0x00cfabb0  ascii  (m_pRidesSocketModel[nIndex])
+0x00cfac60  ascii  SHEATH_SOCKET_LH
+0x00cfac78  ascii  SHEATH_SOCKET_RH
+0x00cfac90  ascii  EXTRA_SHEATH_SOCKET_DART
+0x00cfacb0  ascii  EXTRA_SHEATH_SOCKET_RACK
+0x00cfad18  ascii  EQUIP_SFX_CONFIG_FILE_NAME
+0x00cfad38  ascii  nValue == CHARACTER_EQUIP_SFX_FILE_COUNT
+0x00cfb0e0  ascii  szModelSFXFile[FILE_NAME_LEN - 1] == '\0'
+0x00cfb118  ascii  PlayerEquipSFXDirectory
+0x00cfb138  ascii  iippssff
+0x00cfb158  ascii  PlayerEquipSFXModelParam
+0x00cfb180  ascii  m_pPlayerEquipSFXModelParamModel
+0x00cfb218  ascii  SheathWeaponAdjust_%s.txt
+0x00cfb238  ascii  iiipppppsssppssfiiii
+0x00cfb258  ascii  PlayerEquipSFXSequenceIndex
+0x00cfb280  ascii  KTableList::LoadPlayerEquipSFXSequence
+0x00cfb2c0  ascii  m_pPlayerEquipSFXSequenceIndexModel
+0x00cfb318  ascii  rPlayerEquipSFXSequenceData.pModel
+0x00cfb348  ascii  PlayerAnimationIdleRandomSFX
+0x00cfb370  ascii  KTableList::LoadPlayerIdleRandomSfx
+0x00cfb3d0  ascii  m_pKRLPlayerIdleSFXModel
+0x00cfb438  ascii  MODEL_WEAPON
+0x00cfb448  ascii  nValue == _countof(g_szWeaponName)
+0x00cfb840  ascii  ANIMATION_IDLE_RANDOM_FILE_TRANSFORM_NAME
+0x00cfb878  ascii  nValue == _countof(g_szPlayerAnimationIdleTransformFiles)
+0x00cfb8c0  ascii  PlayerAnimationTableWeapon
+0x00cfb8e0  ascii  KTableList::LoadPlayerAnimationWeaponTable
+0x00cfb920  ascii  nTabWidth - 2 < PLAYER_WEAPON_ANI_TAB_MAX_LEN
+0x00cfb958  ascii  PlayerForceWeaponRelation
+0x00cfb9bc  ascii  Hand
+0x00cfb9c8  ascii  tabDefaultHand
+0x00cfba00  ascii  LoadPlayerAnimationWeaponTable : GetSchoolName %d Failed
+0x00cfbcb0  ascii  OBJECT_POSITION_OFFSET_FILE_NAME
+0x00cfbcd8  ascii  nValue == _countof(g_szCameraObjectPositionOffsetFiles)
+0x00cfbe00  ascii  tabSfxAnimation
+0x00cfbe28  ascii  SfxTemplate
+0x00cfbe38  ascii  KTableList::GetCustomSfxTemplate
+0x00cfbf58  ascii  KTableList::GetTrackBlurEffectTable
+0x00cfbf88  ascii  TrackBlurEffect
+0x00cfc4a8  ascii  BindModelConfig
+0x00cfc4c0  ascii  KTableList::InitSfxLodReplaceHash
+0x00cfc4e8  ascii  pSfxLodReplace
+0x00cfc500  ascii  KTableList::InitSfxLodSFXHash
+0x00cfc528  ascii  pSfxLodSFX
+0x00cfc538  ascii  KTableList::InitSfxLodTaniHash
+0x00cfc560  ascii  KTableList::InitSFXLodDistHash
+0x00cfc588  ascii  KTableList::InitRemoteSimpleSkillSfxHash
+0x00cfc648  ascii  KTableList::InitPlayerAnimationUseOriginRootTransHash
+0x00cfc688  ascii  pPlayerAnimationUseOriginRootTrans
+0x00cfc7d8  ascii  KTableList::InitNpcUniformSocketModel
+0x00cfc884  ascii  _sfx
+0x00cfcc08  ascii  KTableList::InitGlobalEffectModel
+0x00cfcc30  ascii  pGlobalEffectModel
+0x00cfcc88  ascii  KTableList::InitDoodadEffectModel
+0x00cfccb0  ascii  pDoodadEffectModel
+0x00cfcfe0  ascii  KTableList::InitPlayerFootprintIdleSFXModel
+0x00cfd018  ascii  pPlayerFootprintIdleSFXModel
+0x00cfd040  ascii  pPlayerFootprintIdleSFXModel->FootprintIdleSFXModel.nReappearIntervalMinTime <= pPlayerFootprintIdleSFXModel->FootprintIdleSFXModel.nReappearIntervalMaxTime
+0x00cfd100  ascii  KTableList::InitNpcFootprintIdleSFXModel
+0x00cfd138  ascii  pNpcFootprintIdleSFXModel
+0x00cfd160  ascii  pNpcFootprintIdleSFXModel->FootprintIdleSFXModel.nReappearIntervalMinTime <= pNpcFootprintIdleSFXModel->FootprintIdleSFXModel.nReappearIntervalMaxTime
+0x00cfd738  ascii  TransparentBase
+0x00cfd798  ascii  KTableList::InitDisableRemoteSFXNPCModel
+0x00cfd810  ascii  m_pHomelandTabs->GuideSfxs
+0x00cfdaf0  ascii  CommonWeapon
+0x00cfdb40  ascii  KTableList::GetPlayerEquipTransform
+0x00cfddd8  ascii  KTableList::GetPlayerSheathWeaponAdjustModel
+0x00cfde10  ascii  strWeaponPath
+0x00cfde20  ascii  pSheathWeaponAdjustData
+0x00cfebb0  ascii  bBind
+0x00cfebd0  ascii  bRejectSocketScale
+0x00cfebe8  ascii  bNpcEffectScale
+0x00cfec18  ascii  fAdultScale
+0x00cfec28  ascii  fKidScale
+0x00cfec38  ascii  fBasicScale
+0x00cfec48  ascii  szBindSocket
+0x00cff130  ascii  nWeaponType
+0x00cff378  ascii  GetRidesSocketModel
+0x00cff390  ascii  pSocket
+0x00cff3a0  ascii  GetNpcSocketByAnimation
+0x00cff488  ascii  GetCharacterLevelUpSFX
+0x00cff4a8  ascii  pSFXParam
+0x00d003d0  ascii  player_animation_table_weapon
+0x00d00580  ascii  TransformNPCEquipResource
+0x00d00838  ascii  EquipTransformIndex2SocketIndex
+0x00d00860  ascii  SocketIndex2EquipTransformIndex
+0x00d00888  ascii  RepresentPos2SocketIndex
+0x00d00e40  ascii  m_pvRootHandle
+0x00d00f20  ascii  bRetCode && SNEHandle
+0x00d00f60  ascii  bRetCode && NodeHandle
+0x00d01090  ascii  pSubModel->pvModelHandle
+0x00d014a8  ascii  vScale
+0x00d01700  ascii  nPropsSize == LZMA_PROPS_SIZE
+0x00d025b0  ascii  m_pFoliageCoverModel->CheckRenderHandle()
+0x00d028b0  ascii  m_hRootHandle
+0x00d028c0  ascii  nRetCode && ModelHandle
+0x00d028e0  ascii  nRetCode && NodeHandle
+0x00d02930  ascii  m_hFCModelHandle
+0x00d02f80  ascii  hlbs::FoliageCoverModel::CheckRenderHandle
+0x00d03280  ascii  _CheckRenderHandle()
+0x00d032a0  ascii  m_hFVModelHandle
+0x00d03438  ascii  hlbs::FoliageVisibleModel::_CheckRenderHandle
+0x00d03508  ascii  hlbs::FoliageVisibleModel::_FindRealHandle
+0x00d04cf0  ascii  hlbs::Transform::NotifyWorldMatrixUpdate
+0x00d04d38  ascii  nCount <= MAX_TRANSFORM_OBB_COUNT
+0x00d04f88  ascii  KRLFurnitureShopMgr::SetScale
+0x00d05938  ascii  hlbs::KRLHLSubLandManager::SetRootHandle
+0x00d05970  ascii  pvRootHandle
+0x00d05a08  ascii  hlbs::KRLHLSubLandManager::GetSubLandBaseHandle
+0x00d05a88  ascii  hlbs::KRLHLSubLandManager::CreateSubLandSFX
+0x00d05ac0  ascii  !m_SubLand[nSubLandIndex].sfxEntity
+0x00d05af0  ascii  data/source/Home/effect/effect_pss/place_f_4_4_loop_white.pss
+0x00d05b40  ascii  hlbs::KRLHLSubLandManager::DestroySubLandSFX
+0x00d05b78  ascii  m_SubLand[nSubLandIndex].sfxEntity
+0x00d05de0  ascii  cbUpdateTransform
+0x00d05e08  ascii  data/source/Home/effect/effect_pss/Place_Sphere.pss
+0x00d06bc8  ascii  _AttachAnchor(pObject, pAnchorContainer, Vector3(1.0f))
+0x00d06f58  ascii  m_SFXMgr.Initialize(m_piSNE, m_hRootNode)
+0x00d07330  ascii  _AttachAnchor(pRetObject, pContainer, Vector3(fModelWorldScale))
+0x00d07570  ascii  m_piSNE->Node_GetLocalSRT(hSrcNode, &d3dScale, &d3dRot, &d3dTrans)
+0x00d07aa0  ascii  uCollisionBBoxCount <= MAX_TRANSFORM_OBB_COUNT
+0x00d08020  ascii  data/source/Home/effect/effect_pss/Place_Y_1_1_1_Down.pss
+0x00d08068  ascii  data/source/Home/effect/effect_pss/Place_F_8_h_6_Down.pss
+0x00d080b0  ascii  data/source/Home/effect/effect_pss/Place_F_1_1_1.pss
+0x00d08150  ascii  KRLHomelandBuilder::_SetScaleImpl
+0x00d08178  ascii  KRLHomelandBuilder::Scale
+0x00d088c8  ascii  KRLHomelandBuilder::_CheckTransmitFurnitureValid
+0x00d08908  ascii  KRLHomelandBuilder::ShowTransmitFurnitureSfx
+0x00d09208  ascii  it != m_RootInstanceIDToHandleMap.end()
+0x00d09328  ascii  pTempHandle
+0x00d09340  ascii  m_piSNE->Node_GetUserData(pTempHandle, &uCopySize, (byte_type*)&nodeUserData, sizeof(nodeUserData))
+0x00d093c0  ascii  m_RootInstanceIDToHandleMap.find(nodeUserData.dwInstanceID) == m_RootInstanceIDToHandleMap.end()
+0x00d097b0  ascii  _CreateSDKModel(uInstID, dwRLID, pObject, vScale)
+0x00d097f0  ascii  _CreateSDKGroupModel(uInstID, dwRLID, pObject, vScale)
+0x00d09e50  ascii  _CreateSDKModel(dwInstID, dwRLID, node.pObject, vScale)
+0x00d09ed0  ascii  _CreateSDKGroupModel(dwInstID, dwRLID, node.pObject, vScale)
+0x00d0a6e8  ascii  _AttachAnchor(pNewObject, pContainer, vScale)
+0x00d0a758  ascii  _AttachAnchor(pNewObject, pContainer, Vector3(1.0f))
+0x00d0a860  ascii  KRLHomelandBuilder::_AttachAnchor
+0x00d0b4d0  ascii  KRLHomelandBuilder::_CanObjectScale
+0x00d0bdc0  ascii  KRLHomelandBuilder::PlayBaseSFX
+0x00d0bde8  ascii  KRLHomelandBuilder::PlaySubLandSFX
+0x00d0bf20  ascii  KRLHomelandBuilder::ScalePlus
+0x00d0bf90  ascii  KRLHomelandBuilder::_Sync3DTransform
+0x00d0c010  ascii  _CreateSDKModel(dwObjectID, dwRLID, node.pObject, vScale)
+0x00d0c090  ascii  _CreateSDKGroupModel(dwObjectID, dwRLID, node.pObject, vScale)
+0x00d0c458  ascii  KRLHomelandBuilder::CreateGuideSFX
+0x00d0c488  ascii  pGuideSFX
+0x00d0c4a0  ascii  m_SFXMgr.CreateGuideSFX(dwID, pGuideSFX->szSFX, {1.f}, qRot * pGuideSFX->qRot, vPos)
+0x00d0c538  ascii  KRLHomelandBuilder::ShowTransparentBase
+0x00d0cba0  ascii  KRLHomelandBuilder::OnReverseTransmitPoint
+0x00d0cbd8  ascii  KRLHomelandBuilder::_ShowTransparentBase
+0x00d0d1e8  ascii  data/source/Home/effect/effect_pss/Place_F_1_1_Loop02.pss
+0x00d0d230  ascii  data/source/Home/effect/effect_pss/Place_F_1_1_Loop.pss
+0x00d0d278  ascii  data/source/Home/effect/effect_pss/place_l_1_1_r_loop.pss
+0x00d0d2c0  ascii  data/source/Home/effect/effect_pss/place_l_1_1_loop.pss
+0x00d0d308  ascii  data/source/Home/effect/effect_pss/place_l_1_1_1_r_loop.pss
+0x00d0d350  ascii  data/source/Home/effect/effect_pss/place_l_1_1_1_loop.pss 
+0x00d0d398  ascii  data/source/Home/effect/effect_pss/place_l_1_1_1_y_loop.pss
+0x00d0d3e0  ascii  data/source/Home/effect/effect_pss/place_f_4_4_loop_red.pss
+0x00d0d445  ascii  /Pss/J_
+0x00d0d550  ascii  _CreateInteractSfx()
+0x00d0dba8  ascii  KRLHomelandGizmo::_CreateInteractSfx
+0x00d0dbd8  ascii  bRetCode && m_hInteractSfxNode
+0x00d0dc00  ascii  KRLHomelandGizmo::_ShowInteractSfx
+0x00d0dd00  ascii  m_piSNE->Model_GetWorldSRT(hModel, &d3dvScale, &d3dqRot, &d3dvPos)
+0x00d0dd50  ascii  socket_P%d
+0x00d0dd60  ascii  m_piSNE->Model_CreateCommonModel(&hModel, szInteractSFX, nullptr, nullptr, 0)
+0x00d0ddc0  ascii  m_piSNE->Node_AddModel(m_hInteractSfxNode, hModel)
+0x00d0e120  ascii  KRLHomelandSFX::Initialize
+0x00d0e140  ascii  bRetCode && m_hSFXRootNode
+0x00d0e160  ascii  KRLHomelandSFX::CreatePlacementSFX
+0x00d0e190  ascii  m_piSNE->Node_Create(&hNode, m_hSFXRootNode)
+0x00d0e1d0  ascii  m_piSNE->Model_CreateCommonModel(&hSNModel, szSFX, nullptr, nullptr, 0)
+0x00d0e258  ascii  KRLHomelandSFX::CreateSlotSFX
+0x00d0e280  ascii  KRLHomelandSFX::SetSlotSFXPosition
+0x00d0e2d0  ascii  KRLHomelandSFX::CreateGuideSFX
+0x00d0e2f8  ascii  m_mapGuideSFX.find(dwID) == m_mapGuideSFX.end()
+0x00d0e4f0  ascii  RedoUndo::OnScale
+0x00d0e508  ascii  pActionScale
+0x00d0e5c0  ascii  RedoUndo::OnReverseTransmitPos
+0x00d0e5e8  ascii  pActionReverseTransmitPos
+0x00d0eab0  ascii  RedoUndo::_UndoActionScale
+0x00d0ead0  ascii  m_pBuilder->_SetScale(pObject, pActionScale->fOldScale, pActionScale->nType)
+0x00d0eb30  ascii  RedoUndo::_RedoActionScale
+0x00d0eb50  ascii  m_pBuilder->_SetScale(pObject, pActionScale->fNewScale, pActionScale->nType)
+0x00d0ed50  ascii  RedoUndo::_UndoActionReverseTransmitPos
+0x00d0ed80  ascii  RedoUndo::_RedoActionReverseTransmitPos
+0x00d0f098  ascii  it->second.On3DNodeTransformUpdated(matWorld)
+0x00d0f910  ascii  SceneInteraction::InteractionManager::GetFurnitureSocketTransform
+0x00d0f960  ascii  strlen(szSocket) > 2 && (szSocket[0] == 'S' || szSocket[0] == 's') && szSocket[1] == '_'
+0x00d0fc78  ascii  UpdateSlotTransform
+0x00d0fcc8  ascii  _RegisterEventHandler()
+0x00d0fd08  ascii  SceneInteraction::Interactor::On3DNodeTransformUpdated
+0x00d10048  ascii  SceneInteraction::Interactor::BindSlotActor
+0x00d101a8  ascii  SceneInteraction::Interactor::CharacterBind
+0x00d101e0  ascii  SceneInteraction::Interactor::CharacterUnbind
+0x00d10218  ascii  SceneInteraction::Interactor::DummyBind
+0x00d10248  ascii  m_mapSocketDummy.find(strSocket) == m_mapSocketDummy.end()
+0x00d102a0  ascii  SceneInteraction::Interactor::DummyUnbind
+0x00d102d8  ascii  it != m_mapSocketDummy.end()
+0x00d10300  ascii  SceneInteraction::Interactor::_SocketDummyLoaded
+0x00d10350  ascii  ::BindTo(pi3DModel, m_piModel, strSocket)
+0x00d104b0  ascii  SceneInteraction::Interactor::_RegisterEventHandler
+0x00d104f0  ascii  SceneInteraction::Interactor::_UnregisterEventHandler
+0x00d10550  ascii  SceneInteraction::Interactor::GetTransmitPosition
+0x00d105a0  ascii  m_piSNE->Base_GetWorldSRT(hBaseNode, &d3dvScale, &d3dqRot, &d3dvPos)
+0x00d10658  ascii  SceneInteraction::Interactor::GetSocketTransform
+0x00d107b0  ascii  CharacterBind
+0x00d107c0  ascii  CharacterUnbind
+0x00d107d8  ascii  DummyBind
+0x00d107e8  ascii  DummyUnbind
+0x00d107f8  ascii  UnbindAllDummy
+0x00d10868  ascii  BindSlotActor
+0x00d108e8  ascii  LoadModel(pszModel, fScale)
+0x00d109e0  ascii  LoadNode(pszNode, fScale)
+0x00d10b60  ascii  SceneInteraction::Interactor::LuaCharacterBind
+0x00d10b98  ascii  SceneInteraction::Interactor::LuaCharacterUnbind
+0x00d10bd8  ascii  SceneInteraction::Interactor::LuaDummyBind
+0x00d10c10  ascii  SceneInteraction::Interactor::LuaDummyUnbind
+0x00d10d48  ascii  SceneInteraction::Interactor::LuaBindSlotActor
+0x00d10d80  ascii  szSocketName && szSocketName[0] != '\0'
+0x00d10e10  ascii  GetCharacterTransform
+0x00d110a8  ascii  sfxEntity
+0x00d11160  ascii  GetWeaponResource
+0x00d11198  ascii  pWeaponModel
+0x00d111a8  ascii  WeaponType
+0x00d111d8  ascii  SFX1
+0x00d111e0  ascii  SFXSocketName
+0x00d111f0  ascii  GetWeaponSfxResource
+0x00d11230  ascii  GetSheathSfxResource
+0x00d11250  ascii  GetResourceSfx
+0x00d11298  ascii  szSfxPath
+0x00d11318  ascii  g_pRL->m_GameWorldHandler.m_pSceneInteraction
+0x00d11350  ascii  GetFurnitureSocketTransform
+0x00d11450  ascii  C_GetCharacterTransform
+0x00d11698  ascii  C_GetFurnitureSocketTransform
+0x00d116c0  ascii  C_PlaySFX
+0x00d116d0  ascii  C_DeleteSFX
+0x00d117b0  ascii  C_GetWeaponResource
+0x00d117c8  ascii  C_GetWeaponSfxResource
+0x00d117e8  ascii  C_GetResourceSfx
+0x00d11800  ascii  C_GetSheathSfxResource
+0x00d118f0  ascii  KRLTransformComponent
+0x00d11950  ascii  pszParentSocketName
+0x00d11d90  ascii  bHideCloakSprintSFX
+0x00d11dc8  ascii  bySelectWeapon
+0x00d12170  ascii  nScaleValue
+0x00d12180  ascii  dwDynamicEffectID
+0x00d123c8  ascii  KRLECSPool::BindComponent
+0x00d12578  ascii  KPROTOBUF_BASE::TransferType
+0x00d125a0  ascii  nTransferCount > 0
+0x00d12c80  ascii  KPROTOBUF_CONVERTOR::__KPB_WRITE_KRL_CUSTOM_EQUIP_TRANSFORM_DATA
+0x00d12cd0  ascii  KPROTOBUF_CONVERTOR::__KPB_READER_KRL_CUSTOM_EQUIP_TRANSFORM_DATA
+0x00d12d20  ascii  KPROTOBUF_CONVERTOR::__KPB_CONSTRUCT_KRL_CUSTOM_EQUIP_TRANSFORM_DATA
+0x00d13030  ascii  KPROTOBUF_CONVERTOR::__KPB_WRITE_KRL_MOUNT_HORSE_DATA
+0x00d13070  ascii  KPROTOBUF_CONVERTOR::__KPB_READER_KRL_MOUNT_HORSE_DATA
+0x00d130b8  ascii  KPROTOBUF_CONVERTOR::__KPB_CONSTRUCT_KRL_MOUNT_HORSE_DATA
+0x00d134f0  ascii  KPROTOBUF_CONVERTOR::__KPB_WRITE_KRepresentSkillEffectResult
+0x00d13540  ascii  KPROTOBUF_CONVERTOR::__KPB_READER_KRepresentSkillEffectResult
+0x00d13590  ascii  KPROTOBUF_CONVERTOR::__KPB_CONSTRUCT_KRepresentSkillEffectResult
+0x00d139a8  ascii  KPROTOBUF_CONVERTOR::__KPB_WRITE_RLReplaySkillEffect
+0x00d139e8  ascii  KPROTOBUF_CONVERTOR::__KPB_READER_RLReplaySkillEffect
+0x00d13a28  ascii  KPROTOBUF_CONVERTOR::__KPB_CONSTRUCT_RLReplaySkillEffect
+0x00d151d0  ascii  KPROTOBUF_CONVERTOR::__KPB_WRITE_STKREPRESENT_EVENT_CHAR_MOUNT_HORSE
+0x00d15230  ascii  KPROTOBUF_CONVERTOR::__KPB_READER_STKREPRESENT_EVENT_CHAR_MOUNT_HORSE
+0x00d15290  ascii  KPROTOBUF_CONVERTOR::__KPB_CONSTRUCT_STKREPRESENT_EVENT_CHAR_MOUNT_HORSE
+0x00d15850  ascii  KPROTOBUF_CONVERTOR::__KPB_WRITE_STKREPRESENT_EVENT_SET_TITLE_EFFECT
+0x00d158b0  ascii  KPROTOBUF_CONVERTOR::__KPB_READER_STKREPRESENT_EVENT_SET_TITLE_EFFECT
+0x00d15910  ascii  KPROTOBUF_CONVERTOR::__KPB_CONSTRUCT_STKREPRESENT_EVENT_SET_TITLE_EFFECT
+0x00d15a80  ascii  KPROTOBUF_CONVERTOR::__KPB_WRITE_STKREPRESENT_EVENT_CHARACTER_SCALE
+0x00d15ae0  ascii  KPROTOBUF_CONVERTOR::__KPB_READER_STKREPRESENT_EVENT_CHARACTER_SCALE
+0x00d15b40  ascii  KPROTOBUF_CONVERTOR::__KPB_CONSTRUCT_STKREPRESENT_EVENT_CHARACTER_SCALE
+0x00d15db0  ascii  KPROTOBUF_CONVERTOR::__KPB_WRITE_STKREPRESENT_EVENT_SKILL_EFFECT_RESULT
+0x00d15e10  ascii  KPROTOBUF_CONVERTOR::__KPB_READER_STKREPRESENT_EVENT_SKILL_EFFECT_RESULT
+0x00d15e70  ascii  KPROTOBUF_CONVERTOR::__KPB_CONSTRUCT_STKREPRESENT_EVENT_SKILL_EFFECT_RESULT
+0x00d16340  ascii  KPROTOBUF_CONVERTOR::__KPB_WRITE_STKREPRESENT_EVENT_CHARACTER_PLAY_SFX
+0x00d163a0  ascii  KPROTOBUF_CONVERTOR::__KPB_READER_STKREPRESENT_EVENT_CHARACTER_PLAY_SFX
+0x00d16400  ascii  KPROTOBUF_CONVERTOR::__KPB_CONSTRUCT_STKREPRESENT_EVENT_CHARACTER_PLAY_SFX
+0x00d184e0  ascii  KPROTOBUF_CONVERTOR::__KPB_WRITE_STKREPRESENT_EVENT_SHOW_CURSOR_EFFECT
+0x00d18540  ascii  KPROTOBUF_CONVERTOR::__KPB_READER_STKREPRESENT_EVENT_SHOW_CURSOR_EFFECT
+0x00d185a0  ascii  KPROTOBUF_CONVERTOR::__KPB_CONSTRUCT_STKREPRESENT_EVENT_SHOW_CURSOR_EFFECT
+0x00d18f00  ascii  KPROTOBUF_CONVERTOR::__KPB_WRITE_STKREPRESENT_EVENT_ENABLE_HEAD_SFX
+0x00d18f60  ascii  KPROTOBUF_CONVERTOR::__KPB_READER_STKREPRESENT_EVENT_ENABLE_HEAD_SFX
+0x00d18fc0  ascii  KPROTOBUF_CONVERTOR::__KPB_CONSTRUCT_STKREPRESENT_EVENT_ENABLE_HEAD_SFX
+0x00d19cc0  ascii  KPROTOBUF_CONVERTOR::__KPB_WRITE_STKREPRESENT_EVENT_PLAY_FULL_SCREENSFX
+0x00d19d20  ascii  KPROTOBUF_CONVERTOR::__KPB_READER_STKREPRESENT_EVENT_PLAY_FULL_SCREENSFX
+0x00d19d80  ascii  KPROTOBUF_CONVERTOR::__KPB_CONSTRUCT_STKREPRESENT_EVENT_PLAY_FULL_SCREENSFX
+0x00d19de0  ascii  KPROTOBUF_CONVERTOR::__KPB_WRITE_STKREPRESENT_EVENT_STOP_FULL_SCREENSFX
+0x00d19e40  ascii  KPROTOBUF_CONVERTOR::__KPB_READER_STKREPRESENT_EVENT_STOP_FULL_SCREENSFX
+0x00d19ea0  ascii  KPROTOBUF_CONVERTOR::__KPB_CONSTRUCT_STKREPRESENT_EVENT_STOP_FULL_SCREENSFX
+0x00d1b1b0  ascii  KPROTOBUF_CONVERTOR::__KPB_WRITE_STKREPRESENT_EVENT_BIND_CHARACTER_SLOT
+0x00d1b210  ascii  KPROTOBUF_CONVERTOR::__KPB_READER_STKREPRESENT_EVENT_BIND_CHARACTER_SLOT
+0x00d1b270  ascii  KPROTOBUF_CONVERTOR::__KPB_CONSTRUCT_STKREPRESENT_EVENT_BIND_CHARACTER_SLOT
+0x00d1b2d0  ascii  KPROTOBUF_CONVERTOR::__KPB_WRITE_STKREPRESENT_EVENT_UNBIND_CHARACTER_SLOT
+0x00d1b330  ascii  KPROTOBUF_CONVERTOR::__KPB_READER_STKREPRESENT_EVENT_UNBIND_CHARACTER_SLOT
+0x00d1b390  ascii  KPROTOBUF_CONVERTOR::__KPB_CONSTRUCT_STKREPRESENT_EVENT_UNBIND_CHARACTER_SLOT
+0x00d26030  ascii  TagPlayingSFX
+0x00d268b0  ascii  const char *__cdecl rttr::detail::f<class std::allocator<class hlbs::Transform *>>(void) noexcept
+0x00d276d0  ascii  const char *__cdecl rttr::detail::f<class hlbs::Transform>(void) noexcept
+0x00d27b50  ascii  const char *__cdecl rttr::detail::f<classhlbs::Transform*>(void) noexcept
+0x00d27bb0  ascii  const char *__cdecl rttr::detail::f<class std::vector<class hlbs::Transform *,class std::allocator<class hlbs::Transform *> >>(void) noexcept
+0x00d29390  ascii  const char *__cdecl rttr::detail::f<classstd::vector<class hlbs::Transform *,class std::allocator<class hlbs::Transform *> >*>(void) noexcept
+0x00d29c48  ascii  KREPRESENT_EVENT_ENGINE_SET_POST_EFFECT_PARAM
+0x00d2a628  ascii  KREPRESENT_EVENT_UNBIND_CHARACTER_SLOT
+0x00d2a658  ascii  KREPRESENT_EVENT_BIND_CHARACTER_SLOT
+0x00d2ac40  ascii  KREPRESENT_EVENT_STOP_FULL_SCREENSFX
+0x00d2ac70  ascii  KREPRESENT_EVENT_PLAY_FULL_SCREENSFX
+0x00d2b128  ascii  KREPRESENT_EVENT_ENABLE_HEAD_SFX
+0x00d2b230  ascii  KREPRESENT_EVENT_HIDE_TARGET_SLCTSFX
+0x00d2b260  ascii  KREPRESENT_EVENT_SHOW_TARGET_SLCTSFX
+0x00d2b2c0  ascii  KREPRESENT_EVENT_ATTACH_TARGET_OBJ
+0x00d2b2f0  ascii  KREPRESENT_EVENT_HIDE_SELECTED_SFX
+0x00d2b320  ascii  KREPRESENT_EVENT_SHOW_SELECTED_SFX
+0x00d2b3d8  ascii  KREPRESENT_EVENT_SHOW_CURSOR_EFFECT
+0x00d2bbb8  ascii  KREPRESENT_EVENT_CHARACTER_PLAY_SFX
+0x00d2bcc8  ascii  KREPRESENT_EVENT_SKILL_EFFECT_RESULT
+0x00d2bd50  ascii  KREPRESENT_EVENT_CHARACTER_SCALE
+0x00d2bda0  ascii  KREPRESENT_EVENT_SET_TITLE_EFFECT
+0x00d2bea0  ascii  KREPRESENT_EVENT_CHAR_MOUNT_HORSE
+0x00d2c680  ascii  hlbs::Transform
+0x00d2c6d8  ascii  m_vWorldScale
+0x00d2c700  ascii  m_vScale
+0x00d2c7f0  ascii  dwEquipSFXIDs
+0x00d2ce70  ascii  const char *__cdecl rttr::detail::f<class std::reference_wrapper<class hlbs::Transform *>>(void) noexcept
+0x00d2cef0  ascii  const char *__cdecl rttr::detail::f<classstd::reference_wrapper<class hlbs::Transform *>*>(void) noexcept
+0x00d2d788  ascii  pRigBindPose
+0x00d2d818  ascii  m_pCaculatedTransform
+0x00d2d880  ascii  KRLUnevenTerrainIK::_InitBoneRemap
+0x00d2d8f8  ascii  m_parrBoneScale
+0x00d2d910  ascii  m_parrBoneScaleSum
+0x00d2de48  ascii  KRLCharacterScaleSystem::UpdateBehavior
+0x00d2df98  ascii  pEffector
+0x00d2e178  ascii  RecursiveHandleNode() type[%d].
+0x00d2e280  ascii  RLReplaySystem::PushSkillEffectResult
+0x00d2e548  ascii  RLSfxSystem::CalcLifeTime Sfx:%s
+0x00d2e570  ascii  RLSfxSystem::ProcessReplay
+0x00d2e590  ascii  pSfxComponent
+0x00d2e5a0  ascii  pRLECSSfx
+0x00d2e5b0  ascii  RLSfxSystem::DestroySFX
+0x00d2e5d0  ascii  RLSfxSystem::UpdateFollow
+0x00d2e5f0  ascii  RLSfxSystem::CreateSFX
+0x00d2e610  ascii  pSfxComponent->szFilePath
+0x00d2e630  ascii  RLSfxSystem::BindSocket
+0x00d2e650  ascii  pSfxComponent->szSocket
+0x00d2e670  ascii  RLSfxSystem::UpdateSFXPosition
+0x00d2e698  ascii  RLSfxSystem::UpdateSFXRotation
+0x00d2e6c0  ascii  RLSfxSystem::UpdateSFXIntensity
+0x00d2e6e8  ascii  RLSfxSystem::UpdateSFXAlpha
+0x00d2e710  ascii  RLSfxSystem::UpdateSFXLOD
+0x00d2e730  ascii  RLSfxSystem::UpdateChannelEffect
+0x00d2e758  ascii  pSfxExComponent
+0x00d2e770  ascii  RLSfxSystem::UpdateChannelEffectAndParticle
+0x00d2e7a8  ascii  RLSfxSystem::UpdateAlwaysVisible
+0x00d2e7d0  ascii  RLSfxSystem::UpdateVisible
+0x00d2e7f0  ascii  RLSfxSystem::UpdateSFXModelByDist
+0x00d2e818  ascii  RLSfxSystem::UpdateSFXTrianglePanelEffect
+0x00d2e850  ascii  RLSfxSystem::UpdateFreeze
+0x00d2e870  ascii  RLSfxSystem::UpdateEnableDistanceCull
+0x00d2e8a0  ascii  RLSfxSystem::UpdateOffsetDirection
+0x00d2e8d0  ascii  RLSfxSystem::UpdateSpecialLight
+0x00d2e8f8  ascii  RLSfxSystem::ProcessSetReplaytimes
+0x00d2e928  ascii  RLSfxSystem::CreateRLESCSfx
+0x00d2e998  ascii  RLECS::RLComponentArray<struct RLSfxExComponent>::GetData
+0x00d2e9e0  ascii  RLECS::RLComponentArray<struct RLSfxExComponent>::RemoveData
+0x00d2ea30  ascii  RLECS::RLComponentArray<struct RLSfxComponent>::GetData
+0x00d2ea78  ascii  RLECS::RLComponentArray<struct RLSfxComponent>::RemoveData
+0x00d2ed4d  ascii  $tHBindTransform
+0x00d2ed60  ascii  UnbindTransform
+0x00d2ed78  ascii  UpdateLocalTransform
+0x00d2ed98  ascii  UpdateWorldTransform
+0x00d2ee08  ascii  GetWorldTranslation
+0x00d2ee20  ascii  pTranslation
+0x00d2ee30  ascii  TraverseTransform
+0x00d2ee50  ascii  nTraversalType >= 0 && nTraversalType < _countof(s_TraverseTransformFunctionTable)
+0x00d2efe8  ascii  pParentTransformComponent
+0x00d2fcc0  ascii  AdjustEyeScale
+0x00d2fdd8  ascii  fAdjustEyeScale > FLT_EPSILON
+0x00d2ff30  ascii  SetForceObjectPositionOffset
+0x00d30618  ascii  CreateCharacterScale
+0x00d30638  ascii  DestroyCharacterScale
+0x00d30658  ascii  CreateRLECSSFXEntity
+0x00d30690  ascii  DestroyRLECSSFXEntity
+0x00d306b0  ascii  CreateRLECSSFX
+0x00d306c8  ascii  CreateRLECSSFXAndEntity
+0x00d306e8  ascii  DestroyRLECSSFX
+0x00d30700  ascii  IsRLECSSFXLive
+0x00d30718  ascii  IsRLECSSFXPathEqual
+0x00d30730  ascii  SetRLECSSFXPosition
+0x00d30748  ascii  SetRLECSSFXRotation
+0x00d30760  ascii  SetRLECSSFXIntensity
+0x00d30780  ascii  SetRLECSSFXAlpha
+0x00d30798  ascii  SetRLECSSFXLOD
+0x00d307b0  ascii  BindRLECSSFXSocket
+0x00d307c8  ascii  SetRLECSSFXSkillSkinOwnerID
+0x00d307f0  ascii  SetRLECSSFXFollowParam
+0x00d30810  ascii  SetRLECSSFXChannelEffectPos
+0x00d30838  ascii  SetRLECSSFXChannelEffectPosAndUpdateParticle
+0x00d30870  ascii  SetRLECSSFXAlwaysVisible
+0x00d30890  ascii  SetRLECSSFXVisible
+0x00d308a8  ascii  SetRLECSSFXDynamicUpdateByDist
+0x00d308d0  ascii  szExSFXPath
+0x00d308e0  ascii  SetRLECSSFXReplayTimes
+0x00d30900  ascii  SetRLECSSFXTrianglePanelEffectPos
+0x00d30928  ascii  SetRLECSSFXFreeze
+0x00d30940  ascii  SetRLECSSFXEnableDistanceCull
+0x00d30968  ascii  SetRLECSSFXOffsetDirection
+0x00d30988  ascii  SetRLECSSFXDisableSpecialLight
+0x00d309b0  ascii  GetRLECSSFXPosition
+0x00d309c8  ascii  GetRLECSSFXFilePath
+0x00d309e0  ascii  RLECS::RLComponentArray<struct RLSfxExComponent>::InsertData
+0x00d30a30  ascii  RLECS::RLComponentArray<struct RLSfxComponent>::InsertData
+0x00d30bc8  ascii  tageffect
+0x00d30c70  ascii  pParentTransform
+0x00d31428  ascii  pChunk->uOffset + pChunk->uSize <= (uint32_t)nSize
+0x00d319d0  ascii  LoadRLTransformComponentV0
+0x00d319f0  ascii  pTransformV0
+0x00d31e50  ascii  InitTranslateSmooth
+0x00d31e68  ascii  psTranslateSmoothData
+0x00d31e88  ascii  pTranslateTab
+0x00d31f08  ascii  Translate
+0x00d31fa8  ascii  UpdateTranslateSmooth
+0x00d32248  ascii  CreateTransformEntity
+0x00d32930  ascii  fGlobalScale
+0x00d32aa8  ascii  HideArrowsSFX
+0x00d32ac8  ascii  ShowArrowsSFX
+0x00d32ad8  ascii  pRLActor->Create(g_pRL->GenerateID(), eratEffect)
+0x00d32e38  ascii  DoneEnableTrackBlurEffect
+0x00d32fa0  ascii  UpdateTrackBlurEffectParam
+0x00d33048  ascii  EnableTrackBlurEffect
+0x00d333c8  ascii  CameraPositionOffset
+0x00d33888  ascii  RLEvent.RLReplaySkillEffect
+0x00d33d88  ascii  .sfx
+0x00d33e08  ascii  Convert Npc Uniform Socket From [%s] To [%s]
+0x00d33eb8  ascii  SyncRideTransformFromCharacter
+0x00d33ee0  ascii  SyncRideTransformFromActor
+0x00d34070  ascii  KGameWorldHandler::NewScene(%u, %u, %d, %d, %d, %s)
+0x00d340c0  ascii  KGameWorldHandler::LoadScene(%u, %u, %d, %d, %d, %s)
+0x00d342c0  ascii  GetObjectPositionOffset
+0x00d342f0  ascii  pOffset
+0x00d34300  ascii  UpdateObjectPositionOffset
+0x00d34590  ascii  pSkillConvexHullEffect
+0x00d34b00  ascii  InitCameraEyeScaleEnable
+0x00d34b20  ascii  InitEyeScale
+0x00d351c8  ascii  pHandler
+0x00d35450  ascii  ApplyLightTransform
+0x00d35538  ascii  CharacterLightSocket
+0x00d35558  ascii  cpszSocketName
+0x00d35570  ascii  GetCameraTransform
+0x00d35588  ascii  GetLocalCharacterTransform
+0x00d355a8  ascii  FetchCameraTransform
+0x00d355c8  ascii  pCameraTransform
+0x00d355e0  ascii  FetchLocalCharacterTransform
+0x00d35608  ascii  GetRootTransformComponent
+0x00d35630  ascii  E:\buildagent\workspace\root\JX3\hd_code\DataStores\Sword3\Source\Common\SO3Represent\Src\Utility\UpdateTransformUtility.cpp,UpdateTransform:180
+0x00d356e0  ascii  UpdateTransform
+0x00d35aa8  ascii  KGameWorldHandler::ProcessCommands
+0x00d35ae0  ascii  KGameWorldHandler::ProcessIntersectActor
+0x00d35b18  ascii  KGameWorldHandler::ProcessAddNavigatePoint
+0x00d35b50  ascii  KGameWorldHandler::ProcessRemoveNavigatePoint
+0x00d35b88  ascii  KGameWorldHandler::ProcessRollNavigatePoint
+0x00d35bc0  ascii  KGameWorldHandler::ProcessSceneObjectCrash
+0x00d35bf8  ascii  KGameWorldHandler::ProcessSceneObjectDamage
+0x00d35c30  ascii  KGameWorldHandler::ProcessRequestBBox
+0x00d35c60  ascii  KGameWorldHandler::ProcessLoadSceneObject
+0x00d35c98  ascii  KGameWorldHandler::ProcessUnloadSceneObject
+0x00d35cd0  ascii  KGameWorldHandler::ProcessUpdateDoodadLife
+0x00d37858  ascii  error in error handling
+0x00ecb380  ascii  __itt_string_handle_createA
+0x00ecb3a8  ascii  __itt_string_handle_createW
+0x00eccf38  ascii  __itt_enable_attach
+0x00ece490  ascii  .PEAURLReplaySkillEffectData@@
+0x00ece510  ascii  .?AV?$holder@PEAURLReplaySkillEffectData@@@any@any_lite@nonstd@@
+0x00ece610  ascii  .?AVIKG3DAnimationEventHandler@@
+0x00ed9838  ascii  .?AV_ModelSocketInfo@@
+0x00eda0d0  ascii  .?AVKRLAnimationSFXTag@@
+0x00eda108  ascii  .?AVRLActorSfx@@
+0x00ee1940  ascii  .?AVIKSO3ClientMessageHandler@@
+0x00ee19f0  ascii  .?AVKRLClientMessageHandler@@
+0x00ee28c8  ascii  .?AVKRLCharacterWeatherEffectMgr@@
+0x00ee2960  ascii  .?AVKRLSfx@@
+0x00ee29c8  ascii  .?AUChainSfx@?A0xb33cd9c3@@
+0x00ee3070  ascii  .?AVKRLHandLink@@
+0x00ee3098  ascii  .?AVIKMovieObjectEventHandler@@
+0x00ee31d8  ascii  .?AVKRLSocketDynamicObject@@
+0x00ee36e8  ascii  .?AU_TaskProcHandle@details@Concurrency@@
+0x00ee3e10  ascii  .?AU?$_InitialTaskHandle@XV<lambda_55e3b852b1defc35c7a6cbaabb1dbf84>@@U_TypeSelectorNoAsync@details@Concurrency@@@?$task@E@Concurrency@@
+0x00ee3ed0  ascii  .?AU?$_PPLTaskHandle@EU?$_InitialTaskHandle@XV<lambda_55e3b852b1defc35c7a6cbaabb1dbf84>@@U_TypeSelectorNoAsync@details@Concurrency@@@?$task@E@Concurrency@@U_TaskProcHandle@details@3@@details@Concurrency@@
+0x00ee4188  ascii  .?AVKRLRushFullScreenSfx@@
+0x00ee41c0  ascii  .?AVKRLFullScreenSfx@@
+0x00ee42d8  ascii  .?AVKRLSuperSFX@@
+0x00ee5940  ascii  .?AVKRLSfxEx@@
+0x00ee5968  ascii  .?AVKRLSceneSwitchSfx@@
+0x00ee5c30  ascii  .?AVkrlICustomSfx@@
+0x00ee5c60  ascii  .?AVkrlCustomSfx@@
+0x00ee5c90  ascii  .?AVKRLCustomSfxMgr@@
+0x00ee5e58  ascii  .?AVIKSO3GameWorldRepresentHandler@@
+0x00ee5e98  ascii  .?AVIKSO3RepresentHandler@@
+0x00ee5ed0  ascii  .?AVKGameWorldHandler@@
+0x00ee92d0  ascii  .?AVKRLHomelandSFX@@
+0x00ee9350  ascii  .?AV?$_Func_base@XPEAU_KG3DSCENENODEHANDLE_@@@std@@
+0x00ee9560  ascii  .?AV?$_Func_impl_no_alloc@V<lambda_9fd0d48a4b01a52d6aec76b36d428827>@@XPEAU_KG3DSCENENODEHANDLE_@@@std@@
+0x00ee97f0  ascii  .?AVInteractorHandle@SceneInteraction@@
+0x00ee9920  ascii  .?AUKRLTransformComponent@@
+0x00ee9958  ascii  .?AVKRLTransformComponentDeclaration@@
+0x00ee99d8  ascii  .?AV?$SGECSPool@UKRLTransformComponent@@@@
+0x00ef1f60  ascii  .?AV?$metadata_handler@$0A@@detail@rttr@@
+0x00ef2cf0  ascii  .?AV?$property_wrapper@Umember_object_ptr@detail@rttr@@VTransform@hlbs@@PEQ45@V?$vector@PEAVTransform@hlbs@@V?$allocator@PEAVTransform@hlbs@@@std@@@std@@X$0A@Ureturn_as_copy@23@Uset_value@23@$0A@U?$type_list@$$V@3@@detail@rttr@@
+0x00ef2e20  ascii  .?AV?$property_wrapper@Umember_object_ptr@detail@rttr@@VTransform@hlbs@@PEQ45@PEAV45@X$0A@Ureturn_as_copy@23@Uset_value@23@$0A@U?$type_list@$$V@3@@detail@rttr@@
+0x00ef2f00  ascii  .?AV?$property_wrapper@Umember_object_ptr@detail@rttr@@VTransform@hlbs@@PEQ45@VFQUATERNION@@X$0A@Ureturn_as_copy@23@Uset_value@23@$0A@U?$type_list@$$V@3@@detail@rttr@@
+0x00ef2fe0  ascii  .?AV?$property_wrapper@Umember_object_ptr@detail@rttr@@VTransform@hlbs@@PEQ45@VFVECTOR3@@X$0A@Ureturn_as_copy@23@Uset_value@23@$0A@U?$type_list@$$V@3@@detail@rttr@@
+0x00ef30c0  ascii  .?AV?$property_wrapper@Umember_object_ptr@detail@rttr@@VTransform@hlbs@@PEQ45@HX$0A@Ureturn_as_copy@23@Uset_value@23@$0A@U?$type_list@$$V@3@@detail@rttr@@
+0x00ef3190  ascii  .?AV?$property_wrapper@Umember_object_ptr@detail@rttr@@VTransform@hlbs@@PEQ45@VFMATRIX4@@X$0A@Ureturn_as_copy@23@Uset_value@23@$0A@U?$type_list@$$V@3@@detail@rttr@@
+0x00ef32f0  ascii  .?AV?$method_wrapper@P8Transform@hlbs@@EBAXAEAVFVECTOR3@@@ZV12@$0A@Udefault_invoke@detail@rttr@@U?$default_args@$$V@56@U?$parameter_infos@V?$parameter_info_wrapper@AEAVFVECTOR3@@$0A@Uno_param_name@detail@rttr@@X@detail@rttr@@@56@$0A@U?$type_list@$$V@6@@detail@rttr@@
+0x00ef5c20  ascii  .?AV?$_Binder@U_Unforced@std@@P8RLActorPerspectiveSystem@@EAAXAEAVRLEvent@RLECS@@@ZPEAV3@AEBU?$_Ph@$00@2@@std@@
+0x00ef5e50  ascii  .?AV?$_Func_impl_no_alloc@V?$_Binder@U_Unforced@std@@P8RLActorPerspectiveSystem@@EAAXAEAVRLEvent@RLECS@@@ZPEAV3@AEBU?$_Ph@$00@2@@std@@XAEAVRLEvent@RLECS@@@std@@
+0x00ef5f28  ascii  .?AVKRLCharacterScaleSystem@@
+0x00ef5f60  ascii  .?AV?$_Binder@U_Unforced@std@@P8RLFullBodyIKSystem@@EAAXAEAVRLEvent@RLECS@@@ZPEAV3@AEBU?$_Ph@$00@2@@std@@
+0x00ef5ff8  ascii  .?AW4IKEffectorPositionType@@
+0x00ef6030  ascii  .?AW4EnumEffectorTypeIK@@
+0x00ef6140  ascii  .?AV?$_Func_impl_no_alloc@V?$_Binder@U_Unforced@std@@P8RLFullBodyIKSystem@@EAAXAEAVRLEvent@RLECS@@@ZPEAV3@AEBU?$_Ph@$00@2@@std@@XAEAVRLEvent@RLECS@@@std@@
+0x00ef62d0  ascii  .?AV?$_Binder@U_Unforced@std@@P8RLReplaySystem@@EAAXAEAVRLEvent@RLECS@@@ZPEAV3@AEBU?$_Ph@$00@2@@std@@
+0x00ef64a0  ascii  .?AV?$_Func_impl_no_alloc@V?$_Binder@U_Unforced@std@@P8RLReplaySystem@@EAAXAEAVRLEvent@RLECS@@@ZPEAV3@AEBU?$_Ph@$00@2@@std@@XAEAVRLEvent@RLECS@@@std@@
+0x00ef65a8  ascii  .?AURLSfxComponent@@
+0x00ef65d8  ascii  .?AURLSfxExComponent@@
+0x00ef6660  ascii  .?AV?$RLComponentArray@URLSfxComponent@@@RLECS@@
+0x00ef66b0  ascii  .?AV?$RLComponentArray@URLSfxExComponent@@@RLECS@@
+0x00ef6730  ascii  .?AVRLECSSfx@@
+0x00ef6758  ascii  .?AVRLSfxSystem@@
+0x00ef6800  ascii  .?AV?$_Binder@U_Unforced@std@@P8RLSprintSystem@@EAAXAEAVRLEvent@RLECS@@@ZPEAV3@AEBU?$_Ph@$00@2@@std@@
+0x00ef69c0  ascii  .?AV?$_Func_impl_no_alloc@V?$_Binder@U_Unforced@std@@P8RLSprintSystem@@EAAXAEAVRLEvent@RLECS@@@ZPEAV3@AEBU?$_Ph@$00@2@@std@@XAEAVRLEvent@RLECS@@@std@@
+0x00ef6ac0  ascii  .?AV?$_Binder@U_Unforced@std@@P8RLUGCSceneSystem@@EAAXAEAVRLEvent@RLECS@@@ZPEAV3@AEBU?$_Ph@$00@2@@std@@
+0x00ef6bb0  ascii  .?AV?$_Func_impl_no_alloc@V?$_Binder@U_Unforced@std@@P8RLUGCSceneSystem@@EAAXAEAVRLEvent@RLECS@@@ZPEAV3@AEBU?$_Ph@$00@2@@std@@XAEAVRLEvent@RLECS@@@std@@
+0x00ef7310  ascii  .?AV?$_Ref_count_obj2@V?$RLComponentArray@URLSfxComponent@@@RLECS@@@std@@
+0x00ef7380  ascii  .?AV?$_Ref_count_obj2@V?$RLComponentArray@URLSfxExComponent@@@RLECS@@@std@@
+0x00ef7aa8  ascii  .?AUKRLCharacterScaleComponent@@
+0x00ef7cc0  ascii  .?AV?$holder@W4IKEffectorPositionType@@@any@any_lite@nonstd@@
+0x00ef7d20  ascii  .?AV?$holder@W4EnumEffectorTypeIK@@@any@any_lite@nonstd@@
+0x0102254c  ascii  ?BindInstance@Context@behaviac@@QEAA_NPEBDPEAVAgent@2@@Z
+0x01022588  ascii  ?UnbindInstance@Context@behaviac@@QEAA_NPEBD@Z
+0x010236f8  ascii  ?GetActivateTransform@PxWorld@@QEAAPEAXAEAI@Z
+0x01023858  ascii  ??0SGEntityHandle@@QEAA@XZ
+0x01023952  ascii  ?IsValid@SGEntityAdmin@@SA_NAEBUSGEntityHandle@@@Z
+0x01023988  ascii  ?GetEntityAdmin@SGEntityAdmin@@SAPEAV1@AEBUSGEntityHandle@@@Z
+0x01023bdc  ascii  ?CreateEntity@SGEntityAdmin@@QEAA?AUSGEntityHandle@@XZ
+0x01023c16  ascii  ?DestroyEntity@SGEntityAdmin@@SAXAEBUSGEntityHandle@@@Z
+0x01023d52  ascii  GetModuleHandleA
+0x01023e42  ascii  CloseHandle
+0x0102456c  ascii  ?_Osfx@?$basic_ostream@DU?$char_traits@D@std@@@std@@QEAAXXZ
+0x010250f6  ascii  ?ReportUnhandledError@_ExceptionHolder@details@Concurrency@@AEAAXXZ
+0x01025984  ascii  __CxxFrameHandler4
+0x01025ab6  ascii  __CxxFrameHandler3
+0x01025acc  ascii  __C_specific_handler
+0x01026294  ascii  GetModuleHandleW
+0x010262d6  ascii  UnhandledExceptionFilter
+0x010262f2  ascii  SetUnhandledExceptionFilter

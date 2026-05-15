@@ -1,0 +1,10 @@
+
+Running 5 tests using 1 worker
+
+  ✓  1 [chromium] › tests\cdn-download.spec.js:6:3 › cdn-download.html › defaults to Live tab and shows an ordered checklist with a Run Bridge button (3.9s)
+  ✓  2 [chromium] › tests\cdn-download.spec.js:24:3 › cdn-download.html › Run Bridge button calls start-capture and returns to idle state (6.4s)
+  ✓  3 [chromium] › tests\cdn-download.spec.js:36:3 › cdn-download.html › clean UI - no decorative noise from old design (2.1s)
+  ✓  4 [chromium] › tests\cdn-download.spec.js:57:3 › cdn-download.html › Offline tab: search filters the list (2.6s)
+  ✓  5 [chromium] › tests\cdn-download.spec.js:72:3 › cdn-download.html › clicking Download triggers /api/cdn/download and updates status (2.6s)
+
+  5 passed (18.3s)

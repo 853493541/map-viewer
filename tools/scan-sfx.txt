@@ -1,0 +1,34 @@
+﻿# Scanning C:\SeasunGame\Game\JX3\bin\zhcn_hd\SeasunDownloaderV2.4\seasun\editortool\movieeditor\bin64\jx3representx64.dll (17150464 bytes) for /LoadModelSFXParam|PartInfo|szSocketName|szPssFile|szEffectName|szSfx|m_vOffset|GetPartInfo|MountPos|ParticleSocket|PssPath|szPssPath|EffectScale|EffectOffset/i
+# Total hits: 31
+# Unique strings: 31
+0x00cb7128  ascii  _ModelPartInfo::ResumeDefaultAnimation
+0x00cb72e0  ascii  m_prlModel->LoadModel(rLoadSFXParam.szSFX, nullptr, false, m_ModelLoadArgs, 0, rLoadSFXParam.bSync, false, m_nLODLevel) != ModelLoadResult::Error
+0x00cb7500  ascii  partInfo.m_prlModel
+0x00cb7520  ascii  partInfo.m_prlModel->LoadModel(rLoadPartParam.szModel, rLoadPartParam.szMtl, rLoadPartParam.bCommonMaterial != 0, m_ModelLoadArgs, 0, rLoadPartParam.bSync, false, rLoadPartParam.bSpecialLOD ? m_nSpecialLODLevel : m_nLODLevel) != ModelLoadResult::Error
+0x00cb7650  ascii  prlPartInfo
+0x00cb7720  ascii  (*pprlSfx)->LoadModel(szSFX, nullptr, false, m_ModelLoadArgs, 0, false, false, m_nLODLevel) != ModelLoadResult::Error
+0x00cb7c90  ascii  (*pprlSfx)->LoadModel(szSFX, nullptr, false, m_ModelLoadArgs, 0, false, false, m_nSocketLODLevel) != ModelLoadResult::Error
+0x00cb7ec0  ascii  prlModel->LoadModel(rModelSFXParam.szSFX, nullptr, false, m_ModelLoadArgs, 0, false, false, m_nLODLevel) != ModelLoadResult::Error
+0x00cb81f0  ascii  strlen(szSocketName) < sizeof(socketInfo.szSocketName)
+0x00cbc078  ascii  LoadModelSFXParam.szSFX
+0x00cbc098  ascii  LoadModelSFXParam.szSocketName
+0x00cc6a40  ascii  szSFX && szSFX[0] != '\0'
+0x00cc6a60  ascii  LoadSocketSFX(szSFX, szSocket)
+0x00cc6e50  ascii  pRLSfx->LoadModel(szSFX, nullptr, false, ModelLoadArguments()) != ModelLoadResult::Error
+0x00cc92ec  ascii  szSFX
+0x00cc98e0  ascii  m_rlRide.GetPartInfo(m_szSocket, matSocket, vOffset)
+0x00cca498  ascii  szSfxFile
+0x00ccaaa0  ascii  pRLSources->m_rlActor.GetPartInfo(m_szSocketName, matPart, vOffset)
+0x00cd02a0  ascii  pcszSocketName
+0x00cd5ce8  ascii  pcszSFX
+0x00cd7f40  ascii  cpszSFXFilePath
+0x00cdc270  ascii  szSocketName
+0x00ce25f8  ascii  szSFXPath
+0x00ce3668  ascii  param.szSFXFilePath
+0x00cfebe8  ascii  bNpcEffectScale
+0x00d0c4a0  ascii  m_SFXMgr.CreateGuideSFX(dwID, pGuideSFX->szSFX, {1.f}, qRot * pGuideSFX->qRot, vPos)
+0x00d0e1d0  ascii  m_piSNE->Model_CreateCommonModel(&hSNModel, szSFX, nullptr, nullptr, 0)
+0x00d10d80  ascii  szSocketName && szSocketName[0] != '\0'
+0x00d11298  ascii  szSfxPath
+0x00d35558  ascii  cpszSocketName
+0x00ed9808  ascii  .?AV_ModelPartInfo@@
