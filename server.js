@@ -8697,6 +8697,24 @@ function sendText(res, status, text) {
   res.end(body);
 }
 
+const SHARED_TOPBAR_CSS_TAG = '<link rel="stylesheet" href="/shared-topbar.css">';
+const SHARED_TOPBAR_JS_TAG = '<script src="/shared-topbar.js" defer></script>';
+
+function injectSharedTopbarAssets(htmlBuffer) {
+  let html = htmlBuffer.toString('utf8');
+  if (!html.includes('/shared-topbar.css')) {
+    html = /<\/head>/i.test(html)
+      ? html.replace(/<\/head>/i, `  ${SHARED_TOPBAR_CSS_TAG}\n</head>`)
+      : `${SHARED_TOPBAR_CSS_TAG}\n${html}`;
+  }
+  if (!html.includes('/shared-topbar.js')) {
+    html = /<\/body>/i.test(html)
+      ? html.replace(/<\/body>/i, `  ${SHARED_TOPBAR_JS_TAG}\n</body>`)
+      : `${html}\n${SHARED_TOPBAR_JS_TAG}`;
+  }
+  return Buffer.from(html, 'utf8');
+}
+
 function serveFile(res, filePath, headOnly = false) {
   if (!existsSync(filePath) || !statSync(filePath).isFile()) {
     sendText(res, 404, 'Not found');
@@ -8704,10 +8722,12 @@ function serveFile(res, filePath, headOnly = false) {
   }
   const ext = extname(filePath).toLowerCase();
   const contentType = MIME_TYPES[ext] || 'application/octet-stream';
-  const data = headOnly ? null : readFileSync(filePath);
+  const data = ext === '.html'
+    ? injectSharedTopbarAssets(readFileSync(filePath))
+    : headOnly ? null : readFileSync(filePath);
   res.writeHead(200, {
     'Content-Type': contentType,
-    'Content-Length': headOnly ? statSync(filePath).size : data.length,
+    'Content-Length': headOnly && !data ? statSync(filePath).size : data.length,
     'Access-Control-Allow-Origin': '*',
     'Cache-Control': 'no-cache',
   });
@@ -12209,7 +12229,7 @@ server = createServer(async (req, res) => {
         packageName: result.packageName,
         desktopRoot: DESKTOP_EXPORT_ROOT,
         packagePath: result.packageRoot,
-        viewerUrl: `/full-viewer.html?pkg=${encodeURIComponent(result.packageName)}`,
+        viewerUrl: `/export-reader.html?pkg=${encodeURIComponent(result.packageName)}`,
         stats: result.stats,
       });
     } catch (err) {
@@ -12229,7 +12249,7 @@ server = createServer(async (req, res) => {
         packageName: result.packageName,
         desktopRoot: DESKTOP_EXPORT_ROOT,
         packagePath: result.packageRoot,
-        viewerUrl: `/full-viewer.html?pkg=${encodeURIComponent(result.packageName)}`,
+        viewerUrl: `/export-reader.html?pkg=${encodeURIComponent(result.packageName)}`,
         stats: result.stats,
       });
     } catch (err) {
@@ -12261,7 +12281,7 @@ server = createServer(async (req, res) => {
         packageName: result.packageName,
         desktopRoot: DESKTOP_EXPORT_ROOT,
         packagePath: result.packageRoot,
-        viewerUrl: `/full-viewer.html?pkg=${encodeURIComponent(result.packageName)}`,
+        viewerUrl: `/export-reader.html?pkg=${encodeURIComponent(result.packageName)}`,
         stats: result.stats,
       });
     } catch (err) {

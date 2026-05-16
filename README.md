@@ -4,13 +4,19 @@ This repository contains the current web tooling for inspecting, editing, and va
 
 ## Active Pages
 
-- `public/index.html` — Editor / map manager landing page
+- `public/index.html` — Front page with navigation to all current pages
+- `public/editor.html` — Editor / map manager page
 - `public/export-reader.html` — Main export package validation page
 - `public/actor-viewer.html` — MovieEditor actor export viewer for skeleton and animation validation
+- `public/actor-animation-player.html` — Actor animation playback and validation page
 - `public/mesh-inspector.html` — Regional mesh approval and denial workflow
+- `public/pss.html` — PSS particle inspection page
 - `public/collision-test-mode.html` — Single-mesh sidecar collision walk test
-
-`public/full-viewer.html` still exists as a paused page, but it is intentionally hidden from the main navigation.
+- `public/ability-matcher.html` — Ability/resource matching page
+- `public/ability-tani-sound.html` — Final TANI-SOUND review and export page
+- `public/wwise-soundbanks.html` — Wwise soundbank browser
+- `public/cdn-resource-browser.html` — CDN resource browser
+- `public/client-monitor.html` — Live client capture monitor
 
 ## Quick Start
 
@@ -68,7 +74,7 @@ Outputs are written under `cache-extraction/wwise-event-folders`: `manifest.tsv`
 
 - Collision Test and Export Reader use sidecar collision only.
 - Runtime collision should come from `*.collision.json` sidecars and `mesh-collision-index.json`.
-- Full Viewer is paused and should not be treated as an active workflow.
+- Full Viewer has been removed and should not be treated as an active workflow.
 
 ## Main Routes And APIs
 
@@ -76,10 +82,18 @@ Pages:
 
 - `/`
 - `/index.html`
+- `/editor.html`
 - `/export-reader.html`
 - `/actor-viewer.html`
+- `/actor-animation-player.html`
 - `/mesh-inspector.html`
+- `/pss.html`
 - `/collision-test-mode.html`
+- `/ability-matcher.html`
+- `/ability-tani-sound.html`
+- `/wwise-soundbanks.html`
+- `/cdn-resource-browser.html`
+- `/client-monitor.html`
 
 Key APIs:
 
@@ -97,11 +111,18 @@ Key APIs:
 jx3-web-map-viewer/
 ├── public/
 │   ├── index.html
+│   ├── editor.html
 │   ├── export-reader.html
 │   ├── actor-viewer.html
+│   ├── actor-animation-player.html
 │   ├── mesh-inspector.html
+│   ├── pss.html
 │   ├── collision-test-mode.html
-│   ├── full-viewer.html
+│   ├── ability-matcher.html
+│   ├── ability-tani-sound.html
+│   ├── wwise-soundbanks.html
+│   ├── cdn-resource-browser.html
+│   ├── client-monitor.html
 │   ├── js/
 │   └── map-data/
 ├── tools/
@@ -118,3 +139,6 @@ jx3-web-map-viewer/
 - [INSTRUCTIONS.md](INSTRUCTIONS.md) — current repo behavior, working rules, and reporting format
 - [EXPERIENCES.md](EXPERIENCES.md) — lessons learned and pitfalls
 - [EXTERNAL_EXPORT_READER_GUIDE.md](EXTERNAL_EXPORT_READER_GUIDE.md) — export-reader integration contract
+- [.github/copilot-instructions.md](.github/copilot-instructions.md) — Copilot loader bridge for `INSTRUCTIONS.md`
+
+See [INSTRUCTIONS.md](INSTRUCTIONS.md) for the full tracked Markdown inventory.

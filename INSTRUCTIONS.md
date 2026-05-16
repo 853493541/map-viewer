@@ -10,15 +10,35 @@ This is the single internal instruction file for the repository.
 - Use MovieEditor actor exports as the validation path for assembled body parts, real skeleton binding, and usable animation playback.
 - Target future runtime support for avatar movement, walking, jumping, and animation-state selection on top of that actor data instead of static mesh replacement.
 
-The project is now focused on these active pages:
-- Editor: public/index.html
-- Export Reader (main runtime validation page): public/export-reader.html
-- Actor Viewer (MovieEditor actor export validator): public/actor-viewer.html
+The repository currently serves these HTML pages. The index is a front page that links all current pages. The shared topbar must display one category row for the current tool page, plus a top-left home link:
+- Front page: public/index.html
+- Editor: public/editor.html
+- Actor Viewer: public/actor-viewer.html
+- Animation Player: public/actor-animation-player.html
 - Mesh Inspector: public/mesh-inspector.html
-- Collision Test (single-mesh validator): public/collision-test-mode.html
-- Full Viewer is intentionally paused: public/full-viewer.html
+- PSS: public/pss.html
+- Collision Test: public/collision-test-mode.html
+- Export Reader: public/export-reader.html
+- Ability Matcher: public/ability-matcher.html
+- TANI-SOUND: public/ability-tani-sound.html
+- Client Monitor: public/client-monitor.html
+- Soundbanks: public/wwise-soundbanks.html
+- CDN Browser: public/cdn-resource-browser.html
 
-All active pages now include a shared top header for cross-navigation.
+Shared topbar rows:
+- Resources: CDN Browser, Client Monitor
+- Maps: Editor, Export Reader, Actor Viewer, Mesh Inspector, Collision Test
+- Animation: Animation Player, PSS
+- Sound: Ability Matcher, TANI-SOUND, Soundbanks
+
+Retired pages:
+- public/sounds.html
+- public/local-pakv5.html
+- public/full-viewer.html
+
+Header source of truth:
+- server.js injects public/shared-topbar.css and public/shared-topbar.js into every served .html response.
+- Update public/shared-topbar.js whenever an HTML page is added, removed, or renamed.
 
 ## 2. Source Of Truth Policies
 
@@ -65,7 +85,11 @@ start-localhost
 ```
 
 Default URL:
-- http://localhost:3015
+- http://127.0.0.1:3015
+
+Local server rule:
+- Always run and validate the app on http://127.0.0.1:3015.
+- If port 3015 is already in use, kill the process listening on 3015, then restart the local server on 3015 before giving a working link.
 
 ## 3.2 Alternative start
 
@@ -84,6 +108,10 @@ node server.js
 - POST /api/export-regional-with-collision
 - GET/HEAD /full-exports/<package>/...
 - GET/HEAD /movie-editor-assets/<path>
+- GET /api/client-monitor/status
+- POST /api/client-monitor/pause
+- POST /api/client-monitor/resume
+- POST /api/ability-matcher/tani-sound-export-package
 
 Note: export-full-with-collision and export-regional-with-collision are sidecar-only export routes.
 
@@ -91,17 +119,18 @@ Note: export-full-with-collision and export-regional-with-collision are sidecar-
 
 - public/
   - index.html
+  - editor.html
   - export-reader.html
   - actor-viewer.html
   - mesh-inspector.html
   - collision-test-mode.html
-  - full-viewer.html
+  - shared-topbar.css
+  - shared-topbar.js
   - js/
     - app.js
     - actor-viewer.js
     - export-reader.js
     - collision-test-mode.js
-    - full-viewer.js
 - tools/
   - collision-generator.js
 - server.js
@@ -111,21 +140,31 @@ Note: export-full-with-collision and export-regional-with-collision are sidecar-
 ## 6. Removed Or Paused Features
 
 The following are intentionally removed or paused unless explicitly requested:
-- Full Viewer runtime UI (paused page placeholder only)
+- Full Viewer page and runtime UI
 - Legacy map-level collision runtime reliance
 - Old validator page flow
 - Legacy editor features previously removed in simplification passes
 
 ## 7. Documentation Map
 
-Only keep these core docs as canonical:
-- README.md (user-facing overview + startup commands)
-- INSTRUCTIONS.md (this file: internal policies, APIs, reporting rules)
-- EXPERIENCES.md (lessons learned: mistakes, findings, what worked)
-- EXTERNAL_EXPORT_READER_GUIDE.md (external integration guide)
-- cache-extraction/.instructions.md (folder-scoped cache-extraction phase notes)
+Instruction source of truth:
+- INSTRUCTIONS.md is the canonical internal instruction file.
+- .github/copilot-instructions.md is a Copilot loader bridge for the same rules, not a second policy source.
 
-If any other guide is reintroduced, it must not conflict with these files.
+Tracked Markdown inventory:
+
+| Path | Role | INSTRUCTIONS.md reference status |
+| --- | --- | --- |
+| .github/copilot-instructions.md | Copilot loader bridge | Referenced |
+| INSTRUCTIONS.md | Canonical internal instructions | Self |
+| README.md | User-facing overview and startup commands | Referenced |
+| EXPERIENCES.md | Lessons learned and pitfalls | Referenced |
+| EXTERNAL_EXPORT_READER_GUIDE.md | Export-reader integration contract | Referenced |
+| PSS_RENDER_FIX_CHECKLIST.md | Empty legacy checklist placeholder | Referenced |
+| tools/bin/ww2ogg/README.md | Third-party ww2ogg README | Referenced as third-party |
+| tools/bin/ww2ogg/notes.md | Third-party ww2ogg notes | Referenced as third-party |
+
+If any other guide is reintroduced, it must be added to this table and must not conflict with the canonical rules.
 
 ## 8. Change Discipline
 
@@ -133,7 +172,7 @@ Before shipping major changes:
 0. Before editing any file, read the current on-disk file content first so edits are based on the newest version, not stale cached context.
 1. Before telling the user a fix is done or giving a final result, check errors for the affected files and any visible runtime/browser errors for the affected page. Fix relevant errors first, or explicitly report that they still exist.
 2. Confirm sidecar-only collision behavior is still enforced.
-3. Confirm page header navigation still links all active pages.
+3. Confirm page header navigation still links all served HTML pages.
 4. Confirm local startup command still works.
 5. Keep docs synchronized with actual behavior.
 
@@ -160,12 +199,19 @@ For PSS and runtime debug-log tasks:
 - Do not ask the user to inspect logs manually.
 - After each fix iteration, rerun and re-read logs to confirm the result before reporting completion.
 
+## 10.1 PSS Audit Truth Table
+
+- `materialIndex == null` (the launcher authored `nMaterialIndex = 0xFFFFFFFF`) on a Trail-class / ribbon launcher is expected, not a gap. Trail launchers get their texture from the type-3 ParticleTrack block through the procedural ribbon renderer.
+- Mesh-binding audit must classify launchers by class first and pick the right success criterion:
+  - Material-class launcher: `materialIndex` resolves.
+  - Trail-class launcher: track block has a resolvable texture.
+
 ## 11. Git Tracking Policy (standalone runtime, no large assets)
 
 Track these:
-- App/server source: `public/*.html`, `public/js/**`, `server.js`, `serve.py`, `tools/**`
+- App/server source: `public/*.html`, `public/js/**`, `public/shared-topbar.*`, `server.js`, `serve.py`, `tools/**`
 - Small map metadata and terrain essentials: `public/map-data/*.json`, `public/map-data/entities/**`, `public/map-data/heightmap/**`, `public/map-data/terrain-textures/index.json`
-- Operational docs and startup scripts: `INSTRUCTIONS.md`, `EXPERIENCES.md`, `EXTERNAL_EXPORT_READER_GUIDE.md`, `PIPELINE.md`, `start-localhost.cmd`
+- Operational docs and startup scripts: `README.md`, `INSTRUCTIONS.md`, `.github/copilot-instructions.md`, `EXPERIENCES.md`, `EXTERNAL_EXPORT_READER_GUIDE.md`, `PSS_RENDER_FIX_CHECKLIST.md`, `start-localhost.cmd`
 
 Do not track these:
 - Large generated assets: `public/map-data/meshes/*.glb`, `public/map-data/textures/**`, `source-meshes/**`

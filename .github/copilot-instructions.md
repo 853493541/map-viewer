@@ -1,34 +1,10 @@
-# Project rules
+# Project Rules
 
-## ALWAYS RE-READ BEFORE EDIT
+Canonical repository instructions live in `INSTRUCTIONS.md`. This file exists so Copilot loads the repo rules automatically; do not add separate policy here without updating `INSTRUCTIONS.md` first.
 
-**Every file you edit, you MUST re-read its current contents from disk
-immediately before making the edit.** Do not rely on file contents you
-read earlier in the conversation — the file may have been changed by
-the user, by a previous edit you made, by a build step, or by another
-agent. Acting on a stale snapshot causes broken `oldString` matches,
-silent overwrites of fresh changes, and "I already fixed that" loops.
+Bootstrap rules repeated here for safety:
 
-This rule applies to:
-- `replace_string_in_file` / `multi_replace_string_in_file`
-- Any tool that takes an `oldString` argument
-- Any decision based on "what's currently in the file"
-
-The only exception: a single batch of edits to **different files** where
-each file was just read in the same turn.
-
-## Local server rule
-
-- Always run and validate the app on `http://127.0.0.1:3015`.
-- If port `3015` is already in use, kill the process listening on `3015`,
-  then restart the local server on `3015` before giving a working link.
-
-## PSS audit truth table
-
-- `materialIndex == null` (i.e. the launcher authored
-  `nMaterialIndex = 0xFFFFFFFF`) on a Trail-class / ribbon launcher is
-  **expected, not a gap**. Trail launchers get their texture from the
-  type-3 ParticleTrack block via the procedural ribbon renderer.
-- Mesh-binding audit must classify launchers by class first and pick the
-  right success criterion: material-class → `materialIndex` resolves;
-  trail-class → track block has a resolvable texture.
+- Re-read every file from disk immediately before editing it.
+- Run and validate the app on `http://127.0.0.1:3015`; if port `3015` is occupied, kill the listener and restart on `3015`.
+- PSS mesh-binding audits must classify launcher class first: material-class launchers pass when `materialIndex` resolves; trail-class/ribbon launchers pass when the type-3 ParticleTrack block has a resolvable texture.
+- `materialIndex == null` / `nMaterialIndex = 0xFFFFFFFF` on Trail-class launchers is expected and is not a gap.

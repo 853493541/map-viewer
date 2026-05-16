@@ -2810,7 +2810,7 @@ class MapEditor {
       const msg = `${exportLabel}: ${st.entities || entities.length} entities, ${st.meshesCopied || 0}/${st.meshesRequested || 0} GLBs, ${st.heightmapsCopied || 0} heightmaps${collisionSummary}${attachedSummary}`;
       this.showToast(msg);
 
-      // Open full viewer directly to the new package.
+      // Open Export Reader directly to the new package.
       if (data.viewerUrl) {
         window.location.href = data.viewerUrl;
       }
