@@ -22,7 +22,7 @@ This file records what we found, what mistakes we made, and what worked.
 ## 1.4 UX and product direction
 - Simplified workflows outperformed feature-heavy flows.
 - Cross-page access is important; global header links reduced friction.
-- Full Viewer runtime UI is currently paused to reduce maintenance burden.
+- Full Viewer runtime UI was removed to reduce maintenance burden.
 
 ## 1.5 Actor pipeline facts
 - MovieEditor actors are part-based assemblies driven by `.actor` definitions, not single merged avatar meshes.
