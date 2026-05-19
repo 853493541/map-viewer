@@ -1,4 +1,4 @@
-﻿TYPE_COUNTS: {"client-animation-file":9207,"animtag-audio-callsite":33,"wwise-post-event":343,"wwise-register-gameobj":99344}
+﻿TYPE_COUNTS: {"client-animation-file":9207,"animtag-audio-callsite":33,"wwise-post-event":343,"wwise-register-gameobj":87420}
 LATEST_ANIMATION_FILES:
 2026-05-18T23:25:21.960Z | data\material\material\texture\fabric_weave.dds | dds | g-open-file | 0x7ff88202cf6e JX3ClientX64.exe!GetAsyncTaskSystemInterface
 2026-05-18T23:25:21.961Z | data\source\npc_source\p080\\u0123<UFFD><UFFD>\p080601c_body_hd.mesh | mesh | g-open-file | 0x7ff88202cf6e JX3ClientX64.exe!GetAsyncTaskSystemInterface

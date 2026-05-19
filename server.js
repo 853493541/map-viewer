@@ -112,6 +112,7 @@ const WW2OGG_CODEBOOKS = join(__dirname, 'tools', 'bin', 'ww2ogg', 'packed_codeb
 const CLIENT_MONITOR_AGENT_PATH = join(__dirname, 'tools', 'frida-audio-agent.js');
 const CLIENT_MONITOR_ATTACH_PATH = join(__dirname, 'tools', 'frida-attach.mjs');
 const CLIENT_MONITOR_LOG_PATH = join(__dirname, 'log', 'frida-audio-client-monitor.jsonl');
+const CLIENT_MONITOR_ANIM_SOUND_INDEX_PATH = join(__dirname, 'log', 'anim-sound-index.json');
 const CLIENT_MONITOR_PROCESS_NAMES = ['JX3ClientX64.exe', 'JX3Client.exe'];
 const GB18030_DECODER = new TextDecoder('gb18030');
 const GB18030_ENCODER = new TextEncoder(); // Note: TextEncoder only does UTF-8; we need iconv for GBK
@@ -2086,10 +2087,14 @@ let clientMonitorBridgeJob = null;
 const clientMonitorStdoutTail = [];
 const clientMonitorStderrTail = [];
 const CLIENT_MONITOR_STATUS_CACHE_MS = 1000;
+const CLIENT_MONITOR_RECORD_OVERFETCH = 8;
+const CLIENT_MONITOR_RECORD_MAX_TAIL_LINES = 40000;
+const CLIENT_MONITOR_IGNORED_LOG_TYPES = new Set(['wwise-register-gameobj']);
 let clientMonitorStatusCache = null;
 let clientMonitorCapturePausedAt = '';
 let clientMonitorCaptureResumeAt = '';
 let clientMonitorPausedCaptureSnapshot = null;
+let clientMonitorAnimSoundIndexCache = null;
 
 function pushClientMonitorTail(target, chunk) {
   const lines = String(chunk || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -2205,10 +2210,15 @@ function readClientMonitorRecords(limit = 600) {
   const files = listClientMonitorLogFiles();
   const records = [];
   for (const filePath of files) {
-    const lines = readTailLines(filePath, Math.max(limit, 1200));
+    const tailLimit = Math.min(
+      Math.max(limit * CLIENT_MONITOR_RECORD_OVERFETCH, 1200),
+      CLIENT_MONITOR_RECORD_MAX_TAIL_LINES,
+    );
+    const lines = readTailLines(filePath, tailLimit);
     for (const line of lines) {
       try {
         const parsed = JSON.parse(line);
+        if (CLIENT_MONITOR_IGNORED_LOG_TYPES.has(parsed.type)) continue;
         records.push({ ...parsed, logFile: basename(filePath), logPath: filePath });
       } catch { /* skip malformed log lines */ }
     }
@@ -2216,6 +2226,17 @@ function readClientMonitorRecords(limit = 600) {
   return records
     .sort((a, b) => getClientMonitorTimestamp(a) - getClientMonitorTimestamp(b))
     .slice(-limit);
+}
+
+function clientMonitorLogFilesStateKey() {
+  return listClientMonitorLogFiles().map((filePath) => {
+    try {
+      const stats = statSync(filePath);
+      return `${filePath}:${stats.size}:${Math.round(stats.mtimeMs)}`;
+    } catch {
+      return filePath;
+    }
+  }).join('|');
 }
 
 function uniqNumbers(values) {
@@ -2264,6 +2285,28 @@ function compactClientMonitorStack(stack) {
     .slice(0, 12);
 }
 
+function compactClientMonitorProbe(probe) {
+  if (!probe || typeof probe !== 'object') return null;
+  const compact = {};
+  for (const key of ['address', 'ansi', 'utf16']) {
+    if (probe[key] != null) compact[key] = String(probe[key]).slice(0, 600);
+  }
+  if (Array.isArray(probe.asciiStrings)) compact.asciiStrings = probe.asciiStrings.map((value) => String(value || '').slice(0, 180)).filter(Boolean).slice(0, 12);
+  if (Array.isArray(probe.utf16Strings)) compact.utf16Strings = probe.utf16Strings.map((value) => String(value || '').slice(0, 180)).filter(Boolean).slice(0, 12);
+  return Object.keys(compact).length ? compact : null;
+}
+
+function compactClientMonitorRaw(record) {
+  const raw = {};
+  for (const key of ['type', 'form', 'api', 'eventName', 'eventNameWide', 'eventIdLike', 'arg0', 'stackStringPtr', 'stackString', 'stackStringUtf16']) {
+    if (record[key] != null) raw[key] = String(record[key]).slice(0, key.includes('stackString') ? 800 : 160);
+  }
+  if (Array.isArray(record.argsRaw)) raw.argsRaw = record.argsRaw.map((value) => String(value || '').slice(0, 120)).filter(Boolean).slice(0, 16);
+  const localStringProbe = compactClientMonitorProbe(record.localStringProbe);
+  if (localStringProbe) raw.localStringProbe = localStringProbe;
+  return raw;
+}
+
 const CLIENT_MONITOR_AUDIO_TYPES = new Set([
   'animtag-audio-callsite',
   'wwise-post-event',
@@ -2276,6 +2319,189 @@ const CLIENT_MONITOR_AUDIO_TYPES = new Set([
   'fmod-play-sound',
   'fmod-event-start',
 ]);
+
+const CLIENT_MONITOR_ANIMATION_TYPES = new Set([
+  'client-animation-file',
+  'animtag-audio-callsite',
+]);
+
+const CLIENT_MONITOR_ANIMATION_EXTENSIONS = new Set([
+  '.ani', '.tani', '.pss', '.sfx', '.mesh', '.mdl', '.dds', '.tga', '.jsondef', '.track', '.mtl', '.wav', '.wem', '.bnk',
+]);
+
+const CLIENT_MONITOR_ANIMATION_ROOT_EXTENSIONS = new Set(['.tani', '.pss']);
+const CLIENT_MONITOR_ANIMATION_ACTION_EXTENSIONS = new Set(['.ani', '.tani']);
+const CLIENT_MONITOR_ANIMATION_ABILITY_RE = /(?:skill|skillremake|jineng|zhandou|shifang|spearsky|qixiu|tiance|shaolin|wudu|xinfuben|s\d{2})/i;
+const CLIENT_MONITOR_ANIMATION_MOVEMENT_RE = /(?:footstep|footsteps|walk|run|fall|jump|land|idle|qinggong|horse|mashang|cloth)/i;
+const CLIENT_MONITOR_ANIMATION_TANI_NOISE_RE = /(?:二段跳|三段跳|四段跳|轻功|加速跑|起跑|跑步|走路|待机|建造)/i;
+const CLIENT_MONITOR_ANIMATION_SCENE_NOISE_RE = /(?:^|\/)(?:maps_source|background|terrain|combitextures)(?:\/|$)|(?:^|\/)face(?:\/|$)|(?:^|\/)hair(?:\/|$)|(?:^|\/)mdl(?:\/|$)|(?:defaulttexture|defaultblack|defaultwhite|waterdistortion|normaldetail|beard|body_hd|hand_hd|leg_hd|belt_hd|head_hd|cloak_hd|glove_hd|_lod\d*)/i;
+const CLIENT_MONITOR_ANIMATION_ROOT_NOISE_RE = /(?:^|\/)data\/source\/home(?:\/|$)|(?:^|\/)data\/rcdata\/textures(?:\/|$)|(?:volumecloud|fish_|weather|water|noiseShape|登录界面|选择特效|角色箭头)/i;
+
+const CLIENT_MONITOR_ANIMATION_TYPE_FILTERS = {
+  '.ani': 'Animation/ANI',
+  '.tani': 'Animation/TANI',
+  '.pss': 'Effect/PSS',
+  '.sfx': 'Effect/SFX',
+  '.mesh': 'Model/Mesh',
+  '.mdl': 'Model/MDL',
+  '.dds': 'Texture/DDS',
+  '.tga': 'Texture/TGA',
+  '.jsondef': 'Material/JsonDef',
+  '.track': 'Effect/Track',
+  '.wem': 'Sound/WEM',
+  '.bnk': 'Sound/BNK',
+};
+
+const CLIENT_MONITOR_ANIMATION_TOKEN_RE = /^(.*?\.(?:ani|tani|pss|sfx|mesh|mdl|dds|tga|jsondef|track|mtl|wav|wem|bnk))(?:$|[^A-Za-z0-9_.\/-].*)/i;
+
+function bufferFromClientMonitorHex(value) {
+  const compact = String(value || '').replace(/\s+/g, '');
+  if (!compact || compact.length % 2 || compact.length > 4096 || !/^[0-9a-f]+$/i.test(compact)) return null;
+  const buffer = Buffer.from(compact, 'hex');
+  const zero = buffer.indexOf(0);
+  return zero >= 0 ? buffer.subarray(0, zero) : buffer;
+}
+
+function decodeClientMonitorRuntimePathBytes(value) {
+  const bytes = bufferFromClientMonitorHex(value);
+  if (!bytes?.length) return null;
+  const candidates = [
+    { text: bytes.toString('utf8'), encoding: 'utf8' },
+    { text: iconv.decode(bytes, 'gb18030'), encoding: 'gb18030' },
+  ].map((candidate) => ({
+    ...candidate,
+    normalized: normalizeClientMonitorAssetPath(candidate.text),
+    replacementCount: (candidate.text.match(/\uFFFD/g) || []).length,
+  })).filter((candidate) => candidate.normalized && isClientMonitorAnimationAssetPath(candidate.normalized));
+  if (!candidates.length) return null;
+  candidates.sort((left, right) => left.replacementCount - right.replacementCount || (right.encoding === 'gb18030' ? 1 : 0));
+  return candidates[0];
+}
+
+function decodeClientMonitorAnimationRecordPath(record) {
+  const rawPath = String(record?.path || '');
+  const decoded = decodeClientMonitorRuntimePathBytes(record?.pathBytesHex || '');
+  if (decoded?.normalized && !decoded.normalized.includes('\uFFFD')) {
+    return { path: decoded.text, normalized: decoded.normalized, encoding: decoded.encoding, decodedFrom: 'pathBytesHex' };
+  }
+  const normalized = normalizeClientMonitorAssetPath(rawPath);
+  return { path: rawPath, normalized, encoding: String(record?.pathEncoding || ''), decodedFrom: '' };
+}
+
+function trimClientMonitorAssetToken(value) {
+  const text = String(value || '').replace(/\0/g, '').trim();
+  const match = text.match(CLIENT_MONITOR_ANIMATION_TOKEN_RE);
+  return match ? match[1] : text;
+}
+
+function normalizeClientMonitorAssetPath(value) {
+  let raw = trimClientMonitorAssetToken(value);
+  if (!raw) return '';
+  raw = raw.replace(/\\/g, '/').replace(/\/+/g, '/');
+  const dataIndex = raw.toLowerCase().indexOf('/data/');
+  if (dataIndex >= 0) raw = raw.slice(dataIndex + 1);
+  if (/^[a-z]:\//i.test(raw)) {
+    const driveDataIndex = raw.toLowerCase().indexOf('data/');
+    if (driveDataIndex >= 0) raw = raw.slice(driveDataIndex);
+  }
+  return raw.replace(/^\/+/, '').slice(0, 260);
+}
+
+function getClientMonitorAssetExt(value) {
+  return extname(normalizeClientMonitorAssetPath(value)).toLowerCase();
+}
+
+function isClientMonitorAnimationAssetPath(value) {
+  const normalized = normalizeClientMonitorAssetPath(value);
+  if (!normalized) return false;
+  const ext = extname(normalized).toLowerCase();
+  if (!CLIENT_MONITOR_ANIMATION_EXTENSIONS.has(ext)) return false;
+  if (/^(?:windows|program files|users|appdata|system32)\//i.test(normalized)) return false;
+  return /(^|\/)data\//i.test(normalized) || /movieeditor|seasun|jx3|wwiseaudio|generatedsoundbanks/i.test(normalized);
+}
+
+function classifyClientMonitorAssetPath(value) {
+  const ext = getClientMonitorAssetExt(value);
+  if (ext === '.tani') return { id: 'timeline', label: 'TANI timeline', tone: 'green' };
+  if (ext === '.ani') return { id: 'action', label: 'ANI action', tone: 'green' };
+  if (ext === '.pss') return { id: 'effect', label: 'PSS effect', tone: 'green' };
+  if (ext === '.sfx') return { id: 'legacy-effect', label: 'SFX effect', tone: 'amber' };
+  if (ext === '.mesh' || ext === '.mdl') return { id: 'mesh', label: 'Mesh/model', tone: 'amber' };
+  if (ext === '.dds' || ext === '.tga' || ext === '.jsondef' || ext === '.mtl') return { id: 'material', label: 'Texture/material', tone: 'amber' };
+  if (ext === '.track') return { id: 'track', label: 'Track path', tone: 'amber' };
+  if (ext === '.wem' || ext === '.wav' || ext === '.bnk') return { id: 'audio', label: 'Audio sidecar', tone: 'amber' };
+  return { id: 'other', label: 'Resource', tone: 'amber' };
+}
+
+function clientMonitorCdnBrowserUrl(assetPath) {
+  const normalized = normalizeClientMonitorAssetPath(assetPath);
+  const params = new URLSearchParams();
+  const name = basename(normalized);
+  const ext = extname(normalized).toLowerCase();
+  params.set('folder', 'data');
+  params.set('search', name || normalized);
+  if (CLIENT_MONITOR_ANIMATION_TYPE_FILTERS[ext]) params.set('types', CLIENT_MONITOR_ANIMATION_TYPE_FILTERS[ext]);
+  return `/cdn-resource-browser.html?${params.toString()}`;
+}
+
+function resolveClientMonitorAnimationAsset(assetPath) {
+  const logicalPath = normalizeClientMonitorAssetPath(assetPath);
+  const classification = classifyClientMonitorAssetPath(logicalPath);
+  const cache = tryResolveCacheLogicalPath(logicalPath);
+  return {
+    logicalPath,
+    name: basename(logicalPath),
+    ext: extname(logicalPath).toLowerCase(),
+    classification,
+    cache: cache ? {
+      resolvedPath: cache.resolvedPath,
+      rawUrl: cache.rawUrl,
+      previewUrl: `/api/cache-entry/preview?logicalPath=${encodeURIComponent(cache.resolvedPath)}`,
+      source: cache.entry?.source || '',
+    } : null,
+    cdn: {
+      searchUrl: clientMonitorCdnBrowserUrl(logicalPath),
+      typeFilter: CLIENT_MONITOR_ANIMATION_TYPE_FILTERS[extname(logicalPath).toLowerCase()] || '',
+    },
+    status: cache ? 'cache-hit' : 'needs-cdn-lookup',
+  };
+}
+
+function collectClientMonitorAssetPathsFromString(value, paths) {
+  const text = String(value || '');
+  if (!text) return;
+  const patterns = [
+    /[A-Za-z]:[\\/][^|<>"'\r\n\0]{1,240}?\.(?:ani|tani|pss|sfx|mesh|mdl|dds|tga|jsondef|track|mtl|wav|wem|bnk)\b/gi,
+    /data[\\/][^|<>"'\r\n\0]{1,220}?\.(?:ani|tani|pss|sfx|mesh|mdl|dds|tga|jsondef|track|mtl|wav|wem|bnk)\b/gi,
+  ];
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(text)) && paths.size < 80) {
+      const normalized = normalizeClientMonitorAssetPath(match[0]);
+      if (isClientMonitorAnimationAssetPath(normalized)) paths.add(normalized);
+    }
+  }
+}
+
+function collectClientMonitorAssetPaths(value, paths = new Set(), depth = 0) {
+  if (paths.size >= 80 || depth > 5 || value == null) return paths;
+  if (typeof value === 'string' || typeof value === 'number') {
+    collectClientMonitorAssetPathsFromString(value, paths);
+    return paths;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value.slice(0, 80)) collectClientMonitorAssetPaths(item, paths, depth + 1);
+    return paths;
+  }
+  if (typeof value === 'object') {
+    for (const [key, nested] of Object.entries(value)) {
+      if (/bytes|headerHex|arg0Bytes/i.test(key)) continue;
+      collectClientMonitorAssetPaths(nested, paths, depth + 1);
+      if (paths.size >= 80) break;
+    }
+  }
+  return paths;
+}
 
 function clientMonitorControlName(record) {
   if (record.switchGroupName || record.switchName) return [record.switchGroupName, record.switchName].filter(Boolean).join(' -> ');
@@ -2318,12 +2544,12 @@ function clientMonitorEventName(record) {
 }
 
 function isClientMonitorMovementName(name) {
-  return /foot|step|land|walk|run|jump|accel|idle|fall/i.test(String(name || ''));
+  return /foot|step|land|walk|run|jump|accel|idle|fall|qinggong|horse|cloth/i.test(String(name || ''));
 }
 
 function isClientMonitorSkillName(name) {
   const value = String(name || '');
-  return !isClientMonitorMovementName(value) && /(^|_)(zhandou|jineng|skill|shifang)(_|$)/i.test(value);
+  return !isClientMonitorMovementName(value) && CLIENT_MONITOR_ANIMATION_ABILITY_RE.test(value);
 }
 
 function classifyClientMonitorCapture(capture) {
@@ -2483,7 +2709,7 @@ function buildClientMonitorCapture(record) {
     soundName: String(record.soundName || ''),
     sound: String(record.sound || ''),
     stack: compactClientMonitorStack(record.stack),
-    raw: record,
+    raw: compactClientMonitorRaw(record),
   };
   if (type === 'wwise-post-event' || type === 'animtag-audio-callsite') capture.wwise = resolveClientMonitorWwise({ ...record, eventName });
   capture.classification = classifyClientMonitorCapture(capture);
@@ -2500,6 +2726,426 @@ function buildClientMonitorCapture(record) {
       : 'The pre-Wwise callsite fired, but no event name was visible in the probed local string/pointer fields yet.';
   }
   return capture;
+}
+
+function clientMonitorAnimationTitle(capture) {
+  if (capture.assets?.length) return capture.assets[0].name || capture.assets[0].logicalPath;
+  if (capture.path) return basename(capture.path) || capture.path;
+  if (capture.eventName) return capture.eventName;
+  return capture.type || 'animation capture';
+}
+
+function buildClientMonitorAnimationRaw(record, assets, decodedPath) {
+  const raw = {
+    type: String(record.type || ''),
+    api: String(record.api || record.form || ''),
+    path: decodedPath?.normalized || normalizeClientMonitorAssetPath(record.path || ''),
+    animationPaths: assets.map((asset) => asset.logicalPath),
+  };
+  if (decodedPath?.decodedFrom) raw.pathDecodedFrom = decodedPath.decodedFrom;
+  if (decodedPath?.encoding) raw.pathEncoding = decodedPath.encoding;
+  if (record.rawPathHadReplacement || String(record.path || '').includes('\uFFFD')) raw.rawPathHadReplacement = true;
+  if (record.pathBytesHex) raw.pathBytesHex = String(record.pathBytesHex).slice(0, 256);
+  for (const key of ['arg0', 'arg1', 'arg2', 'arg3', 'gameObject', 'gameObjectCandidate', 'result']) {
+    if (record[key] != null) raw[key] = String(record[key]).slice(0, 80);
+  }
+  return raw;
+}
+
+function buildClientMonitorAnimationCapture(record) {
+  const type = String(record.type || '');
+  const decodedPath = decodeClientMonitorAnimationRecordPath(record);
+  const recordForPaths = decodedPath.path ? { ...record, path: decodedPath.path } : record;
+  const pathSet = collectClientMonitorAssetPaths(recordForPaths);
+  if (decodedPath.normalized && isClientMonitorAnimationAssetPath(decodedPath.normalized)) {
+    pathSet.add(decodedPath.normalized);
+  }
+  const assets = [...pathSet]
+    .slice(0, 40)
+    .map(resolveClientMonitorAnimationAsset)
+    .filter((asset) => asset.logicalPath);
+  if (!assets.length && type !== 'client-animation-file') return null;
+  const primary = assets[0] || null;
+  const classification = primary?.classification || classifyClientMonitorAssetPath(record.path || '');
+  const stack = compactClientMonitorStack(record.stack);
+  const stackText = stack.join('\n');
+  const source = type === 'client-animation-file'
+    ? 'runtime-file-open'
+    : /KG3D_CreateAnimationTagSystem|AnimationTag/i.test(stackText)
+      ? 'animtag-probe'
+      : 'runtime-probe';
+  const capture = {
+    type,
+    ts: getClientMonitorTimestamp(record),
+    time: new Date(getClientMonitorTimestamp(record) || Date.now()).toISOString(),
+    logFile: record.logFile || '',
+    api: String(record.api || record.form || ''),
+    source,
+    path: decodedPath.normalized || normalizeClientMonitorAssetPath(record.path || primary?.logicalPath || ''),
+    kind: record.kind || classification.id,
+    classification,
+    pathEncoding: decodedPath.encoding || '',
+    pathDecodedFrom: decodedPath.decodedFrom || '',
+    rawPathHadReplacement: Boolean(record.rawPathHadReplacement || String(record.path || '').includes('\uFFFD')),
+    gameObject: record.gameObject || record.gameObjectCandidate || '',
+    result: record.result != null ? String(record.result) : '',
+    assets,
+    stack,
+    raw: buildClientMonitorAnimationRaw(record, assets, decodedPath),
+  };
+  capture.title = clientMonitorAnimationTitle(capture);
+  return capture;
+}
+
+function buildClientMonitorAnimationAbilityWindows(captures) {
+  const windows = [];
+  for (const capture of captures) {
+    const classificationId = capture.classification?.id || '';
+    const name = capture.wwise?.event || capture.eventName || capture.storyTitle || '';
+    if (!isClientMonitorAbilityClassification(classificationId) && !isClientMonitorSkillName(name)) continue;
+    const ts = Number(capture.ts || 0) || 0;
+    if (!ts) continue;
+    windows.push({ startTs: ts - 1500, endTs: ts + 5500, event: String(name || '') });
+  }
+  windows.sort((left, right) => left.startTs - right.startTs);
+  const merged = [];
+  for (const window of windows) {
+    const last = merged[merged.length - 1];
+    if (!last || window.startTs > last.endTs + 1500) {
+      merged.push({ ...window, events: window.event ? [window.event] : [] });
+    } else {
+      last.endTs = Math.max(last.endTs, window.endTs);
+      if (window.event && !last.events.includes(window.event)) last.events.push(window.event);
+    }
+  }
+  return merged.slice(-20);
+}
+
+function isClientMonitorTimestampInWindows(ts, windows) {
+  const value = Number(ts || 0) || 0;
+  return !!value && (windows || []).some((window) => value >= window.startTs && value <= window.endTs);
+}
+
+function isClientMonitorAnimationNoisePath(logicalPath) {
+  const normalized = normalizeClientMonitorAssetPath(logicalPath).toLowerCase();
+  const ext = extname(normalized).toLowerCase();
+  const abilityNamed = CLIENT_MONITOR_ANIMATION_ABILITY_RE.test(normalized);
+  if (ext === '.tani' && (CLIENT_MONITOR_ANIMATION_MOVEMENT_RE.test(normalized) || CLIENT_MONITOR_ANIMATION_TANI_NOISE_RE.test(normalized))) return true;
+  if (abilityNamed && CLIENT_MONITOR_ANIMATION_ACTION_EXTENSIONS.has(ext)) return false;
+  if (CLIENT_MONITOR_ANIMATION_ROOT_EXTENSIONS.has(ext) && CLIENT_MONITOR_ANIMATION_ROOT_NOISE_RE.test(normalized)) return true;
+  if (CLIENT_MONITOR_ANIMATION_MOVEMENT_RE.test(normalized)) return true;
+  if (CLIENT_MONITOR_ANIMATION_SCENE_NOISE_RE.test(normalized) && !CLIENT_MONITOR_ANIMATION_ROOT_EXTENSIONS.has(ext)) return true;
+  return false;
+}
+
+function isClientMonitorRuntimeSkillAsset(asset) {
+  const ext = String(asset?.ext || extname(asset?.logicalPath || '')).toLowerCase();
+  const logicalPath = String(asset?.logicalPath || '');
+  const normalized = logicalPath.toLowerCase();
+  if (!CLIENT_MONITOR_ANIMATION_ROOT_EXTENSIONS.has(ext) && !CLIENT_MONITOR_ANIMATION_ACTION_EXTENSIONS.has(ext) && !['.sfx', '.track'].includes(ext)) return false;
+  if (isClientMonitorAnimationNoisePath(logicalPath)) return false;
+  if (ext === '.tani') return true;
+  if (ext === '.pss') return CLIENT_MONITOR_ANIMATION_ABILITY_RE.test(normalized);
+  if (ext === '.ani') return CLIENT_MONITOR_ANIMATION_ABILITY_RE.test(normalized);
+  if (ext === '.sfx' || ext === '.track') return CLIENT_MONITOR_ANIMATION_ABILITY_RE.test(normalized);
+  return false;
+}
+
+function classifyClientMonitorAnimationAssetRelevance(asset) {
+  const ext = String(asset.ext || extname(asset.logicalPath || '')).toLowerCase();
+  const path = String(asset.logicalPath || '').toLowerCase();
+  const root = CLIENT_MONITOR_ANIMATION_ROOT_EXTENSIONS.has(ext);
+  const action = CLIENT_MONITOR_ANIMATION_ACTION_EXTENSIONS.has(ext);
+  const abilityNamed = CLIENT_MONITOR_ANIMATION_ABILITY_RE.test(path);
+  const abilityNearby = Number(asset.abilityHits || 0) > 0;
+  const noise = isClientMonitorAnimationNoisePath(path);
+  if (noise) return { id: 'noise', label: 'Hidden noise', keep: false, priority: 90 };
+  if (root && abilityNearby) return { id: 'ability-root', label: 'Ability root', keep: true, priority: ext === '.tani' ? 0 : 1 };
+  if (root) return { id: 'root-candidate', label: 'Root candidate', keep: true, priority: ext === '.tani' ? 4 : 5 };
+  if (action && abilityNamed && abilityNearby) return { id: 'ability-action', label: 'Ability action', keep: true, priority: 8 };
+  if (ext === '.sfx' && abilityNamed && abilityNearby) return { id: 'legacy-effect', label: 'Legacy effect sidecar', keep: true, priority: 20 };
+  return { id: 'dependency', label: 'Dependency captured', keep: false, priority: 50 };
+}
+
+function summarizeClientMonitorAnimationAssets(captures, abilityWindows = []) {
+  const map = new Map();
+  for (const capture of captures) {
+    for (const asset of capture.assets || []) {
+      const key = asset.logicalPath.toLowerCase();
+      if (!map.has(key)) {
+        map.set(key, {
+          ...asset,
+          count: 0,
+          firstTs: capture.ts,
+          lastTs: capture.ts,
+          abilityHits: 0,
+          sources: new Set(),
+          captureTypes: new Set(),
+        });
+      }
+      const entry = map.get(key);
+      entry.count += 1;
+      entry.firstTs = Math.min(entry.firstTs || capture.ts, capture.ts || entry.firstTs || 0);
+      entry.lastTs = Math.max(entry.lastTs || capture.ts, capture.ts || entry.lastTs || 0);
+      if (isClientMonitorTimestampInWindows(capture.ts, abilityWindows)) entry.abilityHits += 1;
+      if (capture.source) entry.sources.add(capture.source);
+      if (capture.type) entry.captureTypes.add(capture.type);
+    }
+  }
+  const allAssets = [...map.values()]
+    .map((entry) => ({
+      ...entry,
+      sources: [...entry.sources],
+      captureTypes: [...entry.captureTypes],
+    }))
+    .map((entry) => ({ ...entry, relevance: classifyClientMonitorAnimationAssetRelevance(entry) }));
+  const assets = allAssets
+    .filter((entry) => entry.relevance?.keep)
+    .sort((left, right) => {
+      const relevanceDelta = (left.relevance?.priority || 99) - (right.relevance?.priority || 99);
+      if (relevanceDelta !== 0) return relevanceDelta;
+      const abilityDelta = (right.abilityHits || 0) - (left.abilityHits || 0);
+      if (abilityDelta !== 0) return abilityDelta;
+      const statusDelta = (left.status === 'cache-hit' ? 0 : 1) - (right.status === 'cache-hit' ? 0 : 1);
+      if (statusDelta !== 0) return statusDelta;
+      return (right.lastTs || 0) - (left.lastTs || 0);
+    });
+  return {
+    assets,
+    allAssets,
+    abilityWindows,
+    hiddenNoise: allAssets.filter((asset) => asset.relevance?.id === 'noise').length,
+    hiddenDependencies: allAssets.filter((asset) => asset.relevance?.id === 'dependency').length,
+  };
+}
+
+function getClientMonitorAnimSoundIndex() {
+  const stamp = existsSync(CLIENT_MONITOR_ANIM_SOUND_INDEX_PATH)
+    ? `${statSync(CLIENT_MONITOR_ANIM_SOUND_INDEX_PATH).mtimeMs}:${statSync(CLIENT_MONITOR_ANIM_SOUND_INDEX_PATH).size}`
+    : 'missing';
+  if (clientMonitorAnimSoundIndexCache?.stamp === stamp) return clientMonitorAnimSoundIndexCache.index;
+  const payload = readJsonUtf8Loose(CLIENT_MONITOR_ANIM_SOUND_INDEX_PATH, { items: [] }) || { items: [] };
+  const byTani = new Map();
+  for (const item of Array.isArray(payload.items) ? payload.items : []) {
+    const key = normalizeClientMonitorAssetPath(item?.file || '').toLowerCase();
+    if (!key || !/\.tani$/i.test(key) || byTani.has(key)) continue;
+    byTani.set(key, item);
+  }
+  const index = { byTani };
+  clientMonitorAnimSoundIndexCache = { stamp, index };
+  return index;
+}
+
+function sortClientMonitorGroupAssets(left, right) {
+  const priority = { '.tani': 0, '.pss': 1, '.ani': 2, '.sfx': 3, '.track': 4, '.mesh': 5, '.mdl': 6, '.dds': 7, '.tga': 8, '.jsondef': 9, '.mtl': 10 };
+  const leftPriority = priority[left.ext] ?? 99;
+  const rightPriority = priority[right.ext] ?? 99;
+  if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+  const countDelta = (right.count || 0) - (left.count || 0);
+  if (countDelta !== 0) return countDelta;
+  return String(left.logicalPath || '').localeCompare(String(right.logicalPath || ''));
+}
+
+function pushClientMonitorSkillAsset(map, logicalPath, options = {}) {
+  const normalized = normalizeClientMonitorAssetPath(logicalPath);
+  if (!isClientMonitorAnimationAssetPath(normalized)) return null;
+  const key = normalized.toLowerCase();
+  if (!map.has(key)) {
+    map.set(key, {
+      ...resolveClientMonitorAnimationAsset(normalized),
+      count: 0,
+      firstTs: options.ts || 0,
+      lastTs: options.ts || 0,
+      groupSources: new Set(),
+      parentTani: new Set(),
+    });
+  }
+  const entry = map.get(key);
+  if (options.source !== 'tani-index') entry.count += 1;
+  if (options.ts) {
+    entry.firstTs = entry.firstTs ? Math.min(entry.firstTs, options.ts) : options.ts;
+    entry.lastTs = Math.max(entry.lastTs || 0, options.ts);
+  }
+  if (options.source) entry.groupSources.add(options.source);
+  if (options.parentTani) entry.parentTani.add(normalizeClientMonitorAssetPath(options.parentTani));
+  return entry;
+}
+
+function compactClientMonitorSkillAsset(entry) {
+  return {
+    ...entry,
+    groupSources: [...entry.groupSources],
+    parentTani: [...entry.parentTani],
+    relevance: classifyClientMonitorAnimationAssetRelevance(entry),
+  };
+}
+
+function clientMonitorSkillTitle(events, index) {
+  const names = (events || []).filter(Boolean);
+  if (names.length === 1) return names[0];
+  if (names.length > 1) return `${names[0]} +${names.length - 1}`;
+  return `Skill cast ${index + 1}`;
+}
+
+function buildClientMonitorAnimationSkillGroups(audioCaptures, animationCaptures, abilityWindows = []) {
+  const animIndex = getClientMonitorAnimSoundIndex();
+  return (abilityWindows || []).map((window, index) => {
+    const audioRows = audioCaptures.filter((capture) => isClientMonitorTimestampInWindows(capture.ts, [window]));
+    const rows = animationCaptures.filter((capture) => isClientMonitorTimestampInWindows(capture.ts, [window]));
+    const events = [...new Set([
+      ...(window.events || []),
+      ...audioRows.map((capture) => capture.wwise?.event || capture.eventName || capture.storyTitle || '').filter(isClientMonitorSkillName),
+    ].filter(Boolean))];
+    const assetMap = new Map();
+    for (const capture of rows) {
+      for (const asset of capture.assets || []) {
+        if (!isClientMonitorRuntimeSkillAsset(asset)) continue;
+        pushClientMonitorSkillAsset(assetMap, asset.logicalPath, { source: 'runtime', ts: capture.ts });
+      }
+    }
+    const runtimeTani = [...assetMap.values()].filter((asset) => asset.ext === '.tani');
+    for (const tani of runtimeTani) {
+      const item = animIndex.byTani.get(String(tani.logicalPath || '').toLowerCase());
+      if (!item) continue;
+      if (item.refAni) pushClientMonitorSkillAsset(assetMap, item.refAni, { source: 'tani-index', parentTani: tani.logicalPath });
+      for (const pssPath of item.pss || []) {
+        pushClientMonitorSkillAsset(assetMap, pssPath, { source: 'tani-index', parentTani: tani.logicalPath });
+      }
+    }
+    const assets = [...assetMap.values()].map(compactClientMonitorSkillAsset).sort(sortClientMonitorGroupAssets);
+    const tani = assets.filter((asset) => asset.ext === '.tani');
+    const pss = assets.filter((asset) => asset.ext === '.pss');
+    const actions = assets.filter((asset) => asset.ext === '.ani');
+    const legacyEffects = assets.filter((asset) => asset.ext === '.sfx' || asset.ext === '.track');
+    const dependencies = assets.filter((asset) => !['.tani', '.pss', '.ani', '.sfx', '.track'].includes(asset.ext));
+    return {
+      id: `skill-${Math.round(window.startTs || 0)}-${index}`,
+      title: clientMonitorSkillTitle(events, index),
+      startTs: window.startTs,
+      endTs: window.endTs,
+      startTime: new Date(window.startTs || Date.now()).toISOString(),
+      endTime: new Date(window.endTs || Date.now()).toISOString(),
+      durationMs: Math.max(0, (window.endTs || 0) - (window.startTs || 0)),
+      events,
+      audioRows: audioRows.length,
+      rows: rows.length,
+      assets,
+      tani,
+      pss,
+      actions,
+      legacyEffects,
+      dependencyCount: dependencies.length,
+      counts: {
+        tani: tani.length,
+        pss: pss.length,
+        actions: actions.length,
+        legacyEffects: legacyEffects.length,
+        dependencies: dependencies.length,
+        rows: rows.length,
+      },
+    };
+  }).filter((group) => group.events.length || group.tani.length || group.pss.length || group.actions.length)
+    .sort((left, right) => (right.startTs || 0) - (left.startTs || 0));
+}
+
+function summarizeClientMonitorAnimationFindings(captures, assetSummary, skillGroups = []) {
+  const assets = Array.isArray(assetSummary) ? assetSummary : assetSummary?.assets || [];
+  const allAssets = Array.isArray(assetSummary) ? assetSummary : assetSummary?.allAssets || assets;
+  const hiddenNoise = Array.isArray(assetSummary) ? 0 : assetSummary?.hiddenNoise || 0;
+  const hiddenDependencies = Array.isArray(assetSummary) ? 0 : assetSummary?.hiddenDependencies || 0;
+  const abilityWindows = Array.isArray(assetSummary) ? [] : assetSummary?.abilityWindows || [];
+  const cacheHits = assets.filter((asset) => asset.status === 'cache-hit');
+  const needsCdn = assets.filter((asset) => asset.status !== 'cache-hit');
+  const byKind = new Map();
+  for (const asset of assets) {
+    const label = asset.classification?.label || 'Resource';
+    byKind.set(label, (byKind.get(label) || 0) + 1);
+  }
+  const kindSummary = [...byKind.entries()].map(([label, count]) => `${label}: ${count}`).join(', ');
+  const fileOpenCount = captures.filter((capture) => capture.source === 'runtime-file-open').length;
+  const probeCount = captures.filter((capture) => capture.source !== 'runtime-file-open').length;
+  const decodedRows = captures.filter((capture) => capture.pathDecodedFrom === 'pathBytesHex');
+  const replacementRows = captures.filter((capture) => capture.rawPathHadReplacement);
+  const bullets = [];
+  if (skillGroups.length) bullets.push(`Grouped ${skillGroups.length} skill/cast window(s); open a group to inspect its TANI roots and contained PSS files.`);
+  if (assets.length) bullets.push(`Focused ${assets.length} useful root/action resource(s) from ${allAssets.length} captured asset(s).`);
+  if (abilityWindows.length) bullets.push(`Ability windows: ${abilityWindows.length}; root candidates inside those windows are ranked first.`);
+  if (hiddenNoise || hiddenDependencies) bullets.push(`Hidden noise/dependency rows: ${hiddenNoise + hiddenDependencies} (${hiddenNoise} noise, ${hiddenDependencies} dependency).`);
+  if (kindSummary) bullets.push(kindSummary);
+  if (fileOpenCount) bullets.push(`Runtime file-open rows: ${fileOpenCount}.`);
+  if (probeCount) bullets.push(`AnimTag/probe rows with resource paths: ${probeCount}.`);
+  if (decodedRows.length) bullets.push(`Decoded raw file-open bytes: ${decodedRows.length} row(s).`);
+  if (replacementRows.length) bullets.push(`Rows with original mojibake/replacement path text: ${replacementRows.length}.`);
+  if (cacheHits.length) bullets.push(`Local cache hits: ${cacheHits.length}.`);
+  if (needsCdn.length) bullets.push(`Needs CDN Browser lookup/extraction: ${needsCdn.length}.`);
+  return {
+    headline: assets.length ? 'Captured ability animation roots from the client' : 'No ability animation roots captured yet',
+    verdict: assets.length
+      ? 'Use TANI/PSS rows as the root list; mesh and texture dependencies should come from parsing those files, not from raw scene churn.'
+      : 'Start the bridge, wait for CAST NOW, then perform the target cast or movement.',
+    counts: {
+      captures: captures.length,
+      assets: assets.length,
+      allAssets: allAssets.length,
+      cacheHits: cacheHits.length,
+      needsCdn: needsCdn.length,
+      fileOpenRows: fileOpenCount,
+      probeRows: probeCount,
+      decodedRows: decodedRows.length,
+      hiddenNoise,
+      hiddenDependencies,
+      skills: skillGroups.length,
+    },
+    bullets,
+  };
+}
+
+async function buildClientMonitorAnimationResourceResponse(reqUrl) {
+  const logicalPath = normalizeClientMonitorAssetPath(reqUrl.searchParams.get('path'));
+  if (!logicalPath) throw new Error('path is required');
+  const asset = resolveClientMonitorAnimationAsset(logicalPath);
+  const lookupUrl = new URL('http://localhost/api/cdn/resource-browser/browse');
+  lookupUrl.searchParams.set('folder', 'data');
+  lookupUrl.searchParams.set('search', asset.name || logicalPath);
+  if (asset.cdn.typeFilter) lookupUrl.searchParams.set('types', asset.cdn.typeFilter);
+  lookupUrl.searchParams.set('limit', '80');
+  const data = await buildCdnBrowseResponse(lookupUrl);
+  const normalizedLower = logicalPath.toLowerCase();
+  const nameLower = String(asset.name || '').toLowerCase();
+  const matches = (data.files || [])
+    .filter((row) => {
+      const rowPath = normalizeClientMonitorAssetPath(row.path || '').toLowerCase();
+      const rowName = String(row.name || basename(rowPath)).toLowerCase();
+      return rowPath === normalizedLower || (nameLower && rowName === nameLower);
+    })
+    .slice(0, 24)
+    .map((row) => ({
+      path: row.path,
+      name: row.name,
+      folder: row.folder,
+      packageName: row.packageName,
+      packageSize: row.packageSize,
+      packageDownloaded: Boolean(row.packageDownloaded || row.fullDownloaded),
+      fullDownloaded: Boolean(row.fullDownloaded),
+      resourceGroup: row.resourceGroup,
+      resourceType: row.resourceType,
+      originalSize: row.originalSize || 0,
+      storedSize: row.storedSize || 0,
+      extractable: Boolean(row.packageName && row.path),
+    }));
+  return {
+    ok: true,
+    asset: {
+      ...asset,
+      cdn: {
+        ...asset.cdn,
+        indexReady: data.indexReady,
+        totalSearchFiles: data.totalFiles || 0,
+        matches,
+        bestMatch: matches[0] || null,
+      },
+    },
+  };
 }
 
 function getClientMonitorPrimaryLeadObjects(captures) {
@@ -2730,7 +3376,13 @@ function summarizeClientMonitorFindings(captures) {
   };
 }
 
+let cachedClientMonitorSnapshot = { key: '', value: null };
+
 function readClientMonitorSnapshot(activeSince = '', pausedAt = '') {
+  const cacheKey = `${activeSince || ''}|${pausedAt || ''}|${clientMonitorLogFilesStateKey()}`;
+  if (cachedClientMonitorSnapshot.key === cacheKey && cachedClientMonitorSnapshot.value) {
+    return cachedClientMonitorSnapshot.value;
+  }
   const records = readClientMonitorRecords(5000);
   const activeSinceMs = Date.parse(activeSince || '') || 0;
   const pausedAtMs = Date.parse(pausedAt || '') || 0;
@@ -2747,14 +3399,25 @@ function readClientMonitorSnapshot(activeSince = '', pausedAt = '') {
   const freshCaptures = freshRecords
     .filter((record) => CLIENT_MONITOR_AUDIO_TYPES.has(record.type))
     .map(buildClientMonitorCapture);
+  const allAnimationCaptures = visibleRecords
+    .filter((record) => CLIENT_MONITOR_ANIMATION_TYPES.has(record.type))
+    .map(buildClientMonitorAnimationCapture)
+    .filter(Boolean);
+  const freshAnimationCaptures = freshRecords
+    .filter((record) => CLIENT_MONITOR_ANIMATION_TYPES.has(record.type))
+    .map(buildClientMonitorAnimationCapture)
+    .filter(Boolean);
   const primaryLeadObjects = getClientMonitorPrimaryLeadObjects(allCaptures);
-  const captures = allCaptures.filter((capture) => isClientMonitorLeadCapture(capture, primaryLeadObjects)).slice(-200).reverse();
-  const allRecentCaptures = allCaptures.slice(-400).reverse();
+  const animationAbilityWindows = buildClientMonitorAnimationAbilityWindows(allCaptures);
+  const animationAssets = summarizeClientMonitorAnimationAssets(allAnimationCaptures, animationAbilityWindows);
+  const animationSkillGroups = buildClientMonitorAnimationSkillGroups(allCaptures, allAnimationCaptures, animationAbilityWindows);
+  const captures = allCaptures.filter((capture) => isClientMonitorLeadCapture(capture, primaryLeadObjects)).slice(-80).reverse();
   const errors = freshRecords.filter((record) => record.type === 'agent-error' || record.type === 'error').slice(-30).reverse();
   const wwiseHooksReady = hooks.some((hook) => /wwise-post-event/i.test(String(hook.label || ''))) || freshCaptures.some((capture) => capture.type === 'wwise-post-event');
   const fmodHooksReady = hooks.some((hook) => /^fmod/i.test(String(hook.label || '')) || /fmod/i.test(String(hook.module || ''))) || freshCaptures.some((capture) => /^fmod/i.test(capture.type));
+  const animationHooksReady = hooks.some((hook) => /createfile|g-open-file|animtag-audio-virtual-call/i.test(String(hook.label || ''))) || freshAnimationCaptures.length > 0;
   const agentReady = freshRecords.some((record) => record.type === 'audio-agent-ready');
-  return {
+  const snapshot = {
     records: visibleRecords.length,
     totalRecords: records.length,
     freshRecords: freshRecords.length,
@@ -2765,17 +3428,29 @@ function readClientMonitorSnapshot(activeSince = '', pausedAt = '') {
     hooks,
     errors,
     captures,
-    allCaptures: allRecentCaptures,
+    allCaptures: [],
     hiddenCaptures: Math.max(0, allCaptures.length - captures.length),
     story: summarizeClientMonitorFindings(allCaptures),
     wwiseHooksReady,
     fmodHooksReady,
-    hooksReady: wwiseHooksReady || fmodHooksReady,
+    animationHooksReady,
+    hooksReady: wwiseHooksReady || fmodHooksReady || animationHooksReady,
+    animation: {
+      captures: [],
+      allCaptures: [],
+      skills: animationSkillGroups.slice(0, 80),
+      assets: animationAssets.assets.slice(0, 80),
+      allAssets: [],
+      story: summarizeClientMonitorAnimationFindings(allAnimationCaptures, animationAssets, animationSkillGroups),
+      hooksReady: animationHooksReady,
+    },
     logFiles: listClientMonitorLogFiles().map((filePath) => {
       const stats = statSync(filePath);
       return { name: basename(filePath), path: filePath, size: stats.size, mtimeMs: stats.mtimeMs };
     }),
   };
+  cachedClientMonitorSnapshot = { key: cacheKey, value: snapshot };
+  return snapshot;
 }
 
 function resolveClientMonitorCaptureActiveSince(bridgeStartedAt = '') {
@@ -2829,8 +3504,9 @@ function buildClientMonitorStatus() {
       { id: 'frida', label: 'Frida package', status: frida.available ? 'ok' : 'fail', detail: frida.available ? 'available' : 'missing npm package' },
       { id: 'client', label: 'Client ready', status: clientProcesses.length ? 'ok' : 'wait', detail: clientProcesses.length ? clientProcesses.map((proc) => `${proc.name} ${proc.pid}`).join(', ') : CLIENT_MONITOR_PROCESS_NAMES.join(', ') },
       { id: 'bridge', label: 'Audio bridge', status: bridge.running ? 'ok' : 'wait', detail: bridge.running ? `pid ${bridge.pid}` : 'not running' },
-      { id: 'hooks', label: 'Hooks armed', status: capture.hooksReady ? 'ok' : bridgeAttachStuck ? 'fail' : bridge.running ? 'wait' : 'idle', detail: capture.hooksReady ? 'Wwise/FMOD hooks active for current bridge' : bridgeAttachStuck ? 'Frida attach did not finish; restart JX3 client and start bridge again' : bridge.running ? 'waiting for current bridge hook log' : 'no hook log yet' },
+      { id: 'hooks', label: 'Hooks armed', status: capture.hooksReady ? 'ok' : bridgeAttachStuck ? 'fail' : bridge.running ? 'wait' : 'idle', detail: capture.hooksReady ? 'Wwise/FMOD/file hooks active for current bridge' : bridgeAttachStuck ? 'Frida attach did not finish; restart JX3 client and start bridge again' : bridge.running ? 'waiting for current bridge hook log' : 'no hook log yet' },
       { id: 'capture', label: 'Sound captured', status: capture.captures.length ? 'ok' : 'wait', detail: capture.captures.length ? `${capture.captures.length} event(s)` : 'no sound events yet' },
+      { id: 'animation', label: 'Animation files', status: capture.animation?.assets?.length ? 'ok' : capture.animation?.hooksReady ? 'wait' : 'idle', detail: capture.animation?.assets?.length ? `${capture.animation.assets.length} resource(s)` : capture.animation?.hooksReady ? 'file hooks armed; perform a cast or movement' : 'no animation file hooks yet' },
     ],
     readyToCast,
     castInstruction,
@@ -5183,6 +5859,47 @@ function parsePssEffectScene(buffer, options = {}) {
         if (nonZero > 0) activeModuleSet.add(cur.name); else inactiveModuleSet.add(cur.name);
       }
 
+      const decodeScaleRecord24Payload = (payloadStart, payloadEnd) => {
+        const payloadLen = payloadEnd - payloadStart;
+        const headerBytes = 10;
+        const strideBytes = 24;
+        if (payloadLen < headerBytes + strideBytes * 4) return null;
+        let recordCount = 0;
+        for (let recordOffset = headerBytes; recordOffset + 16 <= payloadLen; recordOffset += strideBytes) {
+          const scalar = buffer.readFloatLE(payloadStart + recordOffset + 4);
+          const secondaryScalar = buffer.readFloatLE(payloadStart + recordOffset + 8);
+          const sentinelLo = buffer.readUInt16LE(payloadStart + recordOffset + 12);
+          const sentinelHi = buffer.readUInt16LE(payloadStart + recordOffset + 14);
+          if (sentinelLo !== 0x1d30 || sentinelHi !== 0xffff) break;
+          if (!Number.isFinite(scalar) || !Number.isFinite(secondaryScalar)) break;
+          if (scalar < -0.001 || scalar > 8 || secondaryScalar < -0.001 || secondaryScalar > 8) break;
+          recordCount++;
+          if (recordCount > 512) break;
+        }
+        if (recordCount < 4) return null;
+        const consumedBytes = Math.min(payloadLen, headerBytes + recordCount * strideBytes);
+        return {
+          recordCount,
+          consumedBytes,
+          trailingBytes: payloadLen - consumedBytes,
+        };
+      };
+
+      const decodedScaleRecord24 = (() => {
+        for (let mi = 0; mi < validModules.length; mi++) {
+          const cur = validModules[mi];
+          if (cur.name !== '缩放') continue;
+          const nameAbs = blockStart + cur.offset;
+          const nameLen = [...cur.name].length * 2;
+          const nextAbs = (mi + 1 < validModules.length) ? (blockStart + validModules[mi + 1].offset) : varEndForActive;
+          const payloadStart = nameAbs + nameLen;
+          const payloadEnd = Math.max(payloadStart, nextAbs);
+          const decoded = decodeScaleRecord24Payload(payloadStart, payloadEnd);
+          if (decoded) return decoded;
+        }
+        return null;
+      })();
+
       const tailParams = extractTailParams(blockStart, blockEnd);
       const runtimeParams = buildRuntimeParams(tailParams);
 
@@ -5233,14 +5950,18 @@ function parsePssEffectScene(buffer, options = {}) {
       // renderer can distinguish "no animation authored" (engine-default
       // constant 1.0 IS the authored outcome) from "real parser gap".
       // Authoritative: if runtimeParams already carries sizeCurveKeyframes
-      // → 'authored'. If 缩放 module not declared → 'no-module'. If
-      // declared but its payload bytes are <15% non-zero → 'no-animation'
-      // (metadata-only; engine default applies). Otherwise 'unparsed'.
+      // → 'authored'. If the named 缩放 module decodes as a verified scalar
+      // multiplier curve, also treat it as authored. If 缩放 module not
+      // declared → 'no-module'. If declared but its payload bytes are <15%
+      // non-zero → 'no-animation' (metadata-only; engine default applies).
+      // Otherwise 'unparsed'.
       let sizeCurveStatus;
       const declaredScale = validModules.some(m => m.name === '缩放');
       if (Array.isArray(runtimeParams?.sizeCurveKeyframes) && runtimeParams.sizeCurveKeyframes.length >= 3) {
         sizeCurveStatus = 'authored';
       } else if (Array.isArray(runtimeParams?.sizeCurve) && runtimeParams.sizeCurve.length === 3) {
+        sizeCurveStatus = 'authored';
+      } else if (decodedScaleRecord24) {
         sizeCurveStatus = 'authored';
       } else if (!declaredScale) {
         sizeCurveStatus = 'no-module';
@@ -9676,6 +10397,15 @@ server = createServer(async (req, res) => {
     return;
   }
 
+  if (method === 'GET' && urlPath === '/api/client-monitor/animation-resource') {
+    try {
+      sendJson(res, 200, await buildClientMonitorAnimationResourceResponse(reqUrl));
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
   if (method === 'GET' && urlPath === '/api/cdn/status') {
     sendJson(res, 200, buildCdnLegacyStatusResponse());
     return;
@@ -10734,6 +11464,69 @@ server = createServer(async (req, res) => {
             for (let q = 0; q < payloadBytes.length; q++) {
               if (payloadBytes[q] === 0) zeroByteCount++;
             }
+            const tryScaleRecord24 = () => {
+              if (moduleName !== '缩放') return null;
+              const headerBytes = 10;
+              const strideBytes = 24;
+              if (payloadLen < headerBytes + strideBytes * 4) return null;
+              const round6 = (value) => Math.round(value * 1000000) / 1000000;
+              const keys24 = [];
+              for (let recordOffset = headerBytes; recordOffset + 16 <= payloadLen; recordOffset += strideBytes) {
+                const recordStart = payloadStart + recordOffset;
+                const scalar = buf.readFloatLE(recordStart + 4);
+                const secondaryScalar = buf.readFloatLE(recordStart + 8);
+                const sentinelLo = buf.readUInt16LE(recordStart + 12);
+                const sentinelHi = buf.readUInt16LE(recordStart + 14);
+                if (sentinelLo !== 0x1d30 || sentinelHi !== 0xffff) break;
+                if (!Number.isFinite(scalar) || !Number.isFinite(secondaryScalar)) break;
+                if (scalar < -0.001 || scalar > 8 || secondaryScalar < -0.001 || secondaryScalar > 8) break;
+                const leaked0 = buf.readFloatLE(recordStart);
+                const auxA = recordOffset + 20 <= payloadLen ? buf.readFloatLE(recordStart + 16) : null;
+                const auxB = recordOffset + 24 <= payloadLen ? buf.readFloatLE(recordStart + 20) : null;
+                keys24.push({
+                  index: keys24.length,
+                  value: round6(scalar),
+                  secondaryValue: round6(secondaryScalar),
+                  x: round6(scalar),
+                  y: round6(secondaryScalar),
+                  leaked0: Number.isFinite(leaked0) ? round6(leaked0) : null,
+                  auxA: Number.isFinite(auxA) ? round6(auxA) : null,
+                  auxB: Number.isFinite(auxB) ? round6(auxB) : null,
+                });
+                if (keys24.length > 512) break;
+              }
+              if (keys24.length < 4) return null;
+              const consumedBytes = Math.min(payloadLen, headerBytes + keys24.length * strideBytes);
+              const trailingFloats = [];
+              for (let trailingOffset = consumedBytes; trailingOffset + 4 <= payloadLen; trailingOffset += 4) {
+                const value = buf.readFloatLE(payloadStart + trailingOffset);
+                if (Number.isFinite(value)) trailingFloats.push(round6(value));
+              }
+              return {
+                count: keys24.length,
+                keys: keys24,
+                stride: strideBytes,
+                startOff: headerBytes,
+                valueOffset: 4,
+                secondaryValueOffset: 8,
+                layoutKind: 'scale-record24',
+                structuralProbe: {
+                  headerBytes,
+                  recordStrideBytes: strideBytes,
+                  valueOffset: 4,
+                  secondaryValueOffset: 8,
+                  sentinelOffset: 12,
+                  sentinelLE: '0xffff1d30',
+                  consumedBytes,
+                  trailingBytes: payloadLen - consumedBytes,
+                  trailingFloats,
+                  firstPairs: keys24.slice(0, 8).map((key) => [key.value, key.secondaryValue]),
+                },
+                note: 'Scale module payload with a 10-byte header and 24-byte records. The authored scalar channel is f32 at record+4; record+8 is preserved as secondaryValue for inspection. Record+12 carries sentinel 0x1d30ffff. Bytes after 10 + N*24 are trailer/padding overlap and are deliberately excluded from the scale record stream.',
+              };
+            };
+            const asScaleRecord24 = tryScaleRecord24();
+            if (asScaleRecord24) return asScaleRecord24;
             // Legacy raw-blob layout (verified on t_天策尖刺02.pss sprite#10/#15):
             //   stride = 16B per record
             //   offset +0..+7 : leaked KG3D_ParticleDistribution vtable pointer
@@ -11347,6 +12140,8 @@ server = createServer(async (req, res) => {
                           ? `[{16B record}\u00d7${decoded.count}] (fragmented stride-16 curve with 1.0 end-markers; valid sub-sections + legacy fwrite-leak gaps)`
                         : decoded.layoutKind === 'embedded-text-blob'
                           ? `[${decoded.structuralProbe?.payloadLen}B foreign text content (HLSL/RCPY/config strings); not a curve, channel default = 0]`
+                        : decoded.layoutKind === 'scale-record24'
+                          ? `[10B header, {f32 leaked, f32 scale, f32 secondaryScale, u32 0xffff1d30, f32 auxA, f32 auxB}x${decoded.count}] (24B scale records, implicit time; trailing ${decoded.structuralProbe?.trailingBytes ?? 0}B ignored)`
                         : decoded.layoutKind === 'no-animation'
                           ? `[\u2264 8B payload; module declared with no keyframes \u2014 engine uses constant default value]`
                           : `[10B header, {f32 value, 8B zero}\u00d7${decoded.count}] (1D curve, time implicit)`,

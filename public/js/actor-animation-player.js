@@ -11,6 +11,14 @@ import { DDSLoader } from '/vendor/three/examples/jsm/loaders/DDSLoader.js';
 import { FBXLoader } from '/vendor/three/examples/jsm/loaders/FBXLoader.js';
 import { GLTFLoader } from '/vendor/three/examples/jsm/loaders/GLTFLoader.js';
 
+const PLAYER_URL_PARAMS = new URLSearchParams(window.location.search);
+const EMBED_CLIENT_MONITOR = PLAYER_URL_PARAMS.get('embed') === 'client-monitor';
+const STRICT_RENDER_MODE = PLAYER_URL_PARAMS.get('strict') === '1';
+const MONITOR_SKILL_ID = PLAYER_URL_PARAMS.get('monitorSkillId') || '';
+
+if (EMBED_CLIENT_MONITOR) document.body?.classList.add('embed-client-monitor');
+if (STRICT_RENDER_MODE) document.body?.classList.add('strict-render-mode');
+
 // ─── DOM refs ────────────────────────────────────────────────────────────────
 
 const $ = (sel) => document.querySelector(sel);
@@ -2433,7 +2441,12 @@ function updateTimelineUI() {
 function getTimelineEntryStartTimeMs(entry) {
   if (Number.isFinite(entry?.effectiveStartTimeMs)) return entry.effectiveStartTimeMs;
   if (Number.isFinite(entry?.startTimeMs)) return entry.startTimeMs;
-  return 0;
+  return null;
+}
+
+function formatTimelineEntryStartTimeMs(entry) {
+  const startTimeMs = getTimelineEntryStartTimeMs(entry);
+  return Number.isFinite(startTimeMs) ? `${startTimeMs.toFixed(0)}ms` : 'unresolved';
 }
 
 function getPssEffectTiming(data) {
@@ -2463,6 +2476,7 @@ function updateTimelineMarkers() {
   tlMarkers.innerHTML = '';
   for (const entry of timelinePssEntries) {
     const startTimeMs = getTimelineEntryStartTimeMs(entry);
+    if (!Number.isFinite(startTimeMs)) continue;
     if (startTimeMs <= 0 || timelineTotalMs <= 0) continue;
     const pct = startTimeMs / timelineTotalMs;
     if (pct <= 0 || pct >= 1) continue;
@@ -2475,7 +2489,7 @@ function updateTimelineMarkers() {
 }
 
 // ── Additive PSS effect load (used by loadAllPssFromTani) ───────────────────
-async function addPssEffect(sourcePath, startTimeMs = 0) {
+async function addPssEffect(sourcePath, startTimeMs = null) {
   try {
     // Fetch the analyzer (full parsed data used by the renderer) AND the
     // focused binary audit in parallel. The audit drives the PSS-focused debug
@@ -2558,8 +2572,27 @@ async function addPssEffect(sourcePath, startTimeMs = 0) {
     }
     // data.fireIntent was a keyword guess on server side — REMOVED. Always false.
     const trackTexturePool = buildTrackTexturePool(data.textures || [], texMap, false);
+    const entryStartTimeMs = Number.isFinite(startTimeMs) ? startTimeMs : null;
+    if (STRICT_RENDER_MODE && entryStartTimeMs == null) {
+      dbg('fallback', 'timing: no authoritative TANI/PSS entry start time; strict mode skipped this PSS', {
+        category: 'timing', sourcePath,
+      });
+      return null;
+    }
     const effectTiming = getPssEffectTiming(data);
-    const effectStartTimeMs = Math.max(0, startTimeMs + (effectTiming.startDelayMs ?? 0));
+    if (STRICT_RENDER_MODE && effectTiming.startDelayMs == null) {
+      dbg('fallback', 'timing: PSS globalStartDelay is unresolved; strict mode skipped this PSS', {
+        category: 'timing', sourcePath,
+      });
+      return null;
+    }
+    if (STRICT_RENDER_MODE && effectTiming.activeDurationMs == null) {
+      dbg('fallback', 'timing: PSS active duration is unresolved; strict mode skipped this PSS', {
+        category: 'timing', sourcePath,
+      });
+      return null;
+    }
+    const effectStartTimeMs = Math.max(0, (entryStartTimeMs ?? 0) + (effectTiming.startDelayMs ?? 0));
     const localEffectDurationMs = effectTiming.activeDurationMs;
     const createdSpriteEmitters = [];
     const createdTrackEmitters = [];
@@ -2691,6 +2724,7 @@ async function addPssEffect(sourcePath, startTimeMs = 0) {
   } catch (err) {
     console.warn('addPssEffect failed:', sourcePath, err.message);
     dbg('error', `addPssEffect(${sourcePath.split('/').pop()}): ${err.message}`, {});
+    publishStrictRenderReport('pss-effect-error', { showOverlay: false });
     return null;
   }
 }
@@ -2701,25 +2735,33 @@ async function loadAllPssFromTani(pssEntries, durationMs) {
   resetDebugState();
   viewportOverlay.classList.add('hidden');
 
+  const sourceEntries = Array.isArray(pssEntries) ? pssEntries : [];
   timelineTotalMs = Number.isFinite(durationMs) && durationMs > 0 ? durationMs : 0;
   timelineMs = 0;
   timelinePlaying = false;
   timelineLastClockSec = null;
-  timelinePssEntries = (pssEntries || []).map((entry) => {
-    if (typeof entry === 'string') return { path: entry, startTimeMs: 0 };
+  timelinePssEntries = sourceEntries.map((entry) => {
+    if (typeof entry === 'string') return { path: entry, startTimeMs: STRICT_RENDER_MODE ? null : 0 };
     return { ...entry };
   });
 
   await preparePlayerAnchorRigForEffect([
     currentTaniData?.aniPath,
-    ...pssEntries.map((entry) => entry?.path),
+    ...sourceEntries.map((entry) => typeof entry === 'string' ? entry : entry?.path),
   ]);
 
   for (let i = 0; i < timelinePssEntries.length; i++) {
     const entry = timelinePssEntries[i];
     pssDebugState.sourcePath = entry.path;
     pssDebugState.loadedAt = new Date().toISOString();
-    const window = await addPssEffect(entry.path, entry.startTimeMs || 0);
+    const entryStartTimeMs = getTimelineEntryStartTimeMs(entry);
+    if (STRICT_RENDER_MODE && !Number.isFinite(entryStartTimeMs)) {
+      dbg('fallback', `timing: ${extractFileName(entry.path)} has no authoritative start time; strict mode skipped it`, {
+        category: 'timing', sourcePath: entry.path,
+      });
+      continue;
+    }
+    const window = await addPssEffect(entry.path, Number.isFinite(entryStartTimeMs) ? entryStartTimeMs : 0);
     if (window) {
       entry.effectiveStartTimeMs = window.startTimeMs;
       timelineTotalMs = Math.max(timelineTotalMs, window.endTimeMs);
@@ -2730,6 +2772,7 @@ async function loadAllPssFromTani(pssEntries, durationMs) {
     viewportOverlay.classList.remove('hidden');
     viewportOverlay.querySelector('.empty-msg').textContent = 'Effect loaded, but no renderable emitters found';
     statusRenderer.textContent = 'Renderer: no renderable emitters';
+    publishStrictRenderReport('load-complete');
     return;
   }
 
@@ -2754,6 +2797,7 @@ async function loadAllPssFromTani(pssEntries, durationMs) {
   flushFallbackAggregator();
   if (!debugPanel.classList.contains('hidden')) renderDebugPanel();
   postDebugLogToServer();
+  publishStrictRenderReport('load-complete');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -4671,6 +4715,12 @@ async function loadPssEffect(sourcePath) {
     });
 
     const effectTiming = getPssEffectTiming(data);
+    if (STRICT_RENDER_MODE && effectTiming.startDelayMs == null) {
+      throw new Error('Strict timing blocked: PSS globalStartDelay is unresolved');
+    }
+    if (STRICT_RENDER_MODE && effectTiming.activeDurationMs == null) {
+      throw new Error('Strict timing blocked: PSS active duration is unresolved');
+    }
     const effectStartTimeMs = effectTiming.startDelayMs ?? 0;
     effectDuration = effectTiming.totalDurationMs ?? effectTiming.activeDurationMs ?? 0;
     effectLooping = (data.globalLoopEnd || 0) > 0;
@@ -4790,6 +4840,7 @@ async function loadPssEffect(sourcePath) {
     // Update debug panel
     if (!debugPanel.classList.contains('hidden')) renderDebugPanel();
     postDebugLogToServer();
+    publishStrictRenderReport('load-complete');
 
   } catch (err) {
     console.error('Failed to load PSS effect:', err);
@@ -4799,6 +4850,7 @@ async function loadPssEffect(sourcePath) {
     viewportOverlay.querySelector('.empty-msg').textContent = `Failed to load: ${err.message}`;
     if (!debugPanel.classList.contains('hidden')) renderDebugPanel();
     postDebugLogToServer();
+    publishStrictRenderReport('load-error');
   }
 }
 
@@ -4946,7 +4998,7 @@ $('#btn-trace')?.addEventListener('click', () => {
 $('#btn-trace-close')?.addEventListener('click', () => {
   // Close button removed; safety catch if it's reintroduced.
 });
-$('#btn-trace-copy').addEventListener('click', async () => {
+$('#btn-trace-copy')?.addEventListener('click', async () => {
   const btn = $('#btn-trace-copy');
   try {
     const rows = currentTraceTab === 'errors'
@@ -5247,7 +5299,7 @@ async function showAnimDetail(a) {
       const pssEntries = tani.pssEntries || (tani.pssPaths || []).map(p => ({ path: p, startTimeMs: 0 }));
       if (pssEntries.length > 0) {
         taniHtml += `<div class="detail-section"><h3>PSS Effects (${pssEntries.length})</h3><div class="detail-grid">
-          ${pssEntries.map((e, i) => `<span class="label">PSS ${i + 1} @ ${getTimelineEntryStartTimeMs(e).toFixed(0)}ms</span><span class="value file-path">${escapeHtml(extractFileName(e.path))}</span>`).join('')}
+          ${pssEntries.map((e, i) => `<span class="label">PSS ${i + 1} @ ${formatTimelineEntryStartTimeMs(e)}</span><span class="value file-path">${escapeHtml(extractFileName(e.path))}</span>`).join('')}
         </div></div>`;
       }
       if (tani.soundEntries?.length > 0) {
@@ -5340,7 +5392,7 @@ async function showTaniDetail(e) {
     const pssEntries = tani.pssEntries || (tani.pssPaths || []).map(p => ({ path: p, startTimeMs: 0 }));
     if (pssEntries.length > 0) {
       taniHtml += `<div class="detail-section"><h3>PSS (${pssEntries.length})</h3><div class="detail-grid">
-        ${pssEntries.map((e, i) => `<span class="label">${i + 1} @ ${getTimelineEntryStartTimeMs(e).toFixed(0)}ms</span><span class="value file-path">${escapeHtml(extractFileName(e.path))}</span>`).join('')}
+        ${pssEntries.map((e, i) => `<span class="label">${i + 1} @ ${formatTimelineEntryStartTimeMs(e)}</span><span class="value file-path">${escapeHtml(extractFileName(e.path))}</span>`).join('')}
       </div></div>`;
     }
     if (tani.soundEntries?.length > 0) {
@@ -5480,11 +5532,96 @@ function setAnimationPlayerStatus(status, extra) {
     if (extra) document.body.dataset.animationPlayerDetail = String(extra).slice(0, 240);
   } catch { /* non-fatal */ }
 }
+
+function strictReportItem(category, text, data = null) {
+  return { category, text, data };
+}
+
+function buildStrictRenderReport(context = '') {
+  try { flushFallbackAggregator(); } catch { /* non-fatal */ }
+  const blockers = [];
+  const warnings = [];
+  const errors = (pssDebugState.errors || []).filter((item) => item && item.level !== 'warn');
+  const fallbacks = (pssDebugState.fallbacks || []).filter((item) => item && item.category !== 'benign-warn');
+  const missingTextures = (pssDebugState.textureResults || []).filter((item) => item && item.loaded === false);
+  const meshErrors = (pssDebugState.meshResults || []).filter((item) => item && item.error);
+
+  for (const item of errors) blockers.push(strictReportItem('error', item.msg || item.message || String(item), item));
+  for (const item of fallbacks) blockers.push(strictReportItem(item.category || 'fallback', item.msg || item.message || String(item), item));
+  for (const item of missingTextures) blockers.push(strictReportItem('texture', `Texture unresolved: ${item.texturePath || item.name || item.msg || '?'}`, item));
+  for (const item of meshErrors) blockers.push(strictReportItem('mesh', item.msg || item.message || String(item), item));
+
+  for (const route of pssDebugState.socketRouting || []) {
+    if (!route?.suggested) {
+      warnings.push(strictReportItem('socket', `${extractFileName(route.sourcePath)} has no authored PSS socket binding (${route.reason || 'unknown reason'})`, route));
+    } else if (route.applied !== route.suggested) {
+      warnings.push(strictReportItem('socket', `${extractFileName(route.sourcePath)} requested ${route.suggested}, applied ${route.applied || 'none'}`, route));
+    }
+  }
+
+  const renderCounts = {
+    sprite: spriteEmitters.length,
+    mesh: meshObjects.length,
+    track: trackLines.length,
+  };
+  if (context === 'load-complete' && renderCounts.sprite + renderCounts.mesh + renderCounts.track === 0) {
+    blockers.push(strictReportItem('renderer', 'No renderable emitters were created.', renderCounts));
+  }
+
+  return {
+    strict: true,
+    monitorSkillId: MONITOR_SKILL_ID,
+    context,
+    status: blockers.length ? 'blocked' : 'ok',
+    sourcePath: pssDebugState.sourcePath || '',
+    renderCounts,
+    timelineTotalMs,
+    blockers,
+    warnings,
+    fallbackCount: fallbacks.length,
+    errorCount: errors.length,
+    textureMissingCount: missingTextures.length,
+    meshErrorCount: meshErrors.length,
+    socketRouting: pssDebugState.socketRouting || [],
+  };
+}
+
+function publishStrictRenderReport(context = '', options = {}) {
+  if (!STRICT_RENDER_MODE) return null;
+  const report = buildStrictRenderReport(context);
+  window.__animationPlayerStrictReport = report;
+  document.body.dataset.strictRenderStatus = report.status;
+  document.body.dataset.strictBlockers = String(report.blockers.length);
+  if (report.status === 'blocked') {
+    setAnimationPlayerStatus('strict-blocked', report.blockers[0]?.text || 'blocked');
+    if (options.showOverlay !== false && viewportOverlay) {
+      viewportOverlay.classList.remove('hidden');
+      const message = viewportOverlay.querySelector('.empty-msg');
+      if (message) message.textContent = `Strict mode blocked: ${report.blockers[0]?.text || 'unresolved render dependency'}`;
+      timelinePlaying = false;
+      updateTimelineUI();
+    }
+  } else {
+    setAnimationPlayerStatus('strict-ok');
+  }
+  if (window.parent && window.parent !== window) {
+    window.parent.postMessage({
+      source: 'jx3-actor-animation-player',
+      type: 'strict-render-report',
+      monitorSkillId: MONITOR_SKILL_ID,
+      report,
+    }, window.location.origin);
+  }
+  return report;
+}
+
+window.__animationPlayerStrictSnapshot = () => buildStrictRenderReport('snapshot');
 window.addEventListener('error', (ev) => {
   const msg = ev?.message || String(ev?.error || 'error');
   pssDebugState.errors.push({ msg: `[window.error] ${msg}`, source: ev?.filename, line: ev?.lineno, col: ev?.colno });
   setAnimationPlayerStatus('error', msg);
   postDebugLogToServer();
+  publishStrictRenderReport('window-error');
 });
 window.addEventListener('unhandledrejection', (ev) => {
   const reason = ev?.reason;
@@ -5492,6 +5629,7 @@ window.addEventListener('unhandledrejection', (ev) => {
   pssDebugState.errors.push({ msg: `[unhandledrejection] ${msg}` });
   setAnimationPlayerStatus('error', msg);
   postDebugLogToServer();
+  publishStrictRenderReport('unhandledrejection');
 });
 
 // ── PSS-only mode (pss.html) ────────────────────────────────────────────────
@@ -5763,6 +5901,12 @@ async function init() {
   statusConnection.textContent = 'Loading...';
   statusConnection.className = 'status-item';
   setAnimationPlayerStatus('loading');
+  const requestedBodyType = String(PLAYER_URL_PARAMS.get('bodyType') || '').trim().toLowerCase();
+  if (['f1', 'f2', 'm1', 'm2'].includes(requestedBodyType)) {
+    currentBodyType = requestedBodyType;
+  }
+  const autoMode = PLAYER_URL_PARAMS.get('auto') === '1';
+  const autoTargetTani = PLAYER_URL_PARAMS.get('autoTani') || '';
 
   // Init Three.js
   initThreeJs();
@@ -5796,22 +5940,25 @@ async function init() {
     statusConnection.className = 'status-item status-ok';
     await loadSerialTable();
     await selectBodyType(currentBodyType);
-    // Default to tani tab with 龙牙 pre-searched
+    // Default to tani tab with 龙牙 pre-searched. Client Monitor embeds pass
+    // an explicit autoTani, so skip this default selection in that path.
     switchTab('tab-tani-catalog');
-    taniSearchEl.value = '龙牙';
-    taniPage = 0;
-    await loadTaniCatalog();
-    // Auto-select default tani (F1s04tc技能13_龙牙8尺HD.tani) so the user
-    // doesn't have to click it on every page load.
-    try {
-      const DEFAULT_TANI_NAME = 'F1s04tc技能13_龙牙8尺HD';
-      const data = await fetchJson(`/api/player-anim/tani-catalog?bodyType=${encodeURIComponent(currentBodyType)}&search=${encodeURIComponent(DEFAULT_TANI_NAME)}&page=0&limit=1`);
-      const entry = (data.entries || [])[0];
-      if (entry) {
-        await showTaniDetail(entry);
+    if (!autoTargetTani) {
+      taniSearchEl.value = '龙牙';
+      taniPage = 0;
+      await loadTaniCatalog();
+      // Auto-select default tani (F1s04tc技能13_龙牙8尺HD.tani) so the user
+      // doesn't have to click it on every page load.
+      try {
+        const DEFAULT_TANI_NAME = 'F1s04tc技能13_龙牙8尺HD';
+        const data = await fetchJson(`/api/player-anim/tani-catalog?bodyType=${encodeURIComponent(currentBodyType)}&search=${encodeURIComponent(DEFAULT_TANI_NAME)}&page=0&limit=1`);
+        const entry = (data.entries || [])[0];
+        if (entry) {
+          await showTaniDetail(entry);
+        }
+      } catch (e) {
+        pssDebugState.errors.push({ msg: `[default-tani] ${e.message}`, level: 'warn' });
       }
-    } catch (e) {
-      pssDebugState.errors.push({ msg: `[default-tani] ${e.message}`, level: 'warn' });
     }
     setAnimationPlayerStatus('ready');
   } catch (err) {
@@ -5827,10 +5974,9 @@ async function init() {
   //   ?auto=1&autoTani=<sourcePath>  — parse+load a specific tani after init.
   //   ?auto=1                         — load the first tani in the (龙牙-pre-searched) catalog.
   try {
-    const params = new URLSearchParams(location.search);
-    if (params.get('auto') === '1') {
+    if (autoMode) {
       setAnimationPlayerStatus('auto-loading');
-      const target = params.get('autoTani');
+      const target = autoTargetTani;
       let entry = null;
       if (target) {
         entry = { id: -1, name: extractFileName(target), sourcePath: target };
@@ -5846,7 +5992,11 @@ async function init() {
         // tabs and in the posted debug log for inspection.
         const realErrors = pssDebugState.errors.filter((e) => e && e.level !== 'warn');
         const detail = realErrors[0]?.msg || '';
-        setAnimationPlayerStatus(realErrors.length ? 'auto-errors' : 'auto-done', detail);
+        const strictReport = publishStrictRenderReport('auto-complete', { showOverlay: false });
+        setAnimationPlayerStatus(
+          strictReport?.status === 'blocked' ? 'strict-blocked' : (realErrors.length ? 'auto-errors' : 'auto-done'),
+          strictReport?.blockers?.[0]?.text || detail,
+        );
         // Force a final post so the server log reflects the final state.
         // Await so the headless dump-dom run cannot exit before the POST lands.
         await postDebugLogToServer();

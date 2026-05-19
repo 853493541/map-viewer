@@ -2,6 +2,20 @@
 
 This is the single internal instruction file for the repository.
 
+## Top-Level Copilot Workflow Rules
+
+- Before editing any file, read the current on-disk file content first so changes are based on the newest version.
+- Always run and validate the app on http://127.0.0.1:3015. If port 3015 is already in use, stop the current listener and restart on 3015 before reporting a working local URL.
+- Before telling the user a fix is done or giving a final result, check errors for the affected files and visible runtime/browser errors for the affected page. Fix relevant issues first, or explicitly report what still fails.
+- When the user asks multiple numbered questions or points, answer each one separately.
+- For debugging and fix reports, always include a table with exactly these columns: What is wrong | What is fixed | What to test.
+- For each major point, include Answer, What was done, and What to test when applicable.
+- Prefer structured tables over long paragraphs when reporting multiple findings, hypotheses, or fixes.
+- Keep final reports easy to scan and do not collapse distinct user questions into one blended explanation.
+- When reading EXPERIENCES.md or any dated historical notes, treat them as prior findings, not current truth. Verify relevant claims against the current on-disk code, docs, and runtime before relying on them.
+- If a historical note no longer matches the current repo state, follow the current verified behavior and call out the stale note explicitly instead of repeating it as fact.
+- Use the remaining sections in this file and the linked repository docs for product facts and domain-specific rules.
+
 ## 1. Current Product State
 
 ## 1.1 Round 2 Actor Goal
@@ -87,10 +101,6 @@ start-localhost
 Default URL:
 - http://127.0.0.1:3015
 
-Local server rule:
-- Always run and validate the app on http://127.0.0.1:3015.
-- If port 3015 is already in use, kill the process listening on 3015, then restart the local server on 3015 before giving a working link.
-
 ## 3.2 Alternative start
 
 ```powershell
@@ -166,47 +176,29 @@ Tracked Markdown inventory:
 
 If any other guide is reintroduced, it must be added to this table and must not conflict with the canonical rules.
 
-## 8. Change Discipline
+## 8. Additional Change Checks
 
-Before shipping major changes:
-0. Before editing any file, read the current on-disk file content first so edits are based on the newest version, not stale cached context.
-1. Before telling the user a fix is done or giving a final result, check errors for the affected files and any visible runtime/browser errors for the affected page. Fix relevant errors first, or explicitly report that they still exist.
-2. Confirm sidecar-only collision behavior is still enforced.
-3. Confirm page header navigation still links all served HTML pages.
-4. Confirm local startup command still works.
-5. Keep docs synchronized with actual behavior.
+Before shipping major changes, also:
+- Confirm sidecar-only collision behavior is still enforced.
+- Confirm page header navigation still links all served HTML pages.
+- Confirm local startup command still works.
+- Keep docs synchronized with actual behavior.
 
-## 9. Reporting Format Requirement
-
-For this repository's task reports and final user-facing summaries:
-- When the user asks multiple numbered questions or points, answer each one separately.
-- Always include a chart/table in debugging and fix reports with exactly these columns:
-  - What is wrong
-  - What is fixed
-  - What to test
-- Prefer chart/table style over long paragraphs whenever the task includes multiple findings or debugging results.
-- For each major point, include three parts when applicable:
-  - Answer
-  - What was done
-  - What to test
-- Do not collapse multiple user questions into one blended explanation.
-- Final reports should be easy to scan quickly and should favor structured comparison tables when there are multiple findings, hypotheses, or fixes.
-
-## 10. PSS Debug Ownership Rule
+## 9. PSS Debug Ownership Rule
 
 For PSS and runtime debug-log tasks:
 - The assistant must read debug logs directly, identify issues, and apply fixes.
 - Do not ask the user to inspect logs manually.
 - After each fix iteration, rerun and re-read logs to confirm the result before reporting completion.
 
-## 10.1 PSS Audit Truth Table
+## 9.1 PSS Audit Truth Table
 
 - `materialIndex == null` (the launcher authored `nMaterialIndex = 0xFFFFFFFF`) on a Trail-class / ribbon launcher is expected, not a gap. Trail launchers get their texture from the type-3 ParticleTrack block through the procedural ribbon renderer.
 - Mesh-binding audit must classify launchers by class first and pick the right success criterion:
   - Material-class launcher: `materialIndex` resolves.
   - Trail-class launcher: track block has a resolvable texture.
 
-## 11. Git Tracking Policy (standalone runtime, no large assets)
+## 10. Git Tracking Policy (standalone runtime, no large assets)
 
 Track these:
 - App/server source: `public/*.html`, `public/js/**`, `public/shared-topbar.*`, `server.js`, `serve.py`, `tools/**`

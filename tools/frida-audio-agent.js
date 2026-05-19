@@ -1,5 +1,5 @@
-// Frida agent for runtime audio tracing in the JX3 client.
-// It logs Wwise PostEvent calls plus FMOD fallback play/start calls with stack traces.
+// Frida agent for runtime audio and animation-resource tracing in the JX3 client.
+// It logs Wwise/FMOD calls plus animation/effect file opens with stack traces.
 
 const hooked = new Set();
 const idToName = Object.create(null);
@@ -10,6 +10,67 @@ const wwiseModules = [
   'KG3D_WwiseX64.dll',
   'KG3D_WwiseProfileX64.dll',
 ];
+
+const animationResourceExtRe = /\.(?:ani|tani|pss|sfx|mesh|mdl|dds|tga|jsondef|track|mtl|wav|wem|bnk)(?:$|[\s?#])/i;
+const animationResourceTokenRe = /^(.*?\.(?:ani|tani|pss|sfx|mesh|mdl|dds|tga|jsondef|track|mtl|wav|wem|bnk))(?:$|[^A-Za-z0-9_.\\/-].*)/i;
+
+function trimRuntimeResourceToken(value) {
+  const text = String(value || '').replace(/\0/g, '').trim();
+  const match = text.match(animationResourceTokenRe);
+  return match ? match[1] : text;
+}
+
+function normalizeRuntimeResourcePath(value) {
+  return trimRuntimeResourceToken(value)
+    .replace(/\//g, '\\')
+    .slice(0, 260);
+}
+
+function classifyRuntimeResourcePath(value) {
+  const path = normalizeRuntimeResourcePath(value);
+  const lower = path.toLowerCase();
+  if (/\.tani$/i.test(lower)) return 'timeline';
+  if (/\.ani$/i.test(lower)) return 'action';
+  if (/\.pss$/i.test(lower)) return 'effect';
+  if (/\.sfx$/i.test(lower)) return 'legacy-effect';
+  if (/\.(?:mesh|mdl)$/i.test(lower)) return 'mesh';
+  if (/\.(?:dds|tga|jsondef|mtl)$/i.test(lower)) return 'material';
+  if (/\.track$/i.test(lower)) return 'track';
+  if (/\.(?:wem|wav|bnk)$/i.test(lower)) return 'audio';
+  return 'other';
+}
+
+function isRuntimeAnimationResourcePath(value) {
+  const path = normalizeRuntimeResourcePath(value);
+  if (!path || !animationResourceExtRe.test(path)) return false;
+  if (/\\windows\\|\\program files\\|\\appdata\\|\\system32\\/i.test(path)) return false;
+  return /data\\|source\\|wwiseaudio|generatedsoundbanks|movieeditor|seasun|jx3/i.test(path);
+}
+
+function collectAnimationResourceStrings(value, out) {
+  const text = String(value || '');
+  if (!text) return;
+  const patterns = [
+    /[A-Za-z]:[\\/][^|<>"'\r\n\0]{1,240}?\.(?:ani|tani|pss|sfx|mesh|mdl|dds|tga|jsondef|track|mtl|wav|wem|bnk)\b/gi,
+    /data[\\/][^|<>"'\r\n\0]{1,220}?\.(?:ani|tani|pss|sfx|mesh|mdl|dds|tga|jsondef|track|mtl|wav|wem|bnk)\b/gi,
+  ];
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(text)) && out.length < 24) {
+      const path = normalizeRuntimeResourcePath(match[0]);
+      if (isRuntimeAnimationResourcePath(path) && out.indexOf(path) < 0) out.push(path);
+    }
+  }
+}
+
+function collectProbeAnimationResources(probe, out) {
+  if (!probe || typeof probe !== 'object' || out.length >= 24) return;
+  collectAnimationResourceStrings(probe.ansi, out);
+  collectAnimationResourceStrings(probe.utf16, out);
+  for (const value of probe.asciiStrings || []) collectAnimationResourceStrings(value, out);
+  for (const value of probe.utf16Strings || []) collectAnimationResourceStrings(value, out);
+  for (const nested of probe.pointers || []) collectProbeAnimationResources(nested, out);
+}
 
 const exportsToHook = {
   wwisePostEventId: '?PostEvent@SoundEngine@AK@@YAII_KIP6AXW4AkCallbackType@@PEAUAkCallbackInfo@@@ZPEAXIPEAUAkExternalSourceInfo@@I@Z',
@@ -141,6 +202,37 @@ function readHex(ptrValue, count) {
   const bytes = readBytes(ptrValue, count);
   if (!bytes) return '';
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join(' ');
+}
+
+function bytesToHex(bytes) {
+  if (!bytes) return '';
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function readNullTerminatedBytes(ptrValue, maxLen) {
+  const bytes = readBytes(ptrValue, maxLen || 260);
+  if (!bytes) return null;
+  let end = 0;
+  while (end < bytes.length && bytes[end] !== 0) end += 1;
+  return bytes.slice(0, end);
+}
+
+function readAnsiPathWithBytes(ptrValue, maxLen) {
+  const bytes = readNullTerminatedBytes(ptrValue, maxLen || 260);
+  const rawPath = readAnsiBounded(ptrValue, maxLen || 260);
+  return {
+    rawPath,
+    pathBytesHex: bytesToHex(bytes),
+    pathByteLength: bytes ? bytes.length : 0,
+    pathEncoding: 'ansi',
+  };
+}
+
+function readUtf16Path(ptrValue, maxLen) {
+  return {
+    rawPath: readUtf16Bounded(ptrValue, maxLen || 260),
+    pathEncoding: 'utf16',
+  };
 }
 
 function readAsciiStrings(ptrValue, count) {
@@ -356,6 +448,21 @@ function installAnimationTagHooks() {
     const stackStringPtr = readPointerSafe(context.rsp, 0x58);
     const rbpStringLocal = context.rbp ? context.rbp.sub(0x60) : ptr(0);
     const rbpEventLocal = context.rbp ? context.rbp.sub(0x20) : ptr(0);
+    const stackProbe = probePointer(context.rsp, 192);
+    const wrapperProbe = probePointer(rcx, 160);
+    const eventArgProbe = probePointer(rdx, 256);
+    const extraArgProbe = probePointer(r8, 256);
+    const localStringProbe = probePointer(rbpStringLocal, 256);
+    const localEventProbe = probePointer(rbpEventLocal, 256);
+    const animationPaths = [];
+    collectAnimationResourceStrings(readAnsiBounded(stackStringPtr), animationPaths);
+    collectAnimationResourceStrings(readUtf16Bounded(stackStringPtr), animationPaths);
+    collectProbeAnimationResources(stackProbe, animationPaths);
+    collectProbeAnimationResources(wrapperProbe, animationPaths);
+    collectProbeAnimationResources(eventArgProbe, animationPaths);
+    collectProbeAnimationResources(extraArgProbe, animationPaths);
+    collectProbeAnimationResources(localStringProbe, animationPaths);
+    collectProbeAnimationResources(localEventProbe, animationPaths);
     sendLog({
       type: 'animtag-audio-callsite',
       callsite: mod.base.add(0x132a7).toString(),
@@ -365,15 +472,61 @@ function installAnimationTagHooks() {
       stackStringPtr: keyOf(stackStringPtr),
       stackString: readAnsiBounded(stackStringPtr),
       stackStringUtf16: readUtf16Bounded(stackStringPtr),
-      stackProbe: probePointer(context.rsp, 192),
-      wrapperProbe: probePointer(rcx, 160),
-      eventArgProbe: probePointer(rdx, 256),
-      extraArgProbe: probePointer(r8, 256),
-      localStringProbe: probePointer(rbpStringLocal, 256),
-      localEventProbe: probePointer(rbpEventLocal, 256),
+      stackProbe,
+      wrapperProbe,
+      eventArgProbe,
+      extraArgProbe,
+      localStringProbe,
+      localEventProbe,
+      animationPaths,
       callContext: captureCallContext(context),
       stack: stackTrace(context),
     });
+  });
+}
+
+function hookRuntimeFileOpen(modName, expName, label, reader) {
+  hookExport(modName, expName, label, function (args) {
+    const readResult = reader(args[0]) || '';
+    const rawPath = typeof readResult === 'object' ? (readResult.rawPath || readResult.path || '') : readResult;
+    const path = normalizeRuntimeResourcePath(rawPath);
+    if (!isRuntimeAnimationResourcePath(path)) return;
+    this.animationPath = path;
+    this.animationKind = classifyRuntimeResourcePath(path);
+    this.pathBytesHex = typeof readResult === 'object' ? (readResult.pathBytesHex || '') : '';
+    this.pathByteLength = typeof readResult === 'object' ? (readResult.pathByteLength || 0) : 0;
+    this.pathEncoding = typeof readResult === 'object' ? (readResult.pathEncoding || '') : '';
+    this.rawPathHadReplacement = /\uFFFD/.test(rawPath);
+    this.argsRaw = rawArgs(args, 4);
+    this.stack = stackTrace(this.context);
+  }, function (retval) {
+    if (!this.animationPath) return;
+    const payload = {
+      type: 'client-animation-file',
+      api: label,
+      path: this.animationPath,
+      kind: this.animationKind,
+      result: keyOf(retval),
+      argsRaw: this.argsRaw,
+      stack: this.stack,
+    };
+    if (this.pathBytesHex) payload.pathBytesHex = this.pathBytesHex;
+    if (this.pathByteLength) payload.pathByteLength = this.pathByteLength;
+    if (this.pathEncoding) payload.pathEncoding = this.pathEncoding;
+    if (this.rawPathHadReplacement) payload.rawPathHadReplacement = true;
+    sendLog(payload);
+  });
+}
+
+function installAnimationFileHooks() {
+  hookRuntimeFileOpen('KernelBase.dll', 'CreateFileW', 'createfile-wide', readUtf16Path);
+  hookRuntimeFileOpen('KernelBase.dll', 'CreateFileA', 'createfile-ansi', readAnsiPathWithBytes);
+  hookRuntimeFileOpen('kernel32.dll', 'CreateFileW', 'createfile-wide-k32', readUtf16Path);
+  hookRuntimeFileOpen('kernel32.dll', 'CreateFileA', 'createfile-ansi-k32', readAnsiPathWithBytes);
+  hookRuntimeFileOpen(null, 'g_OpenFile', 'g-open-file', function (arg0) {
+    const ansi = readAnsiPathWithBytes(arg0, 260);
+    if (ansi.rawPath) return ansi;
+    return readUtf16Path(arg0, 260);
   });
 }
 
@@ -513,17 +666,17 @@ function installWwiseHooks() {
 
     hookExport(modName, exportsToHook.wwiseRegisterGameObj, 'wwise-register-gameobj', function (args) {
       this.gameObject = u64(args[0]);
-      this.stack = stackTrace(this.context);
+      this.stack = this.gameObject === '0x1' ? stackTrace(this.context) : [];
     }, function (retval) {
-      sendLog({ type: 'wwise-register-gameobj', gameObject: this.gameObject, result: u32(retval), stack: this.stack });
+      if (this.gameObject === '0x1') sendLog({ type: 'wwise-register-gameobj', gameObject: this.gameObject, result: u32(retval), stack: this.stack });
     });
 
     hookExport(modName, exportsToHook.wwiseRegisterGameObjName, 'wwise-register-gameobj-name', function (args) {
       this.gameObject = u64(args[0]);
       this.name = readAnsi(args[1]);
-      this.stack = stackTrace(this.context);
+      this.stack = this.name ? stackTrace(this.context) : [];
     }, function (retval) {
-      sendLog({ type: 'wwise-register-gameobj', gameObject: this.gameObject, name: this.name, result: u32(retval), stack: this.stack });
+      if (this.name) sendLog({ type: 'wwise-register-gameobj', gameObject: this.gameObject, name: this.name, result: u32(retval), stack: this.stack });
     });
 
     hookExport(modName, exportsToHook.wwiseSetSwitchId, 'wwise-set-switch-id', function (args) {
@@ -846,6 +999,7 @@ function disassemble(address, count, back) {
 
 function installHooks() {
   installAnimationTagHooks();
+  installAnimationFileHooks();
   installWwiseHooks();
   installFmodHooks();
 }
