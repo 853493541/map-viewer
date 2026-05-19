@@ -292,6 +292,26 @@
     .status-bar .status-ok { color: var(--panel-good); }
     .status-bar .status-err { color: var(--panel-error); }
 
+    body.embed-client-monitor {
+      background: #03070a;
+    }
+    body.embed-client-monitor #global-header,
+    body.embed-client-monitor #sidebar,
+    body.embed-client-monitor #info-panel,
+    body.embed-client-monitor .status-bar {
+      display: none;
+    }
+    body.embed-client-monitor #right-area {
+      top: 0; left: 0; right: 0; bottom: 0; gap: 0;
+    }
+    body.embed-client-monitor #viewport-panel {
+      border: 0; border-radius: 0; box-shadow: none; min-height: 100%;
+    }
+    body.embed-client-monitor #viewport-toolbar {
+      top: 8px; left: 8px; right: 8px;
+    }
+    body.embed-client-monitor #viewport-toolbar .vp-label { max-width: 42%; }
+
     /* ── Debug panel ── */
     #debug-panel {
       position: absolute; top: 40px; right: 0; bottom: 0; width: 340px;

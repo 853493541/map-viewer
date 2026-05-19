@@ -54,6 +54,13 @@
   .panel-head h2 { margin: 0; font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase; }
   .panel-body { min-height: 0; overflow: auto; padding: 10px; }
   .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tabs { display: inline-flex; gap: 4px; padding: 3px; border: 1px solid #263b4b; border-radius: 8px; background: #09131b; }
+  .tab-btn {
+    min-height: 28px; padding: 4px 10px; border: 0; border-radius: 6px; color: #bcd0dc;
+    background: transparent; cursor: pointer; font-weight: 800; font-size: 12px;
+  }
+  .tab-btn:hover { background: #132434; color: #eef8ff; }
+  .tab-btn.active { background: #1a3a52; color: #fff; }
   .btn {
     border: 1px solid #3e5d70; color: #f3fbff; background: #173044; border-radius: 7px;
     padding: 7px 12px; cursor: pointer; font-weight: 700;
@@ -119,6 +126,16 @@
   .play:hover { border-color: #86d99d; }
   .copy { min-width: 58px; border-color: #4a6273; background: #142532; color: #dfeffc; }
   .copy:hover { border-color: #8abfdd; }
+  .link-button {
+    display: inline-flex; align-items: center; min-height: 24px; padding: 3px 8px; border: 1px solid #4a6273;
+    border-radius: 6px; background: #142532; color: #dfeffc; text-decoration: none; font-size: 11px; font-weight: 800;
+  }
+  .link-button:hover { border-color: #8abfdd; background: #183044; }
+  .asset-path { margin-top: 6px; color: #bdd5e2; font: 11px Consolas, monospace; overflow-wrap: anywhere; }
+  .asset-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .asset-chip { display: inline-flex; align-items: center; min-height: 20px; padding: 1px 7px; border-radius: 999px; border: 1px solid #375365; background: #0a131b; color: #d8edf7; font-size: 11px; }
+  .cdn-match { border-top: 1px solid #203543; padding: 8px 0; }
+  .hidden { display: none !important; }
   .empty { color: var(--muted); padding: 24px 8px; text-align: center; }
   .kv { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 6px 10px; align-items: start; font-size: 12px; }
   .kv .k { color: var(--muted); }
@@ -133,10 +150,28 @@
   audio { width: 100%; height: 34px; }
   .split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
   .mini-title { margin: 12px 0 6px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+  .strict-player {
+    display: grid; gap: 8px; margin-top: 10px; padding: 10px;
+    border: 1px solid #294154; border-radius: 8px; background: #0a141d;
+  }
+  .strict-player-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+  .strict-player-title { font-weight: 900; color: #f5fbff; }
+  .strict-player-sub { color: var(--muted); font: 11px Consolas, monospace; overflow-wrap: anywhere; }
+  .strict-frame-wrap { min-height: 360px; border: 1px solid #263b4b; border-radius: 7px; overflow: hidden; background: #03070a; }
+  .strict-frame-wrap.blocked { min-height: auto; }
+  .strict-frame { display: block; width: 100%; height: 520px; border: 0; background: #03070a; }
+  .strict-list { display: grid; gap: 5px; }
+  .strict-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 7px; padding: 6px 8px; border: 1px solid #263b4b; border-radius: 6px; background: #08111a; font-size: 12px; }
+  .strict-row.ok { border-color: #315f40; background: rgba(125, 224, 154, 0.08); }
+  .strict-row.warn { border-color: #6b5d32; background: rgba(232, 195, 106, 0.09); }
+  .strict-row.block { border-color: #73414a; background: rgba(240, 126, 126, 0.09); }
+  .strict-row .strict-label { color: var(--muted); font-weight: 800; text-transform: uppercase; font-size: 10px; }
+  .strict-row .strict-text { color: #e7eef3; overflow-wrap: anywhere; }
   @media (max-width: 1100px) {
     .main { grid-template-columns: 1fr; overflow: auto; }
     .app { overflow: auto; }
     .panel { min-height: 320px; }
+    .strict-frame { height: 420px; }
   }
 </style>
 </head>
@@ -175,7 +210,11 @@
 
     <section class="panel">
       <div class="panel-head">
-        <h2>Live Captures</h2>
+        <h2 id="capture-title">Live Captures</h2>
+        <div class="tabs" role="tablist" aria-label="Capture type">
+          <button id="sound-tab" class="tab-btn active" type="button" role="tab" aria-selected="true">Sound</button>
+          <button id="animation-tab" class="tab-btn" type="button" role="tab" aria-selected="false">Animation</button>
+        </div>
         <div class="actions">
           <span id="capture-count" class="tag">0</span>
           <button id="toggle-filter-btn" class="btn secondary compact" type="button">Show hidden</button>
@@ -190,7 +229,7 @@
         <div id="story" class="story"></div>
         <div id="captures" class="capture-list"></div>
       </div>
-      <div class="audio-shell">
+      <div id="audio-shell" class="audio-shell">
         <audio id="player" controls preload="none"></audio>
       </div>
     </section>
@@ -218,7 +257,21 @@
 </div>
 
 <script>
-const state = { status: null, selectedTs: null, busy: false, showAllCaptures: false };
+const state = {
+  status: null,
+  selectedTs: null,
+  selectedAnimationPath: null,
+  selectedAnimationSkillId: null,
+  busy: false,
+  polling: false,
+  showAllCaptures: false,
+  activeTab: 'sound',
+  animationResolveCache: new Map(),
+  animationExtractCache: new Map(),
+  animationPlayerCache: new Map(),
+  animationPlayerLoading: new Set(),
+  renderedAnimationSkillSignature: '',
+};
 const copyTimers = new WeakMap();
 const el = (id) => document.getElementById(id);
 
@@ -240,10 +293,20 @@ function shortTime(value) {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, { cache: 'no-store', ...options });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
-  return payload;
+  const { timeoutMs = 20000, ...fetchOptions } = options;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(path, { cache: 'no-store', ...fetchOptions, signal: fetchOptions.signal || controller.signal });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    return payload;
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error(`Timed out loading ${path}`);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function renderLights(status) {
@@ -345,8 +408,17 @@ function uniqueSoundCaptures(captures = []) {
 
 function renderStory(status) {
   const story = status.capture?.story;
+  renderStoryContent(story, 'No monitor story yet');
+}
+
+function renderAnimationStory(status) {
+  const story = status.capture?.animation?.story;
+  renderStoryContent(story, 'No animation capture yet');
+}
+
+function renderStoryContent(story, emptyTitle) {
   if (!story) {
-    el('story').innerHTML = '<div class="story-title">No monitor story yet</div>';
+    el('story').innerHTML = `<div class="story-title">${esc(emptyTitle)}</div>`;
     return;
   }
   const bullets = (story.bullets || []).map((line) => `<div class="story-bullet"><span>${esc(line)}</span></div>`).join('');
@@ -360,6 +432,442 @@ function renderStory(status) {
     ${bullets ? `<div class="story-bullets">${bullets}</div>` : ''}
     ${clusters ? `<div class="story-clusters">${clusters}</div>` : ''}
   `;
+}
+
+function animationStatusLabel(asset) {
+  if (asset?.status === 'cache-hit') return 'Cache hit';
+  return 'CDN lookup';
+}
+
+function animationStatusTone(asset) {
+  return asset?.status === 'cache-hit' ? 'green' : 'amber';
+}
+
+function renderAnimationAssetActions(asset) {
+  const actions = [];
+  if (asset?.cache?.rawUrl) actions.push(`<a class="link-button" href="${esc(asset.cache.rawUrl)}" target="_blank" rel="noopener">Raw</a>`);
+  if (asset?.cache?.previewUrl) actions.push(`<a class="link-button" href="${esc(asset.cache.previewUrl)}" target="_blank" rel="noopener">Preview</a>`);
+  if (asset?.cdn?.searchUrl) actions.push(`<a class="link-button" href="${esc(asset.cdn.searchUrl)}" target="_blank" rel="noopener">CDN</a>`);
+  actions.push(`<button class="copy copy-asset" type="button" data-copy="${esc(asset?.logicalPath || '')}">Copy Path</button>`);
+  return actions.length ? `<div class="asset-actions">${actions.join('')}</div>` : '';
+}
+
+function getSelectedAnimationAsset(status) {
+  const assets = status.capture?.animation?.assets || [];
+  if (!assets.length) return null;
+  let asset = assets.find((item) => item.logicalPath === state.selectedAnimationPath);
+  if (!asset) {
+    asset = assets[0];
+    state.selectedAnimationPath = asset.logicalPath;
+  }
+  return asset;
+}
+
+function getSelectedAnimationSkill(status) {
+  const skills = status.capture?.animation?.skills || [];
+  if (!skills.length) return null;
+  let skill = skills.find((item) => item.id === state.selectedAnimationSkillId);
+  if (!skill) {
+    skill = skills[0];
+    state.selectedAnimationSkillId = skill.id;
+  }
+  return skill;
+}
+
+function allAnimationSkillAssets(status) {
+  const animation = status.capture?.animation || {};
+  const fromSkills = (animation.skills || []).flatMap((skill) => [
+    ...(skill.tani || []),
+    ...(skill.pss || []),
+    ...(skill.actions || []),
+    ...(skill.legacyEffects || []),
+    ...(skill.assets || []),
+  ]);
+  return [...fromSkills, ...(animation.assets || []), ...(animation.allAssets || [])];
+}
+
+function findAnimationAsset(path) {
+  const assetPath = String(path || '');
+  return allAnimationSkillAssets(state.status || {}).find((item) => item.logicalPath === assetPath) || { logicalPath: assetPath };
+}
+
+function resolvedAnimationAsset(asset) {
+  const resolvedEntry = state.animationResolveCache.get(asset.logicalPath);
+  return resolvedEntry?.asset
+    ? { ...asset, ...resolvedEntry.asset, count: asset.count, groupSources: asset.groupSources, parentTani: asset.parentTani }
+    : asset;
+}
+
+function renderAnimationAssetRow(asset) {
+  const activeAsset = resolvedAnimationAsset(asset);
+  const extractResult = state.animationExtractCache.get(activeAsset.logicalPath);
+  const best = activeAsset.cdn?.bestMatch || null;
+  const sourceText = (activeAsset.groupSources || activeAsset.sources || []).join(', ');
+  const parentText = (activeAsset.parentTani || []).join(', ');
+  return `
+    <div class="cdn-match">
+      <div class="kv">
+        <div class="k">Name</div><div class="v">${esc(activeAsset.name || '')}</div>
+        <div class="k">Path</div><div class="v">${esc(activeAsset.logicalPath || '')}</div>
+        <div class="k">Source</div><div class="v">${esc(sourceText)}</div>
+        ${parentText ? `<div class="k">TANI</div><div class="v">${esc(parentText)}</div>` : ''}
+        ${extractResult ? `<div class="k">Extracted</div><div class="v">${esc(extractResult.extractedFile?.relativePath || extractResult.extractedFile?.path || extractResult.error || '')}</div>` : ''}
+      </div>
+      <div class="asset-actions">
+        ${activeAsset.cache?.rawUrl ? `<a class="link-button" href="${esc(activeAsset.cache.rawUrl)}" target="_blank" rel="noopener">Raw</a>` : ''}
+        ${activeAsset.cache?.previewUrl ? `<a class="link-button" href="${esc(activeAsset.cache.previewUrl)}" target="_blank" rel="noopener">Preview</a>` : ''}
+        ${activeAsset.cdn?.searchUrl ? `<a class="link-button" href="${esc(activeAsset.cdn.searchUrl)}" target="_blank" rel="noopener">CDN</a>` : ''}
+        <button class="copy resolve-animation" type="button" data-asset-path="${esc(activeAsset.logicalPath)}">Resolve CDN</button>
+        ${best ? `<button class="copy extract-animation" type="button" data-asset-path="${esc(activeAsset.logicalPath)}" data-package-name="${esc(best.packageName)}" data-package-size="${esc(best.packageSize || 0)}" data-member-path="${esc(best.path)}">Extract Best</button>` : ''}
+        <button class="copy copy-asset" type="button" data-copy="${esc(activeAsset.logicalPath || '')}">Copy Path</button>
+      </div>
+    </div>
+  `;
+}
+
+function normPath(value) {
+  return String(value || '').replace(/\\/g, '/').trim().toLowerCase();
+}
+
+function assetPath(asset) {
+  return String(asset?.logicalPath || asset?.path || '').trim();
+}
+
+function selectPrimaryTani(skill) {
+  const roots = (skill?.tani || []).filter((asset) => /\.tani$/i.test(assetPath(asset)));
+  return roots.find((asset) => asset.status === 'cache-hit') || roots[0] || null;
+}
+
+function inferBodyTypeFromPath(path) {
+  const match = String(path || '').replace(/\\/g, '/').match(/\/player\/(f1|f2|m1|m2)\//i);
+  return match ? match[1].toLowerCase() : '';
+}
+
+function selectedSkillById(skillId) {
+  const skills = state.status?.capture?.animation?.skills || [];
+  return skills.find((skill) => skill.id === skillId) || null;
+}
+
+function renderStrictRows(rows = [], emptyText = 'No strict issues reported.') {
+  if (!rows.length) return `<div class="strict-row ok"><div class="strict-label">OK</div><div class="strict-text">${esc(emptyText)}</div></div>`;
+  return rows.slice(0, 18).map((row) => {
+    const tone = row.tone || row.level || 'warn';
+    const cls = tone === 'ok' ? 'ok' : (tone === 'block' || tone === 'error' ? 'block' : 'warn');
+    const label = row.label || (cls === 'block' ? 'Blocker' : cls === 'ok' ? 'OK' : 'Warning');
+    return `<div class="strict-row ${cls}"><div class="strict-label">${esc(label)}</div><div class="strict-text">${esc(row.text || row.msg || row.message || '')}</div></div>`;
+  }).join('');
+}
+
+function buildStrictPlayerUrl(taniPath, bodyType, skillId) {
+  const params = new URLSearchParams({
+    auto: '1',
+    strict: '1',
+    embed: 'client-monitor',
+    autoTani: taniPath,
+    monitorSkillId: skillId || '',
+  });
+  if (bodyType) params.set('bodyType', bodyType);
+  return `actor-animation-player.html?${params.toString()}`;
+}
+
+function summarizeRuntimeReport(report) {
+  if (!report) return [];
+  const rows = [];
+  const blockers = report.blockers || [];
+  const warnings = report.warnings || [];
+  if (blockers.length) {
+    rows.push(...blockers.slice(0, 10).map((item) => ({ tone: 'block', label: item.category || 'Runtime', text: item.text || item.msg || item.message || String(item) })));
+  }
+  if (warnings.length) {
+    rows.push(...warnings.slice(0, 8).map((item) => ({ tone: 'warn', label: item.category || 'Runtime', text: item.text || item.msg || item.message || String(item) })));
+  }
+  if (!rows.length && report.status) rows.push({ tone: 'ok', label: 'Runtime', text: `Strict renderer status: ${report.status}` });
+  return rows;
+}
+
+function renderStrictAnimationPlayer(skill) {
+  const cache = state.animationPlayerCache.get(skill?.id || '') || { status: 'idle' };
+  const primaryTani = selectPrimaryTani(skill);
+  const runtimeRows = summarizeRuntimeReport(cache.runtimeReport);
+  const readinessRows = [
+    ...(cache.readiness?.blockers || []).map((text) => ({ tone: 'block', label: 'Blocker', text })),
+    ...(cache.readiness?.warnings || []).map((text) => ({ tone: 'warn', label: 'Warning', text })),
+    ...(cache.readiness?.checks || []).map((text) => ({ tone: 'ok', label: 'Check', text })),
+  ];
+  const statusTone = cache.status === 'ready' ? 'green' : cache.status === 'blocked' || cache.status === 'error' ? 'amber' : '';
+  const statusText = cache.status === 'checking'
+    ? 'checking'
+    : cache.status === 'ready'
+      ? 'strict ready'
+      : cache.status === 'blocked'
+        ? 'blocked'
+        : cache.status === 'error'
+          ? 'error'
+          : 'idle';
+  const bodyType = cache.bodyType || inferBodyTypeFromPath(assetPath(primaryTani));
+  const frame = cache.iframeSrc && cache.status === 'ready'
+    ? `<div class="strict-frame-wrap"><iframe id="strict-animation-player-frame" class="strict-frame" title="Strict animation player" src="${esc(cache.iframeSrc)}"></iframe></div>`
+    : `<div class="strict-frame-wrap blocked"><div class="empty" style="padding:12px;">${esc(cache.status === 'checking' ? 'Checking render chain...' : primaryTani ? 'Strict player waits for a clean TANI/PSS chain.' : 'No TANI root captured for this skill.')}</div></div>`;
+  return `
+    <div class="mini-title">Strict player</div>
+    <div class="strict-player" data-strict-skill-id="${esc(skill?.id || '')}">
+      <div class="strict-player-top">
+        <div>
+          <div class="strict-player-title">${esc(primaryTani ? (primaryTani.name || primaryTani.logicalPath) : 'No TANI root')}</div>
+          <div class="strict-player-sub">${esc(primaryTani ? `${assetPath(primaryTani)}${bodyType ? ` | ${bodyType.toUpperCase()}` : ''}` : 'Capture another skill window with a TANI root.')}</div>
+        </div>
+        <span class="tag ${statusTone} strict-status-tag">${esc(statusText)}</span>
+      </div>
+      <div class="actions">
+        <button class="btn compact load-strict-player" type="button" data-skill-id="${esc(skill?.id || '')}">${cache.status === 'ready' ? 'Reload Strict Player' : 'Load Strict Player'}</button>
+        ${primaryTani ? `<a class="link-button" href="${esc(buildStrictPlayerUrl(assetPath(primaryTani), bodyType, skill?.id || ''))}" target="_blank" rel="noopener">Open Page</a>` : ''}
+      </div>
+      ${frame}
+      <div class="strict-list">${renderStrictRows(readinessRows)}</div>
+      <div class="strict-runtime-report">${runtimeRows.length ? `<div class="mini-title" style="margin-top:2px;">Runtime strict report</div><div class="strict-list">${renderStrictRows(runtimeRows)}</div>` : ''}</div>
+    </div>
+  `;
+}
+
+function updateStrictRuntimeReportPanel(skillId) {
+  const cache = state.animationPlayerCache.get(skillId);
+  const panel = Array.from(document.querySelectorAll('[data-strict-skill-id]')).find((node) => node.dataset.strictSkillId === skillId);
+  if (!cache || !panel) return false;
+  const statusTag = panel.querySelector('.strict-status-tag');
+  if (statusTag && cache.runtimeReport?.status) {
+    const blocked = cache.runtimeReport.status === 'blocked';
+    statusTag.textContent = blocked ? 'runtime blocked' : 'runtime ok';
+    statusTag.className = blocked ? 'tag amber strict-status-tag' : 'tag green strict-status-tag';
+  }
+  const runtimeEl = panel.querySelector('.strict-runtime-report');
+  if (runtimeEl) {
+    const runtimeRows = summarizeRuntimeReport(cache.runtimeReport);
+    runtimeEl.innerHTML = runtimeRows.length ? `<div class="mini-title" style="margin-top:2px;">Runtime strict report</div><div class="strict-list">${renderStrictRows(runtimeRows)}</div>` : '';
+  }
+  return true;
+}
+
+async function fetchStrictTexture(url, texturePath) {
+  const response = await fetch(url, { cache: 'no-store' });
+  if (response.status === 204) return { ok: false, reason: `Texture missing: ${texturePath || url}` };
+  if (!response.ok) return { ok: false, reason: `Texture HTTP ${response.status}: ${texturePath || url}` };
+  const buf = await response.arrayBuffer();
+  if (buf.byteLength < 8) return { ok: false, reason: `Texture returned ${buf.byteLength} bytes: ${texturePath || url}` };
+  return { ok: true, bytes: buf.byteLength };
+}
+
+async function buildStrictReadiness(skill) {
+  const blockers = [];
+  const warnings = [];
+  const checks = [];
+  const primaryTani = selectPrimaryTani(skill);
+  const taniPath = assetPath(primaryTani);
+  if (!taniPath) return { blockers: ['No TANI root captured for this skill.'], warnings, checks, taniPath: '' };
+
+  let tani;
+  try {
+    tani = await api(`/api/player-anim/tani-parse?path=${encodeURIComponent(taniPath)}`, { timeoutMs: 30000 });
+    checks.push(`TANI parsed: ${taniPath}`);
+  } catch (error) {
+    blockers.push(`TANI parse failed: ${error.message}`);
+    return { blockers, warnings, checks, taniPath };
+  }
+
+  const pssEntries = Array.isArray(tani.pssEntries) && tani.pssEntries.length
+    ? tani.pssEntries
+    : (tani.pssPaths || []).map((path) => ({ path, effectiveStartTimeMs: null }));
+  if (!pssEntries.length) blockers.push('TANI contains no PSS entries.');
+  else checks.push(`TANI contains ${pssEntries.length} PSS file(s).`);
+
+  const groupedPss = new Set((skill.pss || []).map((asset) => normPath(assetPath(asset))).filter(Boolean));
+  const taniPss = new Set(pssEntries.map((entry) => normPath(entry.path)).filter(Boolean));
+  for (const pss of taniPss) {
+    if (groupedPss.size && !groupedPss.has(pss)) warnings.push(`TANI PSS not in monitor skill group: ${pss}`);
+  }
+  for (const pss of groupedPss) {
+    if (!taniPss.has(pss)) warnings.push(`Monitor group PSS not in parsed TANI: ${pss}`);
+  }
+
+  if (tani.aniPath) {
+    try {
+      const header = await api(`/api/player-anim/ani-header?path=${encodeURIComponent(tani.aniPath)}`, { timeoutMs: 30000 });
+      checks.push(`Action ANI parsed: ${tani.aniPath} (${Number(header.duration || 0).toFixed(2)}s).`);
+    } catch (error) {
+      warnings.push(`Action ANI header unresolved: ${tani.aniPath} (${error.message})`);
+    }
+  } else {
+    warnings.push('TANI did not expose a base ANI action path.');
+  }
+
+  const textureChecks = new Map();
+  for (const entry of pssEntries) {
+    const pssPath = entry.path;
+    if (!pssPath) continue;
+    if (!Number.isFinite(entry.effectiveStartTimeMs) && !Number.isFinite(entry.startTimeMs)) {
+      blockers.push(`No authoritative start time for ${pssPath}.`);
+    }
+    let analyzed;
+    try {
+      analyzed = await api(`/api/pss/analyze?sourcePath=${encodeURIComponent(pssPath)}`, { timeoutMs: 30000 });
+      if (!analyzed.ok) throw new Error(analyzed.error || 'PSS analyzer returned not-ok');
+      const emitterCount = (analyzed.emitters || []).length;
+      if (!emitterCount) blockers.push(`PSS has no parsed emitters: ${pssPath}`);
+      else checks.push(`PSS analyzed: ${pssPath} (${emitterCount} emitter(s)).`);
+    } catch (error) {
+      blockers.push(`PSS analyze failed for ${pssPath}: ${error.message}`);
+      continue;
+    }
+    try {
+      const dump = await api(`/api/pss/debug-dump?sourcePath=${encodeURIComponent(pssPath)}`, { timeoutMs: 30000 });
+      if (!dump.ok) warnings.push(`PSS debug dump returned not-ok: ${pssPath}`);
+      else checks.push(`PSS debug dump parsed: ${pssPath}.`);
+    } catch (error) {
+      warnings.push(`PSS debug dump failed for ${pssPath}: ${error.message}`);
+    }
+    for (const tex of analyzed.textures || []) {
+      const url = tex.rawUrl;
+      if (!url || textureChecks.has(url)) continue;
+      textureChecks.set(url, tex.texturePath || url);
+    }
+  }
+
+  for (const [url, texturePath] of textureChecks.entries()) {
+    try {
+      const result = await fetchStrictTexture(url, texturePath);
+      if (!result.ok) blockers.push(result.reason);
+    } catch (error) {
+      blockers.push(`Texture fetch failed: ${texturePath} (${error.message})`);
+    }
+  }
+  if (textureChecks.size) checks.push(`Checked ${textureChecks.size} real texture request(s).`);
+
+  return { blockers, warnings, checks, taniPath, tani, pssEntries };
+}
+
+async function loadStrictAnimationPlayer(skillId, refresh = false) {
+  const skill = selectedSkillById(skillId);
+  if (!skill || state.animationPlayerLoading.has(skillId)) return;
+  const primaryTani = selectPrimaryTani(skill);
+  const taniPath = assetPath(primaryTani);
+  if (!taniPath) {
+    state.animationPlayerCache.set(skillId, { status: 'blocked', readiness: { blockers: ['No TANI root captured for this skill.'], warnings: [], checks: [] } });
+    renderAnimationSkillDetail(skill, true);
+    return;
+  }
+  if (!refresh) {
+    const current = state.animationPlayerCache.get(skillId);
+    if (current && current.status !== 'idle' && current.status !== 'error') return;
+  }
+  state.animationPlayerLoading.add(skillId);
+  state.animationPlayerCache.set(skillId, { status: 'checking', readiness: { blockers: [], warnings: [], checks: [] }, bodyType: inferBodyTypeFromPath(taniPath) });
+  renderAnimationSkillDetail(skill, true);
+  try {
+    const readiness = await buildStrictReadiness(skill);
+    const bodyType = inferBodyTypeFromPath(readiness.taniPath || taniPath);
+    const blocked = readiness.blockers.length > 0;
+    state.animationPlayerCache.set(skillId, {
+      status: blocked ? 'blocked' : 'ready',
+      readiness,
+      iframeSrc: blocked ? '' : buildStrictPlayerUrl(readiness.taniPath || taniPath, bodyType, skillId),
+      bodyType,
+      runtimeReport: null,
+    });
+  } catch (error) {
+    state.animationPlayerCache.set(skillId, {
+      status: 'error',
+      readiness: { blockers: [error.message], warnings: [], checks: [] },
+      bodyType: inferBodyTypeFromPath(taniPath),
+    });
+  } finally {
+    state.animationPlayerLoading.delete(skillId);
+    renderAnimationSkillDetail(selectedSkillById(skillId), true);
+  }
+}
+
+function scheduleStrictAnimationPlayer(skill) {
+  if (!skill?.id || state.animationPlayerCache.has(skill.id) || state.animationPlayerLoading.has(skill.id)) return;
+  window.setTimeout(() => loadStrictAnimationPlayer(skill.id, false), 0);
+}
+
+function renderAnimationSkillDetail(skill, force = false) {
+  if (!skill) {
+    el('detail-kind').textContent = 'animation';
+    el('detail').innerHTML = '<div class="empty">Select a skill group to inspect its TANI and PSS files.</div>';
+    state.renderedAnimationSkillSignature = '';
+    return;
+  }
+  el('detail-kind').textContent = 'skill group';
+  const cache = state.animationPlayerCache.get(skill.id) || { status: 'idle' };
+  const signature = JSON.stringify([
+    skill.id,
+    skill.counts,
+    cache.status,
+    cache.iframeSrc || '',
+    cache.runtimeReport?.status || '',
+    cache.runtimeReport?.blockers?.length || 0,
+    cache.readiness?.blockers?.length || 0,
+    cache.readiness?.warnings?.length || 0,
+  ]);
+  if (!force && state.renderedAnimationSkillSignature === signature && el('strict-animation-player-frame')) return;
+  state.renderedAnimationSkillSignature = signature;
+  const events = (skill.events || []).join('\n');
+  const taniRows = (skill.tani || []).length ? skill.tani.map(renderAnimationAssetRow).join('') : '<div class="empty" style="padding:8px;">No TANI root captured in this group.</div>';
+  const pssRows = (skill.pss || []).length ? skill.pss.map(renderAnimationAssetRow).join('') : '<div class="empty" style="padding:8px;">No PSS files attached to this group yet.</div>';
+  const actionRows = (skill.actions || []).length ? skill.actions.map(renderAnimationAssetRow).join('') : '';
+  const legacyRows = (skill.legacyEffects || []).length ? skill.legacyEffects.map(renderAnimationAssetRow).join('') : '';
+  const strictPlayer = renderStrictAnimationPlayer(skill);
+  el('detail').innerHTML = `
+    <div class="kv">
+      <div class="k">Skill</div><div class="v">${esc(skill.title || '')}</div>
+      <div class="k">Time</div><div class="v">${esc(shortTime(skill.startTs))} - ${esc(shortTime(skill.endTs))}</div>
+      <div class="k">Events</div><div class="v">${esc(events)}</div>
+      <div class="k">TANI</div><div class="v">${esc(skill.counts?.tani || 0)}</div>
+      <div class="k">PSS</div><div class="v">${esc(skill.counts?.pss || 0)}</div>
+      <div class="k">Actions</div><div class="v">${esc(skill.counts?.actions || 0)}</div>
+      <div class="k">Other</div><div class="v">${esc(skill.counts?.dependencies || 0)}</div>
+    </div>
+    ${strictPlayer}
+    <div class="mini-title">TANI roots</div>
+    ${taniRows}
+    <div class="mini-title">Contained PSS</div>
+    ${pssRows}
+    ${actionRows ? `<div class="mini-title">Player actions</div>${actionRows}` : ''}
+    ${legacyRows ? `<div class="mini-title">Legacy effects</div>${legacyRows}` : ''}
+  `;
+  scheduleStrictAnimationPlayer(skill);
+}
+
+function renderAnimationCaptures(status) {
+  const animation = status.capture?.animation || {};
+  const skills = animation.skills || [];
+  const assets = animation.assets || [];
+  const pssCount = skills.reduce((sum, skill) => sum + Number(skill.counts?.pss || 0), 0);
+  const rows = animation.captures || [];
+  el('capture-count').textContent = skills.length ? `${skills.length} skills / ${pssCount} PSS` : `${assets.length} roots / ${rows.length} rows`;
+  if (!skills.length) {
+    el('captures').innerHTML = '<div class="empty">No skill groups captured yet.</div>';
+    renderAnimationSkillDetail(null);
+    return;
+  }
+  const selected = getSelectedAnimationSkill(status);
+  el('captures').innerHTML = skills.map((skill) => {
+    const active = skill.id === state.selectedAnimationSkillId;
+    const meta = `${shortTime(skill.startTs)} | ${skill.counts?.tani || 0} TANI | ${skill.counts?.pss || 0} PSS | ${skill.counts?.actions || 0} action`;
+    const eventPreview = (skill.events || []).slice(0, 2).join(' | ');
+    return `
+      <div class="capture ${active ? 'selected' : ''}" data-skill-id="${esc(skill.id)}">
+        <div class="capture-top">
+          <div>
+            <div class="event-name">${esc(skill.title || 'Skill cast')}</div>
+            <div class="event-meta">${esc(meta)}</div>
+          </div>
+          <span class="tag green">Skill</span>
+        </div>
+        ${eventPreview ? `<div class="asset-path">${esc(eventPreview)}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+  renderAnimationSkillDetail(selected);
 }
 
 function flashCopyButton(button, label) {
@@ -519,6 +1027,69 @@ function renderDetail(capture) {
   `;
 }
 
+function renderAnimationDetail(asset) {
+  if (!asset) {
+    el('detail-kind').textContent = 'animation';
+    el('detail').innerHTML = '<div class="empty">Select an animation file to inspect cache/CDN resolution.</div>';
+    return;
+  }
+  const resolvedEntry = state.animationResolveCache.get(asset.logicalPath);
+  const resolved = resolvedEntry?.asset;
+  const extractResult = state.animationExtractCache.get(asset.logicalPath);
+  const activeAsset = resolved ? { ...asset, ...resolved, count: asset.count, sources: asset.sources, captureTypes: asset.captureTypes } : asset;
+  const cdnMatches = activeAsset.cdn?.matches || [];
+  const best = activeAsset.cdn?.bestMatch || null;
+  el('detail-kind').textContent = activeAsset.classification?.label || 'animation';
+  const cacheRows = activeAsset.cache ? `
+    <div class="kv" style="margin-top:8px;">
+      <div class="k">Cache</div><div class="v">${esc(activeAsset.cache.resolvedPath || '')}</div>
+      <div class="k">Source</div><div class="v">${esc(activeAsset.cache.source || '')}</div>
+      <div class="k">Actions</div><div class="v"><span class="value-actions">
+        <a class="link-button" href="${esc(activeAsset.cache.rawUrl)}" target="_blank" rel="noopener">Raw</a>
+        <a class="link-button" href="${esc(activeAsset.cache.previewUrl)}" target="_blank" rel="noopener">Preview</a>
+      </span></div>
+    </div>
+  ` : '<div class="empty" style="padding:8px;">No local cache hit yet.</div>';
+  const cdnRows = cdnMatches.length ? cdnMatches.map((match) => `
+    <div class="cdn-match">
+      <div class="kv">
+        <div class="k">Package</div><div class="v">${esc(match.packageName || '')}${match.packageDownloaded ? ' (downloaded)' : ''}</div>
+        <div class="k">Member</div><div class="v">${esc(match.path || '')}</div>
+        <div class="k">Type</div><div class="v">${esc(match.resourceType || match.resourceGroup || '')}</div>
+      </div>
+      ${match.extractable ? `<div class="asset-actions"><button class="copy extract-animation" type="button" data-asset-path="${esc(activeAsset.logicalPath)}" data-package-name="${esc(match.packageName)}" data-package-size="${esc(match.packageSize || 0)}" data-member-path="${esc(match.path)}">Extract</button></div>` : ''}
+    </div>
+  `).join('') : `<div class="empty" style="padding:8px;">${esc(resolvedEntry ? (resolvedEntry.error || 'No CDN matches found.') : 'CDN matches not resolved yet.')}</div>`;
+  const extractedRows = extractResult ? `
+    <div class="kv" style="margin-top:8px;">
+      <div class="k">Extracted</div><div class="v">${esc(extractResult.extractedFile?.relativePath || extractResult.extractedFile?.path || '')}</div>
+      <div class="k">Playback</div><div class="v">${extractResult.playback?.url ? `<a class="link-button" href="${esc(extractResult.playback.url)}" target="_blank" rel="noopener">Open</a>` : ''}</div>
+    </div>
+  ` : '';
+  el('detail').innerHTML = `
+    <div class="kv">
+      <div class="k">Name</div><div class="v">${esc(activeAsset.name || '')}</div>
+      <div class="k">Kind</div><div class="v">${esc(activeAsset.classification?.label || '')}</div>
+      <div class="k">Relevance</div><div class="v">${esc(activeAsset.relevance?.label || '')}</div>
+      <div class="k">Status</div><div class="v">${esc(animationStatusLabel(activeAsset))}</div>
+      <div class="k">Path</div><div class="v">${esc(activeAsset.logicalPath || '')}</div>
+      <div class="k">Hits</div><div class="v">${esc(activeAsset.count || 1)}</div>
+      <div class="k">Ability hits</div><div class="v">${esc(activeAsset.abilityHits || 0)}</div>
+      <div class="k">Sources</div><div class="v">${esc((activeAsset.sources || []).join(', '))}</div>
+      <div class="k">CDN</div><div class="v"><span class="value-actions">
+        <a class="link-button" href="${esc(activeAsset.cdn?.searchUrl || '#')}" target="_blank" rel="noopener">Browser</a>
+        <button class="copy resolve-animation" type="button" data-asset-path="${esc(activeAsset.logicalPath)}">Resolve CDN</button>
+        ${best ? `<button class="copy extract-animation" type="button" data-asset-path="${esc(activeAsset.logicalPath)}" data-package-name="${esc(best.packageName)}" data-package-size="${esc(best.packageSize || 0)}" data-member-path="${esc(best.path)}">Extract Best</button>` : ''}
+      </span></div>
+    </div>
+    <div class="mini-title">Local cache</div>
+    ${cacheRows}
+    <div class="mini-title">CDN matches</div>
+    ${cdnRows}
+    ${extractedRows ? `<div class="mini-title">Extraction</div>${extractedRows}` : ''}
+  `;
+}
+
 function renderBridge(status) {
   const clients = status.clientProcesses || [];
   el('client-box').textContent = clients.length
@@ -533,14 +1104,27 @@ function renderStatus(status) {
   el('clock').textContent = shortTime(status.now);
   el('poll-state').textContent = status.capture?.paused ? 'paused' : 'live';
   el('poll-state').className = status.capture?.paused ? 'tag amber' : 'tag green';
+  const animationMode = state.activeTab === 'animation';
+  el('capture-title').textContent = animationMode ? 'Animation Capture' : 'Live Captures';
+  el('sound-tab').classList.toggle('active', !animationMode);
+  el('animation-tab').classList.toggle('active', animationMode);
+  el('sound-tab').setAttribute('aria-selected', animationMode ? 'false' : 'true');
+  el('animation-tab').setAttribute('aria-selected', animationMode ? 'true' : 'false');
   el('toggle-filter-btn').textContent = state.showAllCaptures ? 'Hide hidden' : 'Show hidden';
   el('toggle-filter-btn').className = state.showAllCaptures ? 'btn compact' : 'btn secondary compact';
+  el('toggle-filter-btn').classList.toggle('hidden', animationMode);
+  el('audio-shell').classList.toggle('hidden', animationMode);
   el('pause-btn').textContent = status.capture?.paused ? 'Resume Capture' : 'Pause Capture';
   el('pause-btn').className = status.capture?.paused ? 'btn compact' : 'btn secondary';
   renderLights(status);
   renderCast(status);
-  renderStory(status);
-  renderCaptures(status);
+  if (animationMode) {
+    renderAnimationStory(status);
+    renderAnimationCaptures(status);
+  } else {
+    renderStory(status);
+    renderCaptures(status);
+  }
   renderBridge(status);
   el('start-btn').disabled = state.busy || status.bridge?.running;
   el('stop-btn').disabled = state.busy || !status.bridge?.running || !status.bridge?.managed;
@@ -551,6 +1135,8 @@ function renderStatus(status) {
 }
 
 async function poll() {
+  if (state.polling) return;
+  state.polling = true;
   try {
     const status = await api('/api/client-monitor/status');
     renderStatus(status);
@@ -559,6 +1145,8 @@ async function poll() {
     el('poll-state').className = 'tag amber';
     el('cast-main').textContent = 'SERVER OFFLINE';
     el('cast-sub').textContent = error.message;
+  } finally {
+    state.polling = false;
   }
 }
 
@@ -577,11 +1165,60 @@ async function runAction(path) {
   }
 }
 
+function setActiveTab(tab) {
+  state.activeTab = tab === 'animation' ? 'animation' : 'sound';
+  renderStatus(state.status || { capture: {} });
+}
+
+async function resolveAnimationAsset(path) {
+  const assetPath = String(path || '');
+  if (!assetPath) return;
+  try {
+    const result = await api(`/api/client-monitor/animation-resource?path=${encodeURIComponent(assetPath)}`);
+    state.animationResolveCache.set(assetPath, result);
+  } catch (error) {
+    state.animationResolveCache.set(assetPath, { ok: false, error: error.message, asset: { logicalPath: assetPath } });
+  }
+  renderAnimationCaptures(state.status || {});
+}
+
+async function extractAnimationAsset(button) {
+  const assetPath = button.dataset.assetPath || '';
+  const packageName = button.dataset.packageName || '';
+  const memberPath = button.dataset.memberPath || '';
+  const packageSize = Number(button.dataset.packageSize || 0) || 0;
+  if (!assetPath || !packageName || !memberPath) return;
+  button.disabled = true;
+  const baseLabel = button.textContent;
+  button.textContent = 'Extracting';
+  try {
+    const result = await api('/api/cdn/hpkg/extract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({ packageName, packageSize, memberPath, download: true, convertToOgg: false }),
+    });
+    state.animationExtractCache.set(assetPath, result);
+    button.textContent = 'Extracted';
+  } catch (error) {
+    state.animationExtractCache.set(assetPath, { error: error.message });
+    button.textContent = 'Failed';
+  } finally {
+    setTimeout(() => { button.textContent = baseLabel; button.disabled = false; }, 1200);
+    renderAnimationCaptures(state.status || {});
+  }
+}
+
+el('sound-tab').addEventListener('click', () => setActiveTab('sound'));
+el('animation-tab').addEventListener('click', () => setActiveTab('animation'));
 el('start-btn').addEventListener('click', () => runAction('/api/client-monitor/start'));
 el('stop-btn').addEventListener('click', () => runAction('/api/client-monitor/stop'));
 el('pause-btn').addEventListener('click', () => runAction(state.status?.capture?.paused ? '/api/client-monitor/resume' : '/api/client-monitor/pause'));
 async function clearCaptures() {
   state.selectedTs = null;
+  state.selectedAnimationPath = null;
+  state.selectedAnimationSkillId = null;
+  state.animationResolveCache.clear();
+  state.animationExtractCache.clear();
   const player = el('player');
   player.removeAttribute('src');
   player.load();
@@ -596,6 +1233,20 @@ el('toggle-filter-btn').addEventListener('click', () => {
 });
 
 el('captures').addEventListener('click', (event) => {
+  if (state.activeTab === 'animation') {
+    const copyButton = event.target.closest('.copy-asset');
+    if (copyButton) {
+      event.stopPropagation();
+      copyWemId(copyButton);
+      return;
+    }
+    const skillRow = event.target.closest('[data-skill-id]');
+    if (!skillRow) return;
+    state.selectedAnimationSkillId = skillRow.dataset.skillId;
+    state.renderedAnimationSkillSignature = '';
+    renderAnimationCaptures(state.status || {});
+    return;
+  }
   const copyButton = event.target.closest('.copy-wem');
   if (copyButton) {
     event.stopPropagation();
@@ -617,10 +1268,49 @@ el('captures').addEventListener('click', (event) => {
 });
 
 el('detail').addEventListener('click', (event) => {
+  const resolveButton = event.target.closest('.resolve-animation');
+  if (resolveButton) {
+    event.stopPropagation();
+    resolveAnimationAsset(resolveButton.dataset.assetPath || '');
+    return;
+  }
+  const extractButton = event.target.closest('.extract-animation');
+  if (extractButton) {
+    event.stopPropagation();
+    extractAnimationAsset(extractButton);
+    return;
+  }
+  const loadStrictButton = event.target.closest('.load-strict-player');
+  if (loadStrictButton) {
+    event.stopPropagation();
+    loadStrictAnimationPlayer(loadStrictButton.dataset.skillId || state.selectedAnimationSkillId, true);
+    return;
+  }
+  const assetCopyButton = event.target.closest('.copy-asset');
+  if (assetCopyButton) {
+    event.stopPropagation();
+    copyWemId(assetCopyButton);
+    return;
+  }
   const copyButton = event.target.closest('.copy-wem');
   if (!copyButton) return;
   event.stopPropagation();
   copyWemId(copyButton);
+});
+
+window.addEventListener('message', (event) => {
+  if (event.origin !== window.location.origin) return;
+  const payload = event.data || {};
+  if (payload.source !== 'jx3-actor-animation-player' || payload.type !== 'strict-render-report') return;
+  const report = payload.report || {};
+  const skillId = report.monitorSkillId || payload.monitorSkillId || state.selectedAnimationSkillId;
+  if (!skillId) return;
+  const cache = state.animationPlayerCache.get(skillId) || { status: 'ready', readiness: { blockers: [], warnings: [], checks: [] } };
+  state.animationPlayerCache.set(skillId, { ...cache, runtimeReport: report });
+  if (!updateStrictRuntimeReportPanel(skillId)) {
+    const skill = selectedSkillById(skillId);
+    if (skill) renderAnimationSkillDetail(skill, true);
+  }
 });
 
 poll();
