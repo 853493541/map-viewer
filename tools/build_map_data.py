@@ -257,7 +257,7 @@ def parse_mesh_file(filepath):
       0xD4-0x113: 16 extend ints (zeros)
     
     Compressed blocks (HD/bin format, flag 0xE0000000 at 0x5C):
-      Position: 24-byte BBox (6×f32) + N×6 (SNorm16×3)
+    Position: 24-byte BBox (6×f32) + N×6 (UNorm16×3)
       Normal:   N×3 (UNorm8×3), no header
       Tangent:  N×4 (UNorm8×4), no header
       UV:       12-byte scale (3×f32) + N×6 (SNorm16×3)
@@ -364,17 +364,15 @@ def parse_mesh_file(filepath):
             bbox = struct.unpack_from('<6f', data, off_position)
             mn = tuple(min(bbox[i], bbox[i + 3]) for i in range(3))
             mx = tuple(max(bbox[i], bbox[i + 3]) for i in range(3))
-            center = tuple((mn[i] + mx[i]) / 2.0 for i in range(3))
-            half = tuple((mx[i] - mn[i]) / 2.0 for i in range(3))
             vdata = off_position + 24
             verts = []
             for vi in range(vertex_count):
                 o = vdata + vi * 6
-                sx, sy, sz = struct.unpack_from('<3h', data, o)
+                sx, sy, sz = struct.unpack_from('<3H', data, o)
                 verts.append((
-                    center[0] + (sx / 32767.0) * half[0],
-                    center[1] + (sy / 32767.0) * half[1],
-                    center[2] + (sz / 32767.0) * half[2],
+                    mn[0] + (sx / 65535.0) * (mx[0] - mn[0]),
+                    mn[1] + (sy / 65535.0) * (mx[1] - mn[1]),
+                    mn[2] + (sz / 65535.0) * (mx[2] - mn[2]),
                 ))
             positions = verts
         else:
@@ -490,13 +488,24 @@ def parse_mesh_file(filepath):
             u_scale, v_scale, w_scale = struct.unpack_from('<3f', data, off_uv1)
             uv_data_start = off_uv1 + 12
             uv_list = []
+            # ADD mode: when scale values are near 1.0, they are actually UV
+            # offsets, not multiplicative scales. This is used for meshes that
+            # need to map to a small sub-region of the texture atlas.
+            # MULTIPLY mode: traditional scale factor for tiled textures.
+            is_add_mode = (abs(u_scale - 1.0) < 0.05 and abs(v_scale - 1.0) < 0.05)
             for vi in range(vertex_count):
                 o = uv_data_start + vi * 6
                 u_raw, v_raw, w_raw = struct.unpack_from('<3h', data, o)
-                uv_list.append((
-                    (u_raw / 32767.0) * u_scale,
-                    (v_raw / 32767.0) * v_scale,
-                ))
+                if is_add_mode:
+                    uv_list.append((
+                        (u_raw / 32767.0) + u_scale,
+                        (v_raw / 32767.0) + v_scale,
+                    ))
+                else:
+                    uv_list.append((
+                        (u_raw / 32767.0) * u_scale,
+                        (v_raw / 32767.0) * v_scale,
+                    ))
             uvs = uv_list
         else:
             uv_list = []
