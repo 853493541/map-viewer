@@ -2934,7 +2934,7 @@
   "pj_mj石门001_01_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
     "mre": "st_mj戈壁碎石_01h_b_mre.png",
-    "normal": "st_mj戈壁碎石_01h_b_nor.png"
+    "normal": "st_mj戈壁碎石_03h_b_nor.png"
   },
   "pj_mvp围墙001_002_hd.glb": {
     "albedo": "q_js加沙城垛001_02h.png",
@@ -3759,39 +3759,39 @@
   "st_mj光明顶001_001_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
     "mre": "st_mj戈壁碎石_01h_b_mre.png",
-    "normal": "st_mj戈壁碎石_01h_b_nor.png",
+    "normal": "st_mj戈壁碎石_03h_b_nor.png",
     "subsets": [
       {
         "albedo": "st_mj戈壁碎石_01h_b.png",
         "mre": "st_mj戈壁碎石_01h_b_mre.png",
-        "normal": "st_mj戈壁碎石_01h_b_nor.png"
+        "normal": "st_mj戈壁碎石_03h_b_nor.png"
       },
       {
         "albedo": "st_mj光明顶道路001_01h.png",
         "mre": "st_mj光明顶道路001_01h_mre.png",
-        "normal": "st_mj光明顶道路001_01h_nor.png"
+        "normal": "st_mj戈壁碎石_03h_b_nor.png"
       },
       {
         "albedo": "st_mj戈壁碎石_01h_b.png",
         "mre": "st_mj戈壁碎石_01h_b_mre.png",
-        "normal": "st_mj戈壁碎石_01h_b_nor.png"
+        "normal": "st_mj戈壁碎石_03h_b_nor.png"
       }
     ]
   },
   "st_mj光明顶001_002_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
     "mre": "st_mj戈壁碎石_01h_b_mre.png",
-    "normal": "st_mj戈壁碎石_01h_b_nor.png",
+    "normal": "st_mj戈壁碎石_03h_b_nor.png",
     "subsets": [
       {
         "albedo": "st_mj戈壁碎石_01h_b.png",
         "mre": "st_mj戈壁碎石_01h_b_mre.png",
-        "normal": "st_mj戈壁碎石_01h_b_nor.png"
+        "normal": "st_mj戈壁碎石_03h_b_nor.png"
       },
       {
         "albedo": "st_mj光明顶道路001_01h.png",
         "mre": "st_mj光明顶道路001_01h_mre.png",
-        "normal": "st_mj光明顶道路001_01h_nor.png"
+        "normal": "st_mj戈壁碎石_03h_b_nor.png"
       }
     ]
   },
@@ -3886,7 +3886,7 @@
   "st_mj光明顶001_005_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
     "mre": "st_mj戈壁碎石_01h_b_mre.png",
-    "normal": "st_mj戈壁碎石_01h_b_nor.png"
+    "normal": "st_mj戈壁碎石_03h_b_nor.png"
   },
   "st_mj光明顶001_006_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
@@ -3915,7 +3915,7 @@
   "st_mj底层石头001_004_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
     "mre": "st_mj戈壁碎石_01h_b_mre.png",
-    "normal": "st_mj戈壁碎石_01h_b_nor.png"
+    "normal": "st_mj戈壁碎石_03h_b_nor.png"
   },
   "st_mj戈壁碎石001_001_hd.glb": {
     "albedo": "st_mj戈壁碎石001_01h.png",
@@ -3958,27 +3958,27 @@
   "st_mj戈壁碎石003_001_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
     "mre": "st_mj戈壁碎石_01h_b_mre.png",
-    "normal": "st_mj戈壁碎石_01h_b_nor.png"
+    "normal": "st_mj戈壁碎石_03h_b_nor.png"
   },
   "st_mj戈壁碎石003_002_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
     "mre": "st_mj戈壁碎石_01h_b_mre.png",
-    "normal": "st_mj戈壁碎石_01h_b_nor.png"
+    "normal": "st_mj戈壁碎石_03h_b_nor.png"
   },
   "st_mj戈壁碎石003_003_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
     "mre": "st_mj戈壁碎石_01h_b_mre.png",
-    "normal": "st_mj戈壁碎石_01h_b_nor.png"
+    "normal": "st_mj戈壁碎石_03h_b_nor.png"
   },
   "st_mj戈壁碎石003_004_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
     "mre": "st_mj戈壁碎石_01h_b_mre.png",
-    "normal": "st_mj戈壁碎石_01h_b_nor.png"
+    "normal": "st_mj戈壁碎石_03h_b_nor.png"
   },
   "st_mj戈壁碎石003_005_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
     "mre": "st_mj戈壁碎石_01h_b_mre.png",
-    "normal": "st_mj戈壁碎石_01h_b_nor.png"
+    "normal": "st_mj戈壁碎石_03h_b_nor.png"
   },
   "st_mj登陆界面石头001_hd.glb": {
     "albedo": "st_mj登陆界面石头001_01h.png",
@@ -3988,7 +3988,7 @@
   "st_mj石头002_001_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
     "mre": "st_mj戈壁碎石_01h_b_mre.png",
-    "normal": "st_mj戈壁碎石_01h_b_nor.png"
+    "normal": "st_mj戈壁碎石_03h_b_nor.png"
   },
   "st_mj石头002_002_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
