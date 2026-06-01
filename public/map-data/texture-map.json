@@ -662,8 +662,7 @@
       {
         "albedo": "wj_mj中型帐篷002_02h.png",
         "mre": "wj_mj中型帐篷002_02h_mre.png",
-        "normal": "wj_mj中型帐篷002_02h_nor.png",
-        "blendMode": 1
+        "normal": "wj_mj中型帐篷002_02h_nor.png"
       },
       {
         "albedo": "wj_mj中型帐篷002_03h.png",
@@ -675,8 +674,7 @@
         "mre": "wj_mj中型帐篷002_04h_mre.png",
         "normal": "wj_mj中型帐篷002_04h_nor.png"
       }
-    ],
-    "blendMode": 1
+    ]
   },
   "jz_mj中型帐篷002_003_hd.glb": {
     "albedo": "wj_mj中型帐篷002_01h.png",
@@ -691,8 +689,7 @@
       {
         "albedo": "wj_mj中型帐篷002_02h.png",
         "mre": "wj_mj中型帐篷002_02h_mre.png",
-        "normal": "wj_mj中型帐篷002_02h_nor.png",
-        "blendMode": 1
+        "normal": "wj_mj中型帐篷002_02h_nor.png"
       },
       {
         "albedo": "wj_mj中型帐篷002_03h.png",
@@ -709,8 +706,7 @@
         "mre": "db_mj中型帐篷002_05h_mre.png",
         "normal": "db_mj中型帐篷002_05h_nor.png"
       }
-    ],
-    "blendMode": 1
+    ]
   },
   "jz_mj中型帐篷002_004_hd.glb": {
     "albedo": "wj_mj中型帐篷002_01h.png",
@@ -1196,20 +1192,17 @@
       {
         "albedo": "db_mj中型民居001_01h.png",
         "mre": "db_mj中型民居001_01h_mre.png",
-        "normal": "db_mj中型民居001_01h_nor.png",
-        "alphaRef": 0
+        "normal": "db_mj中型民居001_01h_nor.png"
       },
       {
         "albedo": "dz_mj中型民居001_01h.png",
         "mre": "dz_mj中型民居001_01h_mre.png",
-        "normal": "dz_mj中型民居001_01h_nor.png",
-        "alphaRef": 0
+        "normal": "dz_mj中型民居001_01h_nor.png"
       },
       {
         "albedo": "zs_mj偏殿001_02h.png",
         "mre": "zs_mj偏殿001_02h_mre.png",
-        "normal": "zs_mj偏殿001_02h_nor.png",
-        "alphaRef": 0
+        "normal": "zs_mj偏殿001_02h_nor.png"
       }
     ]
   },
@@ -2134,11 +2127,9 @@
       {
         "albedo": "alpha_001.png",
         "mre": "alpha_001_mre.png",
-        "normal": "alpha_001_nor.png",
-        "blendMode": 1
+        "normal": "alpha_001_nor.png"
       }
-    ],
-    "blendMode": 1
+    ]
   },
   "jz_xb玉门关建筑002_005sw_hd.glb": {
     "albedo": "q_lmhm玉门关建筑001_01h.png",
@@ -2420,25 +2411,19 @@
       {
         "albedo": "zs_tc军营帐篷001_02h.png",
         "mre": "zs_tc军营帐篷001_02h_mre.png",
-        "normal": "zs_tc军营帐篷001_02h_nor.png",
-        "blendMode": 1,
-        "alphaRef": 30
+        "normal": "zs_tc军营帐篷001_02h_nor.png"
       },
       {
         "albedo": "zs_tc军营帐篷001_03h.png",
         "mre": "zs_tc军营帐篷001_03h_mre.png",
-        "normal": "zs_tc军营帐篷001_03h_nor.png",
-        "blendMode": 1,
-        "alphaRef": 30
+        "normal": "zs_tc军营帐篷001_03h_nor.png"
       },
       {
         "albedo": "zs_tc军营帐篷001_01h.png",
         "mre": "zs_tc军营帐篷001_01h_mre.png",
-        "normal": "zs_tc军营帐篷001_01h_nor.png",
-        "alphaRef": 0
+        "normal": "zs_tc军营帐篷001_01h_nor.png"
       }
-    ],
-    "blendMode": 1
+    ]
   },
   "jz_土匪围栏破001_001_hd.glb": {
     "albedo": "WJ_qdh土匪围栏破001_01H.png",
@@ -2895,16 +2880,12 @@
       {
         "albedo": "th_mj祈盛台001_01h.png",
         "mre": "th_mj祈盛台001_01h_mre.png",
-        "normal": "th_mj祈盛台001_01h_nor.png",
-        "blendMode": 1,
-        "alphaRef": 90
+        "normal": "th_mj祈盛台001_01h_nor.png"
       },
       {
         "albedo": "wj_mj主殿001_02h.png",
         "mre": "wj_mj主殿001_02h_mre.png",
-        "normal": "wj_mj主殿001_02h_nor.png",
-        "blendMode": 1,
-        "alphaRef": 86
+        "normal": "wj_mj主殿001_02h_nor.png"
       },
       {
         "albedo": "wj_mj主殿001_01h.png",
@@ -2916,8 +2897,7 @@
         "mre": "dz_mj中型民居001_01h_mre.png",
         "normal": "dz_mj中型民居001_01h_nor.png"
       }
-    ],
-    "blendMode": 1
+    ]
   },
   "pj_mj石柱火盆001_001_hd.glb": {
     "albedo": "wj_mj石柱火盆001_01h.png",
@@ -2954,8 +2934,7 @@
   "pj_mj石门001_01_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
     "mre": "st_mj戈壁碎石_01h_b_mre.png",
-    "normal": "st_mj戈壁碎石_01h_b_nor.png",
-    "blendMode": 1
+    "normal": "st_mj戈壁碎石_01h_b_nor.png"
   },
   "pj_mvp围墙001_002_hd.glb": {
     "albedo": "q_js加沙城垛001_02h.png",
@@ -3250,8 +3229,7 @@
       {
         "albedo": "q_mj中型民居001_06h.png",
         "mre": "q_mj中型民居001_06h_mre.png",
-        "normal": "q_mj中型民居001_06h_nor.png",
-        "blendMode": 1
+        "normal": "q_mj中型民居001_06h_nor.png"
       },
       {
         "albedo": "q_mj中型民居001_07h.png",
@@ -3263,8 +3241,7 @@
         "mre": "db_mj中型民居001_01h_mre.png",
         "normal": "db_mj中型民居001_01h_nor.png"
       }
-    ],
-    "blendMode": 1
+    ]
   },
   "pj_帐篷001_002_hd.glb": {
     "albedo": "wj_cy帐篷001_01h.png",
@@ -3275,8 +3252,7 @@
   "pj_玉门关001a_hd.glb": {
     "albedo": "wj_mj玉门关001_01h.png",
     "mre": "wj_mj玉门关001_01h_mre.png",
-    "normal": "wj_mj玉门关001_01h_nor.png",
-    "blendMode": 1
+    "normal": "wj_mj玉门关001_01h_nor.png"
   },
   "pj_玉门关旗001a_hd.glb": {
     "albedo": "wj_mj玉门关旗001a_01h.png",
@@ -3359,24 +3335,19 @@
       {
         "albedo": "wj_cj驿站马厩001_01h.png",
         "mre": "wj_cj驿站马厩001_01h_mre.png",
-        "normal": "wj_cj驿站马厩001_01h_nor.png",
-        "blendMode": 1,
-        "alphaRef": 60
+        "normal": "wj_cj驿站马厩001_01h_nor.png"
       },
       {
         "albedo": "wj_cj驿站马厩001_03h.png",
         "mre": "wj_cj驿站马厩001_03h_mre.png",
-        "normal": "wj_cj驿站马厩001_03h_nor.png",
-        "blendMode": 1,
-        "alphaRef": 100
+        "normal": "wj_cj驿站马厩001_03h_nor.png"
       },
       {
         "albedo": "wj_cj驿站马厩001_02h.png",
         "mre": "wj_cj驿站马厩001_02h_mre.png",
         "normal": "wj_cj驿站马厩001_02h_nor.png"
       }
-    ],
-    "blendMode": 1
+    ]
   },
   "pj_黄布棚001_001_hd.glb": {
     "albedo": "wj_sl黄布棚001_01h.png",
@@ -3588,18 +3559,14 @@
       {
         "albedo": "gm_mj三生树001_01h.png",
         "mre": "gm_mj三生树001_01h_mre.png",
-        "normal": "gm_mj三生树001_01h_nor.png",
-        "alphaRef": 0
+        "normal": "gm_mj三生树001_01h_nor.png"
       },
       {
         "albedo": "gm_mj三生树001_02h.png",
         "mre": "gm_mj三生树001_02h_mre.png",
-        "normal": "gm_mj三生树001_02h_nor.png",
-        "blendMode": 1,
-        "alphaRef": 160
+        "normal": "gm_mj三生树001_02h_nor.png"
       }
-    ],
-    "blendMode": 1
+    ]
   },
   "s_mj树001_001_hd.glb": {
     "albedo": "gm_mj树001_01h.png",
@@ -3629,86 +3596,62 @@
   "s_mj树002_002_hd.glb": {
     "albedo": "gm_mj树001_01h.png",
     "mre": "gm_mj树001_01h_mre.png",
-    "normal": "gm_mj树001_01h_nor.png",
     "subsets": [
       {
         "albedo": "gm_mj树001_01h.png",
-        "mre": "gm_mj树001_01h_mre.png",
-        "normal": "gm_mj树001_01h_nor.png",
-        "alphaRef": 0
+        "mre": "gm_mj树001_01h_mre.png"
       },
       {
         "albedo": "gm_mj树001_02h.png",
         "mre": "gm_mj树001_02h_mre.png",
-        "normal": "gm_mj树001_02h_nor.png",
-        "blendMode": 1,
-        "alphaRef": 60
+        "normal": "gm_mj树001_02h_nor.png"
       }
-    ],
-    "blendMode": 1
+    ]
   },
   "s_mj树002_004_hd.glb": {
     "albedo": "gm_mj树001_01h.png",
     "mre": "gm_mj树001_01h_mre.png",
-    "normal": "gm_mj树001_01h_nor.png",
     "subsets": [
       {
         "albedo": "gm_mj树001_01h.png",
-        "mre": "gm_mj树001_01h_mre.png",
-        "normal": "gm_mj树001_01h_nor.png",
-        "alphaRef": 0
+        "mre": "gm_mj树001_01h_mre.png"
       },
       {
         "albedo": "gm_mj树001_02h.png",
         "mre": "gm_mj树001_02h_mre.png",
-        "normal": "gm_mj树001_02h_nor.png",
-        "blendMode": 1,
-        "alphaRef": 60
+        "normal": "gm_mj树001_02h_nor.png"
       }
-    ],
-    "blendMode": 1
+    ]
   },
   "s_mj树002_005_hd.glb": {
     "albedo": "gm_mj树001_01h.png",
     "mre": "gm_mj树001_01h_mre.png",
-    "normal": "gm_mj树001_01h_nor.png",
     "subsets": [
       {
         "albedo": "gm_mj树001_01h.png",
-        "mre": "gm_mj树001_01h_mre.png",
-        "normal": "gm_mj树001_01h_nor.png",
-        "alphaRef": 0
+        "mre": "gm_mj树001_01h_mre.png"
       },
       {
         "albedo": "gm_mj树001_02h.png",
         "mre": "gm_mj树001_02h_mre.png",
-        "normal": "gm_mj树001_02h_nor.png",
-        "blendMode": 1,
-        "alphaRef": 60
+        "normal": "gm_mj树001_02h_nor.png"
       }
-    ],
-    "blendMode": 1
+    ]
   },
   "s_mj树002_006_hd.glb": {
     "albedo": "gm_mj树001_01h.png",
     "mre": "gm_mj树001_01h_mre.png",
-    "normal": "gm_mj树001_01h_nor.png",
     "subsets": [
       {
         "albedo": "gm_mj树001_01h.png",
-        "mre": "gm_mj树001_01h_mre.png",
-        "normal": "gm_mj树001_01h_nor.png",
-        "alphaRef": 0
+        "mre": "gm_mj树001_01h_mre.png"
       },
       {
         "albedo": "gm_mj树001_02h.png",
         "mre": "gm_mj树001_02h_mre.png",
-        "normal": "gm_mj树001_02h_nor.png",
-        "blendMode": 1,
-        "alphaRef": 60
+        "normal": "gm_mj树001_02h_nor.png"
       }
-    ],
-    "blendMode": 1
+    ]
   },
   "s_tql黄叶树001_001_hd.glb": {
     "albedo": "s_cgm松树002h.png",
@@ -3718,19 +3661,14 @@
       {
         "albedo": "s_cgm松树002h.png",
         "mre": "s_cgm松树002h_mre.png",
-        "normal": "s_cgm松树002h_nor.png",
-        "blendMode": 1,
-        "alphaRef": 126
+        "normal": "s_cgm松树002h_nor.png"
       },
       {
         "albedo": "gm_西南树001_03h.png",
         "mre": "gm_西南树001_03h_mre.png",
-        "normal": "gm_西南树001_03h_nor.png",
-        "blendMode": 1,
-        "alphaRef": 79
+        "normal": "gm_西南树001_03h_nor.png"
       }
-    ],
-    "blendMode": 1
+    ]
   },
   "s_西北枯树001_001_hd.glb": {
     "albedo": "gm_西北枯树001_01h.png",
@@ -3826,24 +3764,19 @@
       {
         "albedo": "st_mj戈壁碎石_01h_b.png",
         "mre": "st_mj戈壁碎石_01h_b_mre.png",
-        "normal": "st_mj戈壁碎石_01h_b_nor.png",
-        "blendMode": 1,
-        "alphaRef": 0
+        "normal": "st_mj戈壁碎石_01h_b_nor.png"
       },
       {
         "albedo": "st_mj光明顶道路001_01h.png",
         "mre": "st_mj光明顶道路001_01h_mre.png",
-        "normal": "st_mj光明顶道路001_01h_nor.png",
-        "alphaRef": 0
+        "normal": "st_mj光明顶道路001_01h_nor.png"
       },
       {
         "albedo": "st_mj戈壁碎石_01h_b.png",
         "mre": "st_mj戈壁碎石_01h_b_mre.png",
-        "normal": "st_mj戈壁碎石_01h_b_nor.png",
-        "blendMode": 1
+        "normal": "st_mj戈壁碎石_01h_b_nor.png"
       }
-    ],
-    "blendMode": 1
+    ]
   },
   "st_mj光明顶001_002_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
@@ -3853,17 +3786,14 @@
       {
         "albedo": "st_mj戈壁碎石_01h_b.png",
         "mre": "st_mj戈壁碎石_01h_b_mre.png",
-        "normal": "st_mj戈壁碎石_01h_b_nor.png",
-        "blendMode": 1,
-        "alphaRef": 0
+        "normal": "st_mj戈壁碎石_01h_b_nor.png"
       },
       {
         "albedo": "st_mj光明顶道路001_01h.png",
         "mre": "st_mj光明顶道路001_01h_mre.png",
         "normal": "st_mj光明顶道路001_01h_nor.png"
       }
-    ],
-    "blendMode": 1
+    ]
   },
   "st_mj光明顶001_003_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
@@ -3956,8 +3886,7 @@
   "st_mj光明顶001_005_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
     "mre": "st_mj戈壁碎石_01h_b_mre.png",
-    "normal": "st_mj戈壁碎石_01h_b_nor.png",
-    "blendMode": 1
+    "normal": "st_mj戈壁碎石_01h_b_nor.png"
   },
   "st_mj光明顶001_006_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
@@ -3986,8 +3915,7 @@
   "st_mj底层石头001_004_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
     "mre": "st_mj戈壁碎石_01h_b_mre.png",
-    "normal": "st_mj戈壁碎石_01h_b_nor.png",
-    "blendMode": 1
+    "normal": "st_mj戈壁碎石_01h_b_nor.png"
   },
   "st_mj戈壁碎石001_001_hd.glb": {
     "albedo": "st_mj戈壁碎石001_01h.png",
@@ -4030,32 +3958,27 @@
   "st_mj戈壁碎石003_001_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
     "mre": "st_mj戈壁碎石_01h_b_mre.png",
-    "normal": "st_mj戈壁碎石_01h_b_nor.png",
-    "blendMode": 1
+    "normal": "st_mj戈壁碎石_01h_b_nor.png"
   },
   "st_mj戈壁碎石003_002_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
     "mre": "st_mj戈壁碎石_01h_b_mre.png",
-    "normal": "st_mj戈壁碎石_01h_b_nor.png",
-    "blendMode": 1
+    "normal": "st_mj戈壁碎石_01h_b_nor.png"
   },
   "st_mj戈壁碎石003_003_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
     "mre": "st_mj戈壁碎石_01h_b_mre.png",
-    "normal": "st_mj戈壁碎石_01h_b_nor.png",
-    "blendMode": 1
+    "normal": "st_mj戈壁碎石_01h_b_nor.png"
   },
   "st_mj戈壁碎石003_004_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
     "mre": "st_mj戈壁碎石_01h_b_mre.png",
-    "normal": "st_mj戈壁碎石_01h_b_nor.png",
-    "blendMode": 1
+    "normal": "st_mj戈壁碎石_01h_b_nor.png"
   },
   "st_mj戈壁碎石003_005_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
     "mre": "st_mj戈壁碎石_01h_b_mre.png",
-    "normal": "st_mj戈壁碎石_01h_b_nor.png",
-    "blendMode": 1
+    "normal": "st_mj戈壁碎石_01h_b_nor.png"
   },
   "st_mj登陆界面石头001_hd.glb": {
     "albedo": "st_mj登陆界面石头001_01h.png",
@@ -4065,8 +3988,7 @@
   "st_mj石头002_001_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
     "mre": "st_mj戈壁碎石_01h_b_mre.png",
-    "normal": "st_mj戈壁碎石_01h_b_nor.png",
-    "blendMode": 1
+    "normal": "st_mj戈壁碎石_01h_b_nor.png"
   },
   "st_mj石头002_002_hd.glb": {
     "albedo": "st_mj戈壁碎石_01h_b.png",
@@ -4145,30 +4067,24 @@
       {
         "albedo": "st_mj石桥001_01h.png",
         "mre": "st_mj石桥001_01h_mre.png",
-        "normal": "st_mj石桥001_01h_nor.png",
-        "alphaRef": 0
+        "normal": "st_mj石桥001_01h_nor.png"
       },
       {
         "albedo": "st_mj石桥001_02h.png",
         "mre": "st_mj石桥001_02h_mre.png",
-        "normal": "st_mj石桥001_02h_nor.png",
-        "alphaRef": 0
+        "normal": "st_mj石桥001_02h_nor.png"
       },
       {
         "albedo": "st_mj石桥001_03h.png",
         "mre": "st_mj石桥001_03h_mre.png",
-        "normal": "st_mj石桥001_03h_nor.png",
-        "alphaRef": 0
+        "normal": "st_mj石桥001_03h_nor.png"
       },
       {
         "albedo": "st_mj戈壁碎石_01h_b.png",
         "mre": "st_mj戈壁碎石_01h_b_mre.png",
-        "normal": "st_mj戈壁碎石_01h_b_nor.png",
-        "blendMode": 1,
-        "alphaRef": 0
+        "normal": "st_mj戈壁碎石_01h_b_nor.png"
       }
-    ],
-    "blendMode": 1
+    ]
   },
   "st_rubble001_003_hd.glb": {
     "albedo": "st_rubble001_01h.png",
@@ -5118,8 +5034,7 @@
   "wj_mj旗帜003_hd.glb": {
     "albedo": "wj_mj旗帜003_01h.png",
     "mre": "wj_mj旗帜003_01h_mre.png",
-    "normal": "wj_mj旗帜003_01h_nor.png",
-    "blendMode": 1
+    "normal": "wj_mj旗帜003_01h_nor.png"
   },
   "wj_mj民居窗002_hd.glb": {
     "albedo": "wa_mj中型民居001_01h.png",
@@ -5188,20 +5103,17 @@
   "wj_mj破碎宝物001_001_hd.glb": {
     "albedo": "wj_mj破碎宝物001_01h.png",
     "mre": "wj_mj破碎宝物001_01h_mre.png",
-    "normal": "wj_mj破碎宝物001_01h_nor.png",
-    "blendMode": 1
+    "normal": "wj_mj破碎宝物001_01h_nor.png"
   },
   "wj_mj破碎宝物001_002_hd.glb": {
     "albedo": "wj_mj破碎宝物001_01h.png",
     "mre": "wj_mj破碎宝物001_01h_mre.png",
-    "normal": "wj_mj破碎宝物001_01h_nor.png",
-    "blendMode": 1
+    "normal": "wj_mj破碎宝物001_01h_nor.png"
   },
   "wj_mj破碎宝物001_003_hd.glb": {
     "albedo": "wj_mj破碎宝物001_01h.png",
     "mre": "wj_mj破碎宝物001_01h_mre.png",
-    "normal": "wj_mj破碎宝物001_01h_nor.png",
-    "blendMode": 1
+    "normal": "wj_mj破碎宝物001_01h_nor.png"
   },
   "wj_mj篝火001_001_hd.glb": {
     "albedo": "wj_mj篝火001_01h.png",
@@ -5221,8 +5133,7 @@
   "wj_mj货摊001_001_hd.glb": {
     "albedo": "wj_mj布匹摊001_01h.png",
     "mre": "wj_mj布匹摊001_01h_mre.png",
-    "normal": "wj_mj布匹摊001_01h_nor.png",
-    "blendMode": 1
+    "normal": "wj_mj布匹摊001_01h_nor.png"
   },
   "wj_mj货摊001_002_hd.glb": {
     "albedo": "wj_mj布匹摊001_01h.png",
@@ -5233,8 +5144,7 @@
   "wj_mj货摊001_003_hd.glb": {
     "albedo": "wj_mj布匹摊001_01h.png",
     "mre": "wj_mj布匹摊001_01h_mre.png",
-    "normal": "wj_mj布匹摊001_01h_nor.png",
-    "blendMode": 1
+    "normal": "wj_mj布匹摊001_01h_nor.png"
   },
   "wj_mj路灯001_hd.glb": {
     "albedo": "wj_mj路灯001_01h.png",
@@ -5481,16 +5391,14 @@
       {
         "albedo": "wj_sn茅草房001_02h.png",
         "mre": "wj_sn茅草房001_02h_mre.png",
-        "normal": "wj_sn茅草房001_02h_nor.png",
-        "blendMode": 1
+        "normal": "wj_sn茅草房001_02h_nor.png"
       },
       {
         "albedo": "wj_sn茅草房001_03h.png",
         "mre": "wj_sn茅草房001_03h_mre.png",
         "normal": "wj_sn茅草房001_03h_nor.png"
       }
-    ],
-    "blendMode": 1
+    ]
   },
   "wj_sn茅草房001_012_hd.glb": {
     "albedo": "wj_sn茅草房001_03h.png",
@@ -5505,9 +5413,7 @@
       {
         "albedo": "wj_sn茅草房001_02h.png",
         "mre": "wj_sn茅草房001_02h_mre.png",
-        "normal": "wj_sn茅草房001_02h_nor.png",
-        "blendMode": 1,
-        "alphaRef": 86
+        "normal": "wj_sn茅草房001_02h_nor.png"
       },
       {
         "albedo": "wj_cj晒鱼架001_01h.png",
@@ -5519,8 +5425,7 @@
         "mre": "wj_xn普通小灶台001_01h_mre.png",
         "normal": "wj_xn普通小灶台001_01h_nor.png"
       }
-    ],
-    "blendMode": 1
+    ]
   },
   "wj_s书画缸001_hd.glb": {
     "albedo": "wj_cj书画缸001_01h.png",
@@ -5637,17 +5542,14 @@
       {
         "albedo": "wj_cyy书籍001_01h.png",
         "mre": "wj_cyy书籍001_01h_mre.png",
-        "normal": "wj_cyy书籍001_01h_nor.png",
-        "blendMode": 1,
-        "alphaRef": 104
+        "normal": "wj_cyy书籍001_01h_nor.png"
       },
       {
         "albedo": "wj_qx杂货001_01h.png",
         "mre": "wj_qx杂货001_01h_mre.png",
         "normal": "wj_qx杂货001_01h_nor.png"
       }
-    ],
-    "blendMode": 1
+    ]
   },
   "wj_功夫茶001_001_hd.glb": {
     "albedo": "wj_sl功夫茶001_01h.png",
@@ -6159,18 +6061,7 @@
   "wj_水缸005_001_hd.glb": {
     "albedo": "wj_cy水缸003_01h.png",
     "mre": "wj_cy水缸003_01h_mre.png",
-    "normal": "wj_cy水缸003_01h_nor.png",
-    "subsets": [
-      {
-        "albedo": "wj_cy水缸003_01h.png",
-        "mre": "wj_cy水缸003_01h_mre.png",
-        "normal": "wj_cy水缸003_01h_nor.png"
-      },
-      {
-        "blendMode": 2
-      }
-    ],
-    "blendMode": 2
+    "normal": "wj_cy水缸003_01h_nor.png"
   },
   "wj_沙包009_01_hd.glb": {
     "albedo": "wj_cy沙包009_01h.png",
@@ -6601,11 +6492,9 @@
       {
         "albedo": "wj_hgb农家物件009_01h.png",
         "mre": "wj_hgb农家物件009_01h_mre.png",
-        "normal": "wj_hgb农家物件009_01h_nor.png",
-        "blendMode": 1
+        "normal": "wj_hgb农家物件009_01h_nor.png"
       }
-    ],
-    "blendMode": 1
+    ]
   },
   "wj_通用坛罐001_001_hd.glb": {
     "albedo": "wj_bd通用坛罐001_01h.png",
@@ -6645,8 +6534,7 @@
   "wj_酒牌001_hd.glb": {
     "albedo": "wj_erg招牌系列001_01h.png",
     "mre": "wj_erg招牌系列001_01h_mre.png",
-    "normal": "wj_erg招牌系列001_01h_nor.png",
-    "blendMode": 1
+    "normal": "wj_erg招牌系列001_01h_nor.png"
   },
   "wj_锄头001_004_hd.glb": {
     "albedo": "wj_sl锄头001_01h.png",
@@ -6821,12 +6709,9 @@
       {
         "albedo": "wj_hgb农家物件009_01h.png",
         "mre": "wj_hgb农家物件009_01h_mre.png",
-        "normal": "wj_hgb农家物件009_01h_nor.png",
-        "blendMode": 1,
-        "alphaRef": 53
+        "normal": "wj_hgb农家物件009_01h_nor.png"
       }
-    ],
-    "blendMode": 1
+    ]
   },
   "xwj_农家物件003_002_hd.glb": {
     "albedo": "wj_sl农家物件003_01h.png",
