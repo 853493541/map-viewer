@@ -4,8 +4,8 @@
 // initial frame looks correct.
 //
 // Strategy:
-//   1. Open pss.html, wait for "scene ready".
-//   2. Snapshot at t=0, 500ms, 2000ms, 5000ms via __pssTimelineSeek().
+//   1. Open pss.html on a deterministic PSS file and wait for runtime state.
+//   2. Snapshot at t=0, 500ms, 2000ms, 5000ms, 8500ms via __pssTimelineSeek().
 //   3. Assert at least one of: (a) some emitter became visible/invisible
 //      between consecutive snapshots, OR (b) some emitter world-position
 //      changed by > 0.001 between snapshots — i.e. SOMETHING moved.
@@ -14,7 +14,8 @@
 
 import { test, expect } from '@playwright/test';
 
-const SAMPLE_TIMES_MS = [0, 500, 2000, 5000];
+const TARGET_SOURCE_PATH = 'data/source/other/HD特效/技能/Pss/发招/T_天策龙牙.pss';
+const SAMPLE_TIMES_MS = [0, 500, 2000, 5000, 8500];
 
 function diffSnapshots(a, b) {
   const diffs = { visibilityChanges: 0, positionChanges: 0, sample: [] };
@@ -40,10 +41,13 @@ function diffSnapshots(a, b) {
 test.describe('pss.html timeline evolution', () => {
   test('scene state evolves as the timeline advances', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1600, height: 900 });
-    await page.goto('/pss.html', { waitUntil: 'domcontentloaded' });
-    await expect(
-      page.locator('#pss-log-panel .pss-log-row', { hasText: /scene ready/ }).first()
-    ).toBeVisible({ timeout: 30_000 });
+    await page.goto(`/pss.html?pss=${encodeURIComponent(TARGET_SOURCE_PATH)}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction((expectedPath) => {
+      const snap = window.__pssRuntimeSnapshot && window.__pssRuntimeSnapshot();
+      if (!snap?.renderModel) return false;
+      const all = [...snap.sprites, ...snap.meshes, ...snap.tracks];
+      return all.length > 0 && all.every((e) => e.sourcePath === expectedPath);
+    }, TARGET_SOURCE_PATH, { timeout: 30_000 });
     await page.waitForTimeout(300);
 
     expect(await page.evaluate(() => typeof window.__pssTimelineSeek === 'function'),
@@ -90,6 +94,10 @@ test.describe('pss.html timeline evolution', () => {
     // failure mode we want this test to catch.
     const totalChanges = diffs.reduce((acc, d) => acc + d.visibilityChanges + d.positionChanges, 0);
     expect(totalChanges, `scene appears frozen — no visibility or position changes across t=${SAMPLE_TIMES_MS.join('ms,')}ms`).toBeGreaterThan(0);
+
+    const afterWindow = snapshots[snapshots.length - 1];
+    expect(afterWindow.visibleCount,
+      'emitters should be gated off after the authored PSS effect window').toBeLessThan(afterWindow.totalEmitters);
 
     // Soft hint: if every emitter is visible at t=0 AND at t=500ms with
     // identical positions, the user's "they appear together" hypothesis

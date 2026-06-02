@@ -231,26 +231,43 @@ const MODULE_NAME_BYTES = (() => {
   return out;
 })();
 
-// Spawn-launcher SHAPE enum recovered by RTTI walk of
-// kg3denginedx11ex64.dll. Each KG3D_Launcher{Shape}::GetShape virtual
-// (vtable slot 11 in module-launcher classes) returns the file's
-// spawnLauncherTypeId byte as a constant. See tools/diag-rtti-launcher.py.
-// Empirically validated: across 22 cached PSS files, only values {1,2,3}
-// appear (Sphere=40, Cirque=22, Rectangle=1) — exactly the shape enum
-// range, not PARSYS_LAUNCHER_TYPE (which would have included 0 for the
-// dominant ParticleLauncher case).
-const PSS_SPAWN_SHAPE_TYPE_MAP = Object.freeze({
+// Launcher module/type enum recovered by RTTI walk of kg3denginedx11ex64.dll.
+// Each KG3D_Launcher* vtable slot 11 returns the PSS trailer's launcherTypeId
+// (stored in the blockEnd-152 layerToken slot) as a constant. Shape launchers
+// are spawn volumes; non-shape launchers such as KG3D_LauncherScale can also
+// appear in this same slot in newer/effect-editor-authored sprite blocks.
+const PSS_LAUNCHER_TYPE_MAP = Object.freeze({
   0: { className: 'KG3D_LauncherPoint',           label: '点',       geometry: 'point (no volume)' },
   1: { className: 'KG3D_LauncherRectangle',       label: '矩形',     geometry: 'box volume (fBoxX/Y/Z)' },
   2: { className: 'KG3D_LauncherCirque',          label: '圆环',     geometry: 'ring/annulus volume' },
   3: { className: 'KG3D_LauncherSphere',          label: '球体',     geometry: 'sphere volume' },
   4: { className: 'KG3D_LauncherCylinder',        label: '圆柱',     geometry: 'cylinder volume' },
+  7: { className: 'KG3D_LauncherScale',           label: '缩放',     geometry: 'scale module token (not a spawn volume)' },
   37: { className: 'KG3D_LauncherPolygon',        label: '多边形',   geometry: 'polygon footprint' },
   39: { className: 'KG3D_LauncherCustom',         label: '自定义',   geometry: 'custom mesh' },
   42: { className: 'KG3D_LauncherDynamicTriangle',label: '动态三角形', geometry: 'dynamic triangle' },
   48: { className: 'KG3D_LauncherCurlNoise',      label: '卷曲噪声', geometry: 'curl-noise field' },
   67: { className: 'KG3D_LauncherMapDefine',      label: '地图定义', geometry: 'map-defined region' },
 });
+const PSS_LAUNCHER_TYPE_VALUES = Object.keys(PSS_LAUNCHER_TYPE_MAP).join(', ');
+function resolvePssLauncherType(typeId) {
+  if (typeId == null) return null;
+  const info = PSS_LAUNCHER_TYPE_MAP[typeId] || null;
+  if (!info) {
+    return {
+      typeId,
+      className: null,
+      label: null,
+      geometry: null,
+      hint: `unknown launcherTypeId=${typeId} (not in RTTI-recovered launcher enum {${PSS_LAUNCHER_TYPE_VALUES}})`,
+    };
+  }
+  return {
+    typeId,
+    ...info,
+    hint: `${info.className} (${info.label} — ${info.geometry})`,
+  };
+}
 const MOVIE_EDITOR_TABLE_CACHE = new Map();
 const PLAYER_ANIM_CACHE = new Map();
 let JX3_CACHE_READER = null;
@@ -286,6 +303,22 @@ const MIME_TYPES = {
 
 function ensureDir(dirPath) {
   mkdirSync(dirPath, { recursive: true });
+}
+
+function writePakV4Pathlist(outputDir, logicalPaths, prefix = '_pathlist') {
+  ensureDir(outputDir);
+  const suffix = `${process.pid}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  const pathlistFile = join(outputDir, `${prefix}_${suffix}.txt`);
+  const lines = (Array.isArray(logicalPaths) ? logicalPaths : [logicalPaths])
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .join('\r\n') + '\r\n';
+  writeFileSync(pathlistFile, iconv.encode(lines, 'gb18030'));
+  return pathlistFile;
+}
+
+function removeFileQuiet(filePath) {
+  try { if (filePath && existsSync(filePath)) unlinkSync(filePath); } catch { /* ignore cleanup failures */ }
 }
 
 function normalizeExePath(rawPath) {
@@ -1047,53 +1080,80 @@ function closeCdnBrowseMapStream(stream) {
 async function buildCdnBrowseMap(indexFile) {
   ensureDir(CDN_BROWSE_MAP_DIR);
   console.log(`[cdn-browse-map] building persistent folder map from ${CDN_RESOURCE_INDEX_PATH}`);
-  const fileStreams = Array.from({ length: CDN_BROWSE_MAP_BUCKET_COUNT }, (_, bucketIndex) => createWriteStream(getCdnBrowseMapBucketPath('files', bucketIndex), { encoding: 'utf8', flags: 'w' }));
-  const folderChildren = new Map();
+  const BUCKET_COUNT = CDN_BROWSE_MAP_BUCKET_COUNT;
+  const fileStreams = Array.from({ length: BUCKET_COUNT }, (_, i) => createWriteStream(getCdnBrowseMapBucketPath('files', i), { encoding: 'utf8', flags: 'w' }));
+  const childRawStreams = Array.from({ length: BUCKET_COUNT }, (_, i) => createWriteStream(getCdnBrowseMapBucketPath('raw-children', i), { encoding: 'utf8', flags: 'w' }));
+
   const input = createReadStream(CDN_RESOURCE_INDEX_PATH, { encoding: 'utf8' });
   const reader = readline.createInterface({ input, crlfDelay: Infinity });
   try {
     for await (const line of reader) {
       const row = parseCdnIndexRow(line);
       if (!row) continue;
-      await appendCdnBrowseMapLine(fileStreams[getCdnBrowseMapBucketIndex(row.folder || '')], row);
+      const folder = row.folder || '';
+      const fileBucket = getCdnBrowseMapBucketIndex(folder);
+      await appendCdnBrowseMapLine(fileStreams[fileBucket], row);
 
       const segments = row.path.split('/');
       let parent = '';
-      for (let index = 0; index < segments.length - 1; index += 1) {
-        const name = segments[index];
+      for (let i = 0; i < segments.length - 1; i += 1) {
+        const name = segments[i];
         const childPath = parent ? `${parent}/${name}` : name;
-        let children = folderChildren.get(parent);
-        if (!children) {
-          children = new Map();
-          folderChildren.set(parent, children);
-        }
-        const current = children.get(childPath) || { name, path: childPath, fileCount: 0 };
-        current.fileCount += 1;
-        children.set(childPath, current);
+        const childBucket = getCdnBrowseMapBucketIndex(parent);
+        await appendCdnBrowseMapLine(childRawStreams[childBucket], { parent, name, path: childPath, fileCount: 1 });
         parent = childPath;
       }
     }
   } finally {
     reader.close();
     input.destroy();
-    await Promise.all(fileStreams.map((stream) => closeCdnBrowseMapStream(stream)));
+    await Promise.all([...fileStreams, ...childRawStreams].map((s) => closeCdnBrowseMapStream(s)));
   }
 
-  const childStreams = Array.from({ length: CDN_BROWSE_MAP_BUCKET_COUNT }, (_, bucketIndex) => createWriteStream(getCdnBrowseMapBucketPath('children', bucketIndex), { encoding: 'utf8', flags: 'w' }));
+  console.log('[cdn-browse-map] aggregating folder children...');
+  const childStreams = Array.from({ length: BUCKET_COUNT }, (_, i) => createWriteStream(getCdnBrowseMapBucketPath('children', i), { encoding: 'utf8', flags: 'w' }));
   try {
-    for (const [parent, children] of folderChildren) {
-      const bucketIndex = getCdnBrowseMapBucketIndex(parent);
-      for (const child of children.values()) {
-        await appendCdnBrowseMapLine(childStreams[bucketIndex], { parent, ...child });
+    for (let bucket = 0; bucket < BUCKET_COUNT; bucket += 1) {
+      const rawPath = getCdnBrowseMapBucketPath('raw-children', bucket);
+      if (!existsSync(rawPath) || statSync(rawPath).size === 0) continue;
+      const rawInput = createReadStream(rawPath, { encoding: 'utf8' });
+      const rawReader = readline.createInterface({ input: rawInput, crlfDelay: Infinity });
+      const grouped = new Map();
+      for await (const rawLine of rawReader) {
+        if (!rawLine.trim()) continue;
+        try {
+          const entry = JSON.parse(rawLine);
+          const key = `${entry.parent}\x00${entry.path}`;
+          const existing = grouped.get(key);
+          if (existing) {
+            existing.fileCount += entry.fileCount;
+          } else {
+            grouped.set(key, { name: entry.name, path: entry.path, parent: entry.parent, fileCount: entry.fileCount });
+          }
+        } catch { /* skip malformed */ }
       }
+      rawReader.close();
+      rawInput.destroy();
+
+      const entries = Array.from(grouped.values());
+      entries.sort((a, b) => {
+        const pa = a.parent || '';
+        const pb = b.parent || '';
+        if (pa !== pb) return pa.localeCompare(pb, undefined, { sensitivity: 'base' });
+        return (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
+      });
+      for (const entry of entries) {
+        await appendCdnBrowseMapLine(childStreams[bucket], entry);
+      }
+      try { unlinkSync(rawPath); } catch { /* cleanup */ }
     }
   } finally {
-    await Promise.all(childStreams.map((stream) => closeCdnBrowseMapStream(stream)));
+    await Promise.all(childStreams.map((s) => closeCdnBrowseMapStream(s)));
   }
 
   writeFileSync(CDN_BROWSE_MAP_META_PATH, JSON.stringify({
     version: 1,
-    bucketCount: CDN_BROWSE_MAP_BUCKET_COUNT,
+    bucketCount: BUCKET_COUNT,
     source: {
       path: CDN_RESOURCE_INDEX_PATH,
       size: indexFile?.size || 0,
@@ -2086,18 +2146,34 @@ let clientMonitorBridgeChild = null;
 let clientMonitorBridgeJob = null;
 const clientMonitorStdoutTail = [];
 const clientMonitorStderrTail = [];
-const CLIENT_MONITOR_STATUS_CACHE_MS = 1000;
-const CLIENT_MONITOR_RECORD_OVERFETCH = 8;
-const CLIENT_MONITOR_RECORD_MAX_TAIL_LINES = 40000;
+const CLIENT_MONITOR_STATUS_CACHE_MS = 3000;
+const CLIENT_MONITOR_SNAPSHOT_RECORD_LIMIT = 1200;
+const CLIENT_MONITOR_RECORD_OVERFETCH = 2;
+const CLIENT_MONITOR_RECORD_MAX_TAIL_LINES = 2400;
+const CLIENT_MONITOR_PSS_METHOD_RECORD_LIMIT = 500;
+const CLIENT_MONITOR_TAIL_LINE_MAX = 2400;
+const CLIENT_MONITOR_ANIMATION_SKILL_GROUP_LIMIT = 24;
+const CLIENT_MONITOR_ANIMATION_GROUP_ASSET_LIMIT = 96;
+const CLIENT_MONITOR_ANIMATION_GROUP_PSS_LIMIT = 48;
+const CLIENT_MONITOR_ANIMATION_GROUP_PIPELINE_LIMIT = 32;
+const CLIENT_MONITOR_ANIMATION_ASSET_LIMIT = 80;
+const CLIENT_TRACER_RECORD_LIMIT = 2400;
+const CLIENT_TRACER_FILE_BYTE_LIMIT = 64 * 1024 * 1024;
 const CLIENT_MONITOR_IGNORED_LOG_TYPES = new Set(['wwise-register-gameobj']);
 let clientMonitorStatusCache = null;
+let clientMonitorProcessCache = { ts: 0, value: [] };
+let clientMonitorPrivilegeCache = { key: '', ts: 0, value: null };
+let clientMonitorExternalBridgeCache = { ts: 0, value: null };
 let clientMonitorCapturePausedAt = '';
 let clientMonitorCaptureResumeAt = '';
 let clientMonitorPausedCaptureSnapshot = null;
 let clientMonitorAnimSoundIndexCache = null;
 
 function pushClientMonitorTail(target, chunk) {
-  const lines = String(chunk || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const lines = String(chunk || '').split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.length > CLIENT_MONITOR_TAIL_LINE_MAX ? `${line.slice(0, CLIENT_MONITOR_TAIL_LINE_MAX)}...[truncated]` : line);
   target.push(...lines);
   while (target.length > 80) target.shift();
 }
@@ -2112,7 +2188,7 @@ function isPidAlive(pid) {
   }
 }
 
-function runClientMonitorPowerShell(command, timeout = 5000) {
+function runClientMonitorPowerShell(command, timeout = 2500) {
   if (process.platform !== 'win32') return '';
   try {
     return execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command], {
@@ -2135,28 +2211,111 @@ function parsePowerShellJsonArray(output) {
   }
 }
 
+function parsePowerShellJsonObject(output) {
+  if (!output) return null;
+  try {
+    const parsed = JSON.parse(output);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function getClientMonitorProcesses() {
+  const now = Date.now();
+  if (now - clientMonitorProcessCache.ts < 5000) return clientMonitorProcessCache.value;
   const names = CLIENT_MONITOR_PROCESS_NAMES.map((name) => `'${name.replace(/'/g, "''")}'`).join(',');
   const command = `$names=@(${names}); Get-CimInstance Win32_Process | Where-Object { $names -contains $_.Name } | Select-Object ProcessId,Name,ExecutablePath,CommandLine | ConvertTo-Json -Compress`;
-  return parsePowerShellJsonArray(runClientMonitorPowerShell(command)).map((proc) => ({
+  const processes = parsePowerShellJsonArray(runClientMonitorPowerShell(command)).map((proc) => ({
     pid: Number(proc.ProcessId || 0),
     name: String(proc.Name || ''),
     path: String(proc.ExecutablePath || ''),
     commandLine: String(proc.CommandLine || ''),
   })).filter((proc) => proc.pid && proc.name);
+  clientMonitorProcessCache = { ts: now, value: processes.length ? processes : clientMonitorProcessCache.value };
+  return clientMonitorProcessCache.value;
+}
+
+function getClientMonitorPrivilegeStatus(clientProcesses = []) {
+  const pids = clientProcesses.map((proc) => Number(proc.pid || 0)).filter(Boolean);
+  const cacheKey = pids.join(',');
+  const now = Date.now();
+  if (clientMonitorPrivilegeCache.key === cacheKey && clientMonitorPrivilegeCache.value && now - clientMonitorPrivilegeCache.ts < 15000) return clientMonitorPrivilegeCache.value;
+  const pidList = pids.length ? pids.join(',') : '';
+  const command = `
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class Jx3OpenProcessProbe {
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern IntPtr OpenProcess(UInt32 access, bool inherit, UInt32 pid);
+  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool CloseHandle(IntPtr handle);
+}
+'@;
+$identity=[Security.Principal.WindowsIdentity]::GetCurrent();
+$principal=New-Object Security.Principal.WindowsPrincipal($identity);
+$isAdmin=$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator);
+$targets=@();
+foreach($targetPid in @(${pidList})){
+  $limitedOpen=$false; $queryOpen=$false; $limitedError=''; $queryError='';
+  $limitedHandle=[Jx3OpenProcessProbe]::OpenProcess(0x1000, $false, [uint32]$targetPid);
+  if($limitedHandle -ne [IntPtr]::Zero){ $limitedOpen=$true; [void][Jx3OpenProcessProbe]::CloseHandle($limitedHandle); }
+  else { $limitedError='OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION) failed: ' + [Runtime.InteropServices.Marshal]::GetLastWin32Error(); }
+  $queryHandle=[Jx3OpenProcessProbe]::OpenProcess(0x0400, $false, [uint32]$targetPid);
+  if($queryHandle -ne [IntPtr]::Zero){ $queryOpen=$true; [void][Jx3OpenProcessProbe]::CloseHandle($queryHandle); }
+  else { $queryError='OpenProcess(PROCESS_QUERY_INFORMATION) failed: ' + [Runtime.InteropServices.Marshal]::GetLastWin32Error(); }
+  $targets += [pscustomobject]@{ pid=[int]$targetPid; canOpen=$limitedOpen; queryOpen=$queryOpen; error=$limitedError; queryError=$queryError };
+}
+[pscustomobject]@{ currentUser=$identity.Name; isAdmin=$isAdmin; targets=$targets } | ConvertTo-Json -Compress -Depth 5`;
+  const parsed = parsePowerShellJsonObject(runClientMonitorPowerShell(command, 3000));
+  if (!parsed) {
+    const fallback = { currentUser: '', isAdmin: null, targets: [], targetAccessOk: !pids.length, detail: 'privilege check unavailable' };
+    clientMonitorPrivilegeCache = { key: cacheKey, ts: now, value: fallback };
+    return fallback;
+  }
+  const targets = parsePowerShellJsonArray(JSON.stringify(parsed.targets || [])).map((target) => ({
+    pid: Number(target.pid || target.ProcessId || 0),
+    canOpen: !!target.canOpen,
+    queryOpen: !!target.queryOpen,
+    error: String(target.error || ''),
+    queryError: String(target.queryError || ''),
+  })).filter((target) => target.pid);
+  const blocked = targets.filter((target) => !target.canOpen);
+  const detail = !pids.length
+    ? 'no client target'
+    : blocked.length
+      ? `${blocked.map((target) => `pid ${target.pid}`).join(', ')} limited process query denied; bridge can still attempt Frida attach and report the real attach error`
+      : targets.some((target) => !target.queryOpen)
+        ? 'limited process query opens; stronger query access is denied but not required for bridge start'
+        : 'target process handle opens from current process';
+  const status = {
+    currentUser: String(parsed.currentUser || ''),
+    isAdmin: typeof parsed.isAdmin === 'boolean' ? parsed.isAdmin : null,
+    targets,
+    targetAccessOk: !blocked.length,
+    detail,
+  };
+  clientMonitorPrivilegeCache = { key: cacheKey, ts: now, value: status };
+  return status;
 }
 
 function getClientMonitorExternalBridge() {
+  const now = Date.now();
+  if (now - clientMonitorExternalBridgeCache.ts < 3000) return clientMonitorExternalBridgeCache.value;
   const command = "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*frida-attach.mjs*' -and $_.CommandLine -like '*frida-audio-agent.js*' } | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress";
   const rows = parsePowerShellJsonArray(runClientMonitorPowerShell(command));
   const row = rows.find((item) => Number(item.ProcessId || 0));
-  if (!row) return null;
-  return {
+  if (!row) {
+    clientMonitorExternalBridgeCache = { ts: now, value: null };
+    return null;
+  }
+  const bridge = {
     running: true,
     pid: Number(row.ProcessId),
     managed: false,
     commandLine: String(row.CommandLine || ''),
   };
+  clientMonitorExternalBridgeCache = { ts: now, value: bridge };
+  return bridge;
 }
 
 function getClientMonitorBridge() {
@@ -2206,7 +2365,186 @@ function getClientMonitorTimestamp(record) {
   return Number(record?.t || record?.ts || record?.time || 0) || 0;
 }
 
-function readClientMonitorRecords(limit = 600) {
+function normalizeClientMonitorStatusView(value) {
+  const view = String(value || 'full').toLowerCase();
+  return view === 'sound' || view === 'animation' ? view : 'full';
+}
+
+function normalizeClientMonitorStatusOptions(options = {}) {
+  const view = normalizeClientMonitorStatusView(typeof options === 'string' ? options : options.view);
+  return {
+    view,
+    includeAudio: true,
+    includeAnimation: view !== 'sound',
+    kg3dDisplayProofHooks: options.kg3dDisplayProofHooks === true,
+    confirmAttach: options.confirmAttach === true,
+  };
+}
+
+function clientMonitorBooleanParam(reqUrl, name) {
+  return /^(?:1|true|yes|on)$/i.test(String(reqUrl.searchParams.get(name) || ''));
+}
+
+function clientMonitorAttachEnabled() {
+  return !/^(?:0|false|no|off)$/i.test(String(process.env.JX3_CLIENT_MONITOR_ATTACH_ENABLED || '1'));
+}
+
+function clientMonitorAttachRequiresConfirmation() {
+  return !/^(?:1|true|yes|on)$/i.test(String(process.env.JX3_CLIENT_MONITOR_ATTACH_SKIP_CONFIRM || ''));
+}
+
+function clientMonitorStatusOptionsFromRequest(reqUrl) {
+  return normalizeClientMonitorStatusOptions({
+    view: reqUrl.searchParams.get('view'),
+    kg3dDisplayProofHooks: clientMonitorBooleanParam(reqUrl, 'kg3dDisplayProofHooks') || clientMonitorBooleanParam(reqUrl, 'displayProofHooks'),
+    confirmAttach: clientMonitorBooleanParam(reqUrl, 'confirmAttach'),
+  });
+}
+
+function clientMonitorAgentModeForOptions(options = {}) {
+  if (process.env.JX3_CLIENT_MONITOR_AGENT_MODE) return process.env.JX3_CLIENT_MONITOR_AGENT_MODE;
+  const statusOptions = normalizeClientMonitorStatusOptions(options);
+  return statusOptions.view === 'animation' ? 'trace' : 'audio-only';
+}
+
+function isClientMonitorStatusRecordType(type, options = {}) {
+  const statusOptions = normalizeClientMonitorStatusOptions(options);
+  return type === 'hooked' || type === 'agent-error' || type === 'error' ||
+    (statusOptions.includeAudio && CLIENT_MONITOR_AUDIO_TYPES.has(type)) ||
+    (statusOptions.includeAnimation && CLIENT_MONITOR_ANIMATION_TYPES.has(type));
+}
+
+function clientMonitorLogLineType(line) {
+  const match = String(line || '').match(/"type"\s*:\s*"([^"]+)"/);
+  return match ? match[1] : '';
+}
+
+function compactClientMonitorLogModule(module) {
+  if (!module || typeof module !== 'object') return null;
+  const compact = {};
+  for (const key of ['name', 'base', 'offset']) {
+    if (module[key] != null) compact[key] = String(module[key]).slice(0, 120);
+  }
+  if (module.size != null) compact.size = Number(module.size) || 0;
+  return Object.keys(compact).length ? compact : null;
+}
+
+function compactClientMonitorVtable(vtable) {
+  if (!vtable || typeof vtable !== 'object') return null;
+  const slots = Array.isArray(vtable.slots) ? vtable.slots.slice(0, 24).map((slot) => ({
+    slot: Number(slot.slot || 0),
+    address: String(slot.address || '').slice(0, 80),
+    symbol: String(slot.symbol || '').slice(0, 160),
+    module: compactClientMonitorLogModule(slot.module),
+    hookable: Boolean(slot.hookable),
+    skipReason: String(slot.skipReason || '').slice(0, 80),
+  })) : [];
+  return { vtable: String(vtable.vtable || '').slice(0, 80), slots };
+}
+
+function compactClientMonitorRuntimeArgs(args) {
+  if (!args || typeof args !== 'object') return null;
+  const compact = {};
+  if (Array.isArray(args.raw)) {
+    compact.raw = args.raw.map((value) => String(value || '').slice(0, 120)).filter(Boolean).slice(0, 8);
+  }
+  if (Array.isArray(args.stringCandidates)) {
+    compact.stringCandidates = args.stringCandidates.map((candidate) => {
+      const out = {
+        arg: Number(candidate?.arg || 0),
+        address: String(candidate?.address || '').slice(0, 80),
+      };
+      if (candidate?.ansi) out.ansi = String(candidate.ansi).slice(0, 260);
+      if (candidate?.utf16) out.utf16 = String(candidate.utf16).slice(0, 260);
+      return out;
+    }).filter((candidate) => candidate.ansi || candidate.utf16).slice(0, 12);
+  }
+  if (Array.isArray(args.probes)) {
+    compact.probes = args.probes.map((entry) => ({
+      arg: Number(entry?.arg || 0),
+      probe: compactClientMonitorProbe(entry?.probe),
+    })).filter((entry) => entry.probe).slice(0, 4);
+  }
+  const registers = args.callContext?.registers;
+  if (registers && typeof registers === 'object') {
+    compact.callContext = {
+      registers: Object.fromEntries(['rcx', 'rdx', 'r8', 'r9', 'rsp', 'rax'].map((key) => [key, String(registers[key] || '').slice(0, 80)]).filter((entry) => entry[1])),
+      stack: Array.isArray(args.callContext?.stack)
+        ? args.callContext.stack.slice(0, 8).map((entry) => ({
+          offset: String(entry?.offset || '').slice(0, 24),
+          value: String(entry?.value || '').slice(0, 80),
+        })).filter((entry) => entry.value)
+        : [],
+    };
+  }
+  return Object.keys(compact).length ? compact : null;
+}
+
+function compactClientMonitorParticleExportMatches(matches) {
+  if (!Array.isArray(matches)) return [];
+  return matches.slice(0, 32).map((entry) => ({
+    name: String(entry?.name || '').slice(0, 180),
+    address: String(entry?.address || '').slice(0, 80),
+    type: String(entry?.type || '').slice(0, 40),
+  })).filter((entry) => entry.name || entry.address);
+}
+
+function compactClientMonitorLogRecord(record, filePath, options = {}) {
+  const type = String(record?.type || '');
+  if (!type || CLIENT_MONITOR_IGNORED_LOG_TYPES.has(type) || !isClientMonitorStatusRecordType(type, options)) return null;
+  const compact = {
+    type,
+    t: getClientMonitorTimestamp(record),
+    ts: getClientMonitorTimestamp(record),
+    logFile: basename(filePath),
+    logPath: filePath,
+  };
+  const stringLimits = {
+    pathBytesHex: 1024,
+    headerHex: 512,
+    stackString: 800,
+    stackStringUtf16: 800,
+  };
+  for (const key of [
+    'form', 'api', 'eventName', 'eventNameWide', 'eventIdLike', 'arg0', 'arg1', 'arg2', 'arg3',
+    'stackStringPtr', 'stackString', 'stackStringUtf16', 'gameObject', 'gameObjectCandidate',
+    'result', 'soundName', 'sound', 'name', 'path', 'pathEncoding', 'pathBytesHex', 'traceId',
+    'handle', 'object', 'targetKind', 'matchedBy', 'status', 'buffer', 'byteOffsetHex', 'headerHex',
+    'openApi', 'methodAddress', 'methodSymbol', 'where', 'message', 'label', 'module', 'rva', 'address', 'exportName',
+  ]) {
+    if (record[key] != null) compact[key] = String(record[key]).slice(0, stringLimits[key] || 180);
+  }
+  for (const key of [
+    'eventId', 'switchGroupId', 'switchId', 'stateGroupId', 'stateId', 'triggerId', 'rtpcId',
+    'playingId', 'requested', 'bytesRead', 'readIndex', 'totalBytesRead', 'readCount', 'slot', 'callIndex',
+  ]) {
+    if (record[key] != null) compact[key] = Number(record[key]) || 0;
+  }
+  if (Array.isArray(record.argsRaw)) {
+    compact.argsRaw = record.argsRaw.map((value) => String(value || '').slice(0, 120)).filter(Boolean).slice(0, 16);
+  }
+  if (Array.isArray(record.stack)) {
+    compact.stack = record.stack.map((frame) => String(frame || '').slice(0, 220)).filter(Boolean).slice(0, 20);
+  }
+  for (const key of ['localStringProbe', 'eventArgProbe', 'extraArgProbe']) {
+    const probe = compactClientMonitorProbe(record[key]);
+    if (probe) compact[key] = probe;
+  }
+  const methodModule = compactClientMonitorLogModule(record.methodModule);
+  if (methodModule) compact.methodModule = methodModule;
+  const moduleInfo = compactClientMonitorLogModule(record.module);
+  if (moduleInfo) compact.moduleInfo = moduleInfo;
+  const runtimeArgs = compactClientMonitorRuntimeArgs(record.args);
+  if (runtimeArgs) compact.args = runtimeArgs;
+  const matched = compactClientMonitorParticleExportMatches(record.matched);
+  if (matched.length) compact.matched = matched;
+  const vtable = compactClientMonitorVtable(record.vtable);
+  if (vtable) compact.vtable = vtable;
+  return compact;
+}
+
+function readClientMonitorRecords(limit = 600, options = {}) {
+  const statusOptions = normalizeClientMonitorStatusOptions(options);
   const files = listClientMonitorLogFiles();
   const records = [];
   for (const filePath of files) {
@@ -2215,11 +2553,19 @@ function readClientMonitorRecords(limit = 600) {
       CLIENT_MONITOR_RECORD_MAX_TAIL_LINES,
     );
     const lines = readTailLines(filePath, tailLimit);
-    for (const line of lines) {
+    let pssMethodRecords = 0;
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      const line = lines[index];
+      const type = clientMonitorLogLineType(line);
+      if (!type || CLIENT_MONITOR_IGNORED_LOG_TYPES.has(type) || !isClientMonitorStatusRecordType(type, statusOptions)) continue;
+      if (type === 'pss-object-method-call' && pssMethodRecords >= CLIENT_MONITOR_PSS_METHOD_RECORD_LIMIT) continue;
       try {
         const parsed = JSON.parse(line);
-        if (CLIENT_MONITOR_IGNORED_LOG_TYPES.has(parsed.type)) continue;
-        records.push({ ...parsed, logFile: basename(filePath), logPath: filePath });
+        const compact = compactClientMonitorLogRecord(parsed, filePath, statusOptions);
+        if (compact) {
+          if (type === 'pss-object-method-call') pssMethodRecords += 1;
+          records.push(compact);
+        }
       } catch { /* skip malformed log lines */ }
     }
   }
@@ -2293,6 +2639,35 @@ function compactClientMonitorProbe(probe) {
   }
   if (Array.isArray(probe.asciiStrings)) compact.asciiStrings = probe.asciiStrings.map((value) => String(value || '').slice(0, 180)).filter(Boolean).slice(0, 12);
   if (Array.isArray(probe.utf16Strings)) compact.utf16Strings = probe.utf16Strings.map((value) => String(value || '').slice(0, 180)).filter(Boolean).slice(0, 12);
+  if (Array.isArray(probe.f32Fields)) {
+    compact.f32Fields = probe.f32Fields.slice(0, 24).map((field) => ({
+      offset: String(field?.offset || '').slice(0, 24),
+      value: Number(field?.value),
+    })).filter((field) => Number.isFinite(field.value));
+  }
+  if (Array.isArray(probe.matrixCandidates)) {
+    compact.matrixCandidates = probe.matrixCandidates.slice(0, 4).map((candidate) => ({
+      offset: String(candidate?.offset || '').slice(0, 24),
+      values: Array.isArray(candidate?.values)
+        ? candidate.values.slice(0, 16).map((value) => Number(value)).filter((value) => Number.isFinite(value))
+        : [],
+    })).filter((candidate) => candidate.values.length === 16);
+  }
+  if (Array.isArray(probe.pointers)) {
+    compact.pointers = probe.pointers.slice(0, 8).map((entry) => ({
+      offset: String(entry?.offset || '').slice(0, 24),
+      ptr: String(entry?.ptr || '').slice(0, 80),
+      ansi: entry?.ansi ? String(entry.ansi).slice(0, 180) : '',
+      utf16: entry?.utf16 ? String(entry.utf16).slice(0, 180) : '',
+      asciiStrings: Array.isArray(entry?.asciiStrings) ? entry.asciiStrings.map((value) => String(value || '').slice(0, 120)).filter(Boolean).slice(0, 4) : [],
+      utf16Strings: Array.isArray(entry?.utf16Strings) ? entry.utf16Strings.map((value) => String(value || '').slice(0, 120)).filter(Boolean).slice(0, 4) : [],
+      f32Fields: Array.isArray(entry?.f32Fields) ? entry.f32Fields.slice(0, 8).map((field) => ({ offset: String(field?.offset || '').slice(0, 24), value: Number(field?.value) })).filter((field) => Number.isFinite(field.value)) : [],
+      matrixCandidates: Array.isArray(entry?.matrixCandidates) ? entry.matrixCandidates.slice(0, 2).map((candidate) => ({
+        offset: String(candidate?.offset || '').slice(0, 24),
+        values: Array.isArray(candidate?.values) ? candidate.values.slice(0, 16).map((value) => Number(value)).filter((value) => Number.isFinite(value)) : [],
+      })).filter((candidate) => candidate.values.length === 16) : [],
+    })).filter((entry) => entry.ptr || entry.ansi || entry.utf16 || entry.asciiStrings.length || entry.utf16Strings.length || entry.f32Fields.length || entry.matrixCandidates.length);
+  }
   return Object.keys(compact).length ? compact : null;
 }
 
@@ -2323,6 +2698,16 @@ const CLIENT_MONITOR_AUDIO_TYPES = new Set([
 const CLIENT_MONITOR_ANIMATION_TYPES = new Set([
   'client-animation-file',
   'animtag-audio-callsite',
+  'pss-file-open',
+  'pss-file-read',
+  'pss-file-close',
+  'pss-object-open',
+  'pss-object-method-call',
+  'represent-sfx-call',
+  'particle-export-scan',
+  'kg3d-particle-export-call',
+  'kg3d-particle-rva-call',
+  'kg3d-display-proof-call',
 ]);
 
 const CLIENT_MONITOR_ANIMATION_EXTENSIONS = new Set([
@@ -2331,7 +2716,7 @@ const CLIENT_MONITOR_ANIMATION_EXTENSIONS = new Set([
 
 const CLIENT_MONITOR_ANIMATION_ROOT_EXTENSIONS = new Set(['.tani', '.pss']);
 const CLIENT_MONITOR_ANIMATION_ACTION_EXTENSIONS = new Set(['.ani', '.tani']);
-const CLIENT_MONITOR_ANIMATION_ABILITY_RE = /(?:skill|skillremake|jineng|zhandou|shifang|spearsky|qixiu|tiance|shaolin|wudu|xinfuben|s\d{2})/i;
+const CLIENT_MONITOR_ANIMATION_ABILITY_RE = /(?:skill|skillremake|jineng|zhandou|shifang|spearsky|qixiu|tiance|shaolin|wudu|xinfuben|s\d{2}|技能|发招|状态|七秀|天策|少林|五毒|藏剑|万花|纯阳|丐帮|唐门|明教|苍云|长歌|霸刀|蓬莱|凌雪|衍天|药宗|刀宗)/i;
 const CLIENT_MONITOR_ANIMATION_MOVEMENT_RE = /(?:footstep|footsteps|walk|run|fall|jump|land|idle|qinggong|horse|mashang|cloth)/i;
 const CLIENT_MONITOR_ANIMATION_TANI_NOISE_RE = /(?:二段跳|三段跳|四段跳|轻功|加速跑|起跑|跑步|走路|待机|建造)/i;
 const CLIENT_MONITOR_ANIMATION_SCENE_NOISE_RE = /(?:^|\/)(?:maps_source|background|terrain|combitextures)(?:\/|$)|(?:^|\/)face(?:\/|$)|(?:^|\/)hair(?:\/|$)|(?:^|\/)mdl(?:\/|$)|(?:defaulttexture|defaultblack|defaultwhite|waterdistortion|normaldetail|beard|body_hd|hand_hd|leg_hd|belt_hd|head_hd|cloak_hd|glove_hd|_lod\d*)/i;
@@ -2501,6 +2886,50 @@ function collectClientMonitorAssetPaths(value, paths = new Set(), depth = 0) {
     }
   }
   return paths;
+}
+
+function collectClientMonitorRuntimeStrings(value, strings = [], depth = 0) {
+  if (strings.length >= 80 || depth > 5 || value == null) return strings;
+  if (typeof value === 'string' || typeof value === 'number') {
+    const text = String(value || '').replace(/\0/g, '').trim();
+    if (text && text.length >= 2 && text.length <= 260 && !/^[0-9a-f]{32,}$/i.test(text)) strings.push(text);
+    return strings;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value.slice(0, 80)) collectClientMonitorRuntimeStrings(item, strings, depth + 1);
+    return strings;
+  }
+  if (typeof value === 'object') {
+    for (const [key, nested] of Object.entries(value)) {
+      if (/bytes|headerHex|pathBytesHex/i.test(key)) continue;
+      collectClientMonitorRuntimeStrings(nested, strings, depth + 1);
+      if (strings.length >= 80) break;
+    }
+  }
+  return strings;
+}
+
+function uniqueClientMonitorRuntimeStrings(value) {
+  const seen = new Set();
+  const out = [];
+  for (const item of collectClientMonitorRuntimeStrings(value)) {
+    const text = String(item || '').trim();
+    const key = text.toLowerCase();
+    if (!text || seen.has(key)) continue;
+    seen.add(key);
+    out.push(text);
+  }
+  return out.slice(0, 40);
+}
+
+function isClientMonitorLikelySocketString(value) {
+  const text = String(value || '').trim();
+  if (!text || text.length > 96) return false;
+  if (/^(?:0x[0-9a-f]+|\d+|true|false|null|undefined)$/i.test(text)) return false;
+  if (isClientMonitorAnimationAssetPath(text) || /\.(?:ani|tani|pss|sfx|mesh|mdl|dds|tga|jsondef|track|mtl|wav|wem|bnk)$/i.test(text)) return false;
+  if (/data[\\/]/i.test(text)) return false;
+  return /(?:socket|bone|bip|weapon|hand|foot|root|spine|head|point|dummy|slot|bind|mount|effect)/i.test(text)
+    || /^[A-Za-z_][A-Za-z0-9_.:-]{1,64}$/.test(text);
 }
 
 function clientMonitorControlName(record) {
@@ -2730,9 +3159,30 @@ function buildClientMonitorCapture(record) {
 
 function clientMonitorAnimationTitle(capture) {
   if (capture.assets?.length) return capture.assets[0].name || capture.assets[0].logicalPath;
+  if (capture.type === 'represent-sfx-call') return capture.label || 'Represent SFX call';
+  if (capture.type === 'kg3d-particle-export-call') return capture.exportName || 'KG3D particle export call';
+  if (capture.type === 'kg3d-particle-rva-call') return capture.label || 'KG3D particle RVA call';
+  if (capture.type === 'kg3d-display-proof-call') return capture.label || 'KG3D display proof call';
+  if (capture.type === 'particle-export-scan') return 'KG3D particle export scan';
   if (capture.path) return basename(capture.path) || capture.path;
   if (capture.eventName) return capture.eventName;
   return capture.type || 'animation capture';
+}
+
+function clientMonitorAnimationSource(record, stackText) {
+  const type = String(record?.type || '');
+  if (type === 'client-animation-file') return 'runtime-file-open';
+  if (type === 'pss-file-open') return 'pss-open';
+  if (type === 'pss-file-read') return 'pss-read';
+  if (type === 'pss-file-close') return 'pss-close';
+  if (type === 'pss-object-open') return 'pss-object';
+  if (type === 'pss-object-method-call') return 'pss-object-method';
+  if (type === 'represent-sfx-call') return 'represent-sfx';
+  if (type === 'particle-export-scan') return 'kg3d-particle-scan';
+  if (type === 'kg3d-particle-export-call') return 'kg3d-particle-export';
+  if (type === 'kg3d-particle-rva-call') return 'kg3d-particle-rva';
+  if (type === 'kg3d-display-proof-call') return 'kg3d-display-proof';
+  return /KG3D_CreateAnimationTagSystem|AnimationTag/i.test(stackText || '') ? 'animtag-probe' : 'runtime-probe';
 }
 
 function buildClientMonitorAnimationRaw(record, assets, decodedPath) {
@@ -2746,8 +3196,28 @@ function buildClientMonitorAnimationRaw(record, assets, decodedPath) {
   if (decodedPath?.encoding) raw.pathEncoding = decodedPath.encoding;
   if (record.rawPathHadReplacement || String(record.path || '').includes('\uFFFD')) raw.rawPathHadReplacement = true;
   if (record.pathBytesHex) raw.pathBytesHex = String(record.pathBytesHex).slice(0, 256);
-  for (const key of ['arg0', 'arg1', 'arg2', 'arg3', 'gameObject', 'gameObjectCandidate', 'result']) {
+  for (const key of ['arg0', 'arg1', 'arg2', 'arg3', 'gameObject', 'gameObjectCandidate', 'result', 'traceId', 'handle', 'object', 'targetKind', 'matchedBy', 'status', 'buffer', 'byteOffsetHex', 'headerHex', 'openApi', 'methodAddress', 'methodSymbol', 'label', 'anchor', 'rva', 'address', 'exportName']) {
     if (record[key] != null) raw[key] = String(record[key]).slice(0, 80);
+  }
+  for (const key of ['requested', 'bytesRead', 'readIndex', 'totalBytesRead', 'readCount', 'slot', 'callIndex']) {
+    if (record[key] != null) raw[key] = Number(record[key]) || 0;
+  }
+  if (record.methodModule?.name) raw.methodModule = `${record.methodModule.name}${record.methodModule.offset ? `+${record.methodModule.offset}` : ''}`;
+  if (record.moduleInfo?.name) raw.module = `${record.moduleInfo.name}${record.moduleInfo.offset ? `+${record.moduleInfo.offset}` : ''}`;
+  if (record.module && typeof record.module === 'string' && record.module !== '[object Object]') raw.module = String(record.module).slice(0, 120);
+  if (record.args) raw.args = record.args;
+  if (Array.isArray(record.matched)) raw.matched = record.matched.slice(0, 16);
+  if (record.vtable?.vtable) {
+    raw.vtable = String(record.vtable.vtable);
+    raw.vtableSlots = (record.vtable.slots || []).slice(0, 16).map((slot) => ({
+      slot: Number(slot.slot || 0),
+      address: String(slot.address || ''),
+      symbol: String(slot.symbol || '').slice(0, 120),
+      module: slot.module?.name || '',
+      offset: slot.module?.offset || '',
+      hookable: Boolean(slot.hookable),
+      skipReason: String(slot.skipReason || '').slice(0, 80),
+    }));
   }
   return raw;
 }
@@ -2764,16 +3234,15 @@ function buildClientMonitorAnimationCapture(record) {
     .slice(0, 40)
     .map(resolveClientMonitorAnimationAsset)
     .filter((asset) => asset.logicalPath);
-  if (!assets.length && type !== 'client-animation-file') return null;
+  const keepWithoutAssets = type === 'represent-sfx-call' || type === 'particle-export-scan' || type === 'kg3d-particle-export-call' || type === 'kg3d-particle-rva-call' || type === 'kg3d-display-proof-call';
+  if (!assets.length && type !== 'client-animation-file' && !keepWithoutAssets) return null;
   const primary = assets[0] || null;
   const classification = primary?.classification || classifyClientMonitorAssetPath(record.path || '');
   const stack = compactClientMonitorStack(record.stack);
   const stackText = stack.join('\n');
-  const source = type === 'client-animation-file'
-    ? 'runtime-file-open'
-    : /KG3D_CreateAnimationTagSystem|AnimationTag/i.test(stackText)
-      ? 'animtag-probe'
-      : 'runtime-probe';
+  const source = clientMonitorAnimationSource(record, stackText);
+  const runtimeStrings = uniqueClientMonitorRuntimeStrings(record);
+  const socketCandidates = runtimeStrings.filter(isClientMonitorLikelySocketString).slice(0, 12);
   const capture = {
     type,
     ts: getClientMonitorTimestamp(record),
@@ -2789,12 +3258,52 @@ function buildClientMonitorAnimationCapture(record) {
     rawPathHadReplacement: Boolean(record.rawPathHadReplacement || String(record.path || '').includes('\uFFFD')),
     gameObject: record.gameObject || record.gameObjectCandidate || '',
     result: record.result != null ? String(record.result) : '',
+    traceId: String(record.traceId || ''),
+    handle: String(record.handle || ''),
+    object: String(record.object || ''),
+    targetKind: String(record.targetKind || ''),
+    matchedBy: String(record.matchedBy || ''),
+    label: String(record.label || ''),
+    rva: String(record.rva || ''),
+    address: String(record.address || ''),
+    exportName: String(record.exportName || ''),
+    runtimeStrings,
+    socketCandidates,
+    requested: record.requested != null ? Number(record.requested) || 0 : null,
+    bytesRead: record.bytesRead != null ? Number(record.bytesRead) || 0 : null,
+    readIndex: record.readIndex != null ? Number(record.readIndex) || 0 : null,
+    totalBytesRead: record.totalBytesRead != null ? Number(record.totalBytesRead) || 0 : null,
+    method: record.methodAddress || record.methodSymbol ? {
+      slot: record.slot != null ? Number(record.slot) || 0 : null,
+      address: String(record.methodAddress || ''),
+      symbol: String(record.methodSymbol || ''),
+      module: record.methodModule || null,
+      callIndex: record.callIndex != null ? Number(record.callIndex) || 0 : null,
+    } : null,
     assets,
     stack,
     raw: buildClientMonitorAnimationRaw(record, assets, decodedPath),
   };
   capture.title = clientMonitorAnimationTitle(capture);
   return capture;
+}
+
+function mergeClientMonitorAnimationWindows(windows) {
+  windows.sort((left, right) => left.startTs - right.startTs);
+  const merged = [];
+  for (const window of windows) {
+    const eventNames = [...(window.events || []), window.event].map((value) => String(value || '')).filter(Boolean);
+    const last = merged[merged.length - 1];
+    if (!last || window.startTs > last.endTs + 1500) {
+      merged.push({ ...window, events: [...new Set(eventNames)] });
+    } else {
+      last.endTs = Math.max(last.endTs, window.endTs);
+      for (const eventName of eventNames) {
+        if (!last.events.includes(eventName)) last.events.push(eventName);
+      }
+    }
+  }
+  return merged;
 }
 
 function buildClientMonitorAnimationAbilityWindows(captures) {
@@ -2807,18 +3316,21 @@ function buildClientMonitorAnimationAbilityWindows(captures) {
     if (!ts) continue;
     windows.push({ startTs: ts - 1500, endTs: ts + 5500, event: String(name || '') });
   }
-  windows.sort((left, right) => left.startTs - right.startTs);
-  const merged = [];
-  for (const window of windows) {
-    const last = merged[merged.length - 1];
-    if (!last || window.startTs > last.endTs + 1500) {
-      merged.push({ ...window, events: window.event ? [window.event] : [] });
-    } else {
-      last.endTs = Math.max(last.endTs, window.endTs);
-      if (window.event && !last.events.includes(window.event)) last.events.push(window.event);
-    }
+  return mergeClientMonitorAnimationWindows(windows).slice(-20);
+}
+
+function buildClientMonitorPssTraceWindows(captures) {
+  const windows = [];
+  for (const capture of captures || []) {
+    const isPssTrace = /^pss-/.test(String(capture.type || '')) || (capture.type === 'client-animation-file' && /\.pss$/i.test(capture.path || ''));
+    if (!isPssTrace) continue;
+    const ts = Number(capture.ts || 0) || 0;
+    if (!ts) continue;
+    const pssAsset = (capture.assets || []).find((asset) => /\.pss$/i.test(asset.logicalPath || ''));
+    const label = pssAsset?.name || basename(capture.path || '') || 'PSS trace';
+    windows.push({ startTs: ts - 500, endTs: ts + 4500, event: label });
   }
-  return merged.slice(-20);
+  return mergeClientMonitorAnimationWindows(windows).slice(-40);
 }
 
 function isClientMonitorTimestampInWindows(ts, windows) {
@@ -2987,6 +3499,233 @@ function clientMonitorSkillTitle(events, index) {
   return `Skill cast ${index + 1}`;
 }
 
+function buildClientMonitorPssPipeline(rows) {
+  const map = new Map();
+  const ensure = (asset) => {
+    const logicalPath = normalizeClientMonitorAssetPath(asset?.logicalPath || asset?.path || '');
+    if (!/\.pss$/i.test(logicalPath)) return null;
+    const key = logicalPath.toLowerCase();
+    if (!map.has(key)) {
+      map.set(key, {
+        path: logicalPath,
+        name: basename(logicalPath),
+        firstTs: 0,
+        lastTs: 0,
+        traceIds: new Set(),
+        handles: new Set(),
+        objects: new Set(),
+        openApis: new Set(),
+        readApis: new Set(),
+        methods: new Map(),
+        opens: 0,
+        reads: 0,
+        closes: 0,
+        objectOpens: 0,
+        methodCalls: 0,
+        bytesRead: 0,
+        firstReadStack: [],
+        firstMethodStack: [],
+      });
+    }
+    return map.get(key);
+  };
+  for (const capture of rows || []) {
+    if (!/^pss-/.test(String(capture.type || ''))) continue;
+    for (const asset of capture.assets || []) {
+      const entry = ensure(asset);
+      if (!entry) continue;
+      const ts = Number(capture.ts || 0) || 0;
+      if (ts) {
+        entry.firstTs = entry.firstTs ? Math.min(entry.firstTs, ts) : ts;
+        entry.lastTs = Math.max(entry.lastTs || 0, ts);
+      }
+      if (capture.traceId) entry.traceIds.add(capture.traceId);
+      if (capture.handle) entry.handles.add(capture.handle);
+      if (capture.object) entry.objects.add(capture.object);
+      if (capture.type === 'pss-file-open') {
+        entry.opens += 1;
+        if (capture.api) entry.openApis.add(capture.api);
+      } else if (capture.type === 'pss-file-read') {
+        entry.reads += 1;
+        entry.bytesRead += Number(capture.bytesRead || 0) || 0;
+        if (capture.api) entry.readApis.add(capture.api);
+        if (!entry.firstReadStack.length) entry.firstReadStack = (capture.stack || []).slice(0, 8);
+      } else if (capture.type === 'pss-file-close') {
+        entry.closes += 1;
+      } else if (capture.type === 'pss-object-open') {
+        entry.objectOpens += 1;
+        if (capture.api) entry.openApis.add(capture.api);
+      } else if (capture.type === 'pss-object-method-call') {
+        entry.methodCalls += 1;
+        const methodName = capture.method?.symbol || capture.method?.address || '';
+        if (methodName) entry.methods.set(methodName, (entry.methods.get(methodName) || 0) + 1);
+        if (!entry.firstMethodStack.length) entry.firstMethodStack = (capture.stack || []).slice(0, 8);
+      }
+    }
+  }
+  return [...map.values()].map((entry) => ({
+    ...entry,
+    traceIds: [...entry.traceIds].slice(0, 8),
+    handles: [...entry.handles].slice(0, 8),
+    objects: [...entry.objects].slice(0, 8),
+    openApis: [...entry.openApis],
+    readApis: [...entry.readApis],
+    methods: [...entry.methods.entries()]
+      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+      .slice(0, 8)
+      .map(([name, count]) => ({ name, count })),
+  })).sort((left, right) => (right.reads + right.methodCalls + right.opens + right.objectOpens) - (left.reads + left.methodCalls + left.opens + left.objectOpens));
+}
+
+function buildClientMonitorPipelineStage(id, label, ok, detail, evidence = {}) {
+  return {
+    id,
+    label,
+    status: ok ? 'ok' : 'wait',
+    detail,
+    evidence,
+  };
+}
+
+function collectClientMonitorTransformEvidence(value, out = [], depth = 0) {
+  if (out.length >= 16 || value == null || depth > 6) return out;
+  if (Array.isArray(value)) {
+    for (const item of value.slice(0, 24)) collectClientMonitorTransformEvidence(item, out, depth + 1);
+    return out;
+  }
+  if (typeof value !== 'object') return out;
+  if (Array.isArray(value.matrixCandidates)) {
+    for (const candidate of value.matrixCandidates.slice(0, 4)) {
+      if (!Array.isArray(candidate?.values) || candidate.values.length !== 16) continue;
+      out.push({
+        kind: 'matrix4x4',
+        offset: String(candidate.offset || '').slice(0, 24),
+        values: candidate.values.slice(0, 16).map((number) => Math.round(Number(number) * 1000000) / 1000000),
+      });
+      if (out.length >= 16) return out;
+    }
+  }
+  if (Array.isArray(value.f32Fields) && value.f32Fields.length >= 6) {
+    const fields = value.f32Fields
+      .slice(0, 12)
+      .map((field) => `${field.offset}:${Number(field.value).toFixed(4)}`)
+      .join(' ');
+    out.push({ kind: 'float-fields', values: fields });
+  }
+  for (const nested of Object.values(value)) {
+    collectClientMonitorTransformEvidence(nested, out, depth + 1);
+    if (out.length >= 16) break;
+  }
+  return out;
+}
+
+function summarizeClientMonitorTransformEvidence(rows) {
+  const seen = new Set();
+  const out = [];
+  for (const row of rows || []) {
+    for (const candidate of collectClientMonitorTransformEvidence(row.raw?.args || row.args || row.raw || row)) {
+      const key = `${candidate.kind}:${candidate.offset || ''}:${candidate.values}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(candidate);
+      if (out.length >= 8) return out;
+    }
+  }
+  return out;
+}
+
+function buildClientMonitorPipelineProof({ audioRows, rows, tani, pss, actions, pipeline, assets }) {
+  const representRows = (rows || []).filter((row) => row.type === 'represent-sfx-call');
+  const particleScanRows = (rows || []).filter((row) => row.type === 'particle-export-scan');
+  const particleCallRows = (rows || []).filter((row) => row.type === 'kg3d-particle-export-call' || row.type === 'kg3d-particle-rva-call');
+  const pssRuntimeRows = (rows || []).filter((row) => /^pss-/.test(String(row.type || '')));
+  const pssReadBytes = (pipeline || []).reduce((sum, row) => sum + (Number(row.bytesRead || 0) || 0), 0);
+  const pssRuntimeCount = (pipeline || []).reduce((sum, row) => sum + (Number(row.opens || 0) || 0) + (Number(row.reads || 0) || 0) + (Number(row.objectOpens || 0) || 0) + (Number(row.methodCalls || 0) || 0), 0);
+  const representLabels = [...new Set(representRows.map((row) => row.label).filter(Boolean))].slice(0, 12);
+  const sockets = [...new Set(representRows.flatMap((row) => row.socketCandidates || []).filter(Boolean))].slice(0, 12);
+  const transformEvidence = summarizeClientMonitorTransformEvidence(representRows);
+  const representPaths = [...new Set(representRows.flatMap((row) => (row.assets || []).map((asset) => asset.logicalPath)).filter(Boolean))].slice(0, 12);
+  const particleScanMatches = [...new Set(particleScanRows.flatMap((row) => (row.raw?.matched || []).map((match) => match.name)).filter(Boolean))].slice(0, 12);
+  const particleExports = [...new Set([
+    ...particleCallRows.map((row) => row.exportName).filter(Boolean),
+    ...particleCallRows.map((row) => row.label).filter(Boolean),
+    ...particleScanMatches,
+  ])].slice(0, 12);
+  const cacheHits = (assets || []).filter((asset) => asset.status === 'cache-hit').length;
+  const stages = [
+    buildClientMonitorPipelineStage(
+      'timeline',
+      'TANI scheduler',
+      (tani || []).length > 0,
+      (tani || []).length ? `${tani.length} timeline root(s) captured` : 'No TANI root in this cast window yet',
+      { paths: (tani || []).map((asset) => asset.logicalPath).slice(0, 8) },
+    ),
+    buildClientMonitorPipelineStage(
+      'action',
+      'ANI action',
+      (actions || []).length > 0,
+      (actions || []).length ? `${actions.length} action file(s) captured or indexed` : 'No base/action ANI resolved yet',
+      { paths: (actions || []).map((asset) => asset.logicalPath).slice(0, 8) },
+    ),
+    buildClientMonitorPipelineStage(
+      'effects',
+      'PSS effects',
+      (pss || []).length > 0,
+      (pss || []).length ? `${pss.length} PSS effect file(s) in the skill group` : 'No PSS effect file associated with the cast yet',
+      { paths: (pss || []).map((asset) => asset.logicalPath).slice(0, 12) },
+    ),
+    buildClientMonitorPipelineStage(
+      'pss-runtime',
+      'PSS file/runtime load',
+      pssRuntimeCount > 0,
+      pssRuntimeCount ? `${pipeline.length} PSS runtime target(s), ${pssReadBytes} byte(s) read` : 'No PSS open/read/object method evidence in this cast window yet',
+      { targets: (pipeline || []).map((row) => row.path).slice(0, 12), pssRuntimeRows: pssRuntimeRows.length },
+    ),
+    buildClientMonitorPipelineStage(
+      'attachment',
+      'Represent attachment',
+      representRows.length > 0,
+      representRows.length ? `${representRows.length} represent SFX call(s) captured${sockets.length ? `, socket candidate(s): ${sockets.join(', ')}` : ''}${transformEvidence.length ? `, transform candidate(s): ${transformEvidence.length}` : ''}` : 'No represent-layer SFX/socket call captured yet',
+      { labels: representLabels, sockets, transforms: transformEvidence, paths: representPaths },
+    ),
+    buildClientMonitorPipelineStage(
+      'particle-engine',
+      'KG3D particle engine',
+      particleExports.length > 0 || particleCallRows.length > 0,
+      particleExports.length ? `KG3D particle evidence: ${particleExports.slice(0, 4).join(', ')}` : 'No KG3D particle scan/call evidence in this cast window yet',
+      { exports: particleExports, scanRows: particleScanRows.length, callRows: particleCallRows.length },
+    ),
+    buildClientMonitorPipelineStage(
+      'audio',
+      'Audio/timeline correlation',
+      (audioRows || []).length > 0,
+      (audioRows || []).length ? `${audioRows.length} sound/event row(s) share this cast window` : 'No Wwise/FMOD audio row in this cast window',
+      { events: [...new Set((audioRows || []).map((row) => row.wwise?.event || row.eventName || row.storyTitle).filter(Boolean))].slice(0, 8) },
+    ),
+    buildClientMonitorPipelineStage(
+      'cache',
+      'Local assets',
+      cacheHits > 0,
+      cacheHits ? `${cacheHits}/${(assets || []).length} grouped asset(s) resolved locally` : 'No grouped asset is resolved from local cache yet',
+      { cacheHits, total: (assets || []).length },
+    ),
+  ];
+  const okCount = stages.filter((stage) => stage.status === 'ok').length;
+  const missing = stages.filter((stage) => stage.status !== 'ok').map((stage) => stage.id);
+  const coreMissing = missing.filter((id) => ['timeline', 'effects', 'pss-runtime', 'attachment', 'particle-engine'].includes(id));
+  return {
+    ok: coreMissing.length === 0,
+    okCount,
+    total: stages.length,
+    missing,
+    coreMissing,
+    verdict: coreMissing.length
+      ? `Client pipeline evidence is partial; missing core stage(s): ${coreMissing.join(', ')}.`
+      : 'Client pipeline evidence covers scheduler, PSS load, represent attachment, and particle engine boundary.',
+    stages,
+  };
+}
+
 function buildClientMonitorAnimationSkillGroups(audioCaptures, animationCaptures, abilityWindows = []) {
   const animIndex = getClientMonitorAnimSoundIndex();
   return (abilityWindows || []).map((window, index) => {
@@ -3000,7 +3739,7 @@ function buildClientMonitorAnimationSkillGroups(audioCaptures, animationCaptures
     for (const capture of rows) {
       for (const asset of capture.assets || []) {
         if (!isClientMonitorRuntimeSkillAsset(asset)) continue;
-        pushClientMonitorSkillAsset(assetMap, asset.logicalPath, { source: 'runtime', ts: capture.ts });
+        pushClientMonitorSkillAsset(assetMap, asset.logicalPath, { source: capture.source || 'runtime', ts: capture.ts });
       }
     }
     const runtimeTani = [...assetMap.values()].filter((asset) => asset.ext === '.tani');
@@ -3018,6 +3757,8 @@ function buildClientMonitorAnimationSkillGroups(audioCaptures, animationCaptures
     const actions = assets.filter((asset) => asset.ext === '.ani');
     const legacyEffects = assets.filter((asset) => asset.ext === '.sfx' || asset.ext === '.track');
     const dependencies = assets.filter((asset) => !['.tani', '.pss', '.ani', '.sfx', '.track'].includes(asset.ext));
+    const pipeline = buildClientMonitorPssPipeline(rows);
+    const clientPipeline = buildClientMonitorPipelineProof({ audioRows, rows, tani, pss, actions, pipeline, assets });
     return {
       id: `skill-${Math.round(window.startTs || 0)}-${index}`,
       title: clientMonitorSkillTitle(events, index),
@@ -3034,6 +3775,8 @@ function buildClientMonitorAnimationSkillGroups(audioCaptures, animationCaptures
       pss,
       actions,
       legacyEffects,
+      pipeline,
+      clientPipeline,
       dependencyCount: dependencies.length,
       counts: {
         tani: tani.length,
@@ -3042,10 +3785,43 @@ function buildClientMonitorAnimationSkillGroups(audioCaptures, animationCaptures
         legacyEffects: legacyEffects.length,
         dependencies: dependencies.length,
         rows: rows.length,
+        pipeline: pipeline.length,
+        clientPipelineOk: clientPipeline.okCount,
+        clientPipelineTotal: clientPipeline.total,
       },
     };
   }).filter((group) => group.events.length || group.tani.length || group.pss.length || group.actions.length)
     .sort((left, right) => (right.startTs || 0) - (left.startTs || 0));
+}
+
+function limitClientMonitorArray(values, limit) {
+  return (Array.isArray(values) ? values : []).slice(0, limit);
+}
+
+function compactClientMonitorAnimationSkillGroup(group) {
+  const assets = limitClientMonitorArray(group.assets, CLIENT_MONITOR_ANIMATION_GROUP_ASSET_LIMIT);
+  const tani = limitClientMonitorArray(group.tani, CLIENT_MONITOR_ANIMATION_GROUP_ASSET_LIMIT);
+  const pss = limitClientMonitorArray(group.pss, CLIENT_MONITOR_ANIMATION_GROUP_PSS_LIMIT);
+  const actions = limitClientMonitorArray(group.actions, CLIENT_MONITOR_ANIMATION_GROUP_ASSET_LIMIT);
+  const legacyEffects = limitClientMonitorArray(group.legacyEffects, CLIENT_MONITOR_ANIMATION_GROUP_ASSET_LIMIT);
+  const pipeline = limitClientMonitorArray(group.pipeline, CLIENT_MONITOR_ANIMATION_GROUP_PIPELINE_LIMIT);
+  return {
+    ...group,
+    assets,
+    tani,
+    pss,
+    actions,
+    legacyEffects,
+    pipeline,
+    truncated: {
+      assets: Math.max(0, (group.assets || []).length - assets.length),
+      tani: Math.max(0, (group.tani || []).length - tani.length),
+      pss: Math.max(0, (group.pss || []).length - pss.length),
+      actions: Math.max(0, (group.actions || []).length - actions.length),
+      legacyEffects: Math.max(0, (group.legacyEffects || []).length - legacyEffects.length),
+      pipeline: Math.max(0, (group.pipeline || []).length - pipeline.length),
+    },
+  };
 }
 
 function summarizeClientMonitorAnimationFindings(captures, assetSummary, skillGroups = []) {
@@ -3064,10 +3840,14 @@ function summarizeClientMonitorAnimationFindings(captures, assetSummary, skillGr
   const kindSummary = [...byKind.entries()].map(([label, count]) => `${label}: ${count}`).join(', ');
   const fileOpenCount = captures.filter((capture) => capture.source === 'runtime-file-open').length;
   const probeCount = captures.filter((capture) => capture.source !== 'runtime-file-open').length;
+  const pssOpenCount = captures.filter((capture) => capture.type === 'pss-file-open' || capture.type === 'pss-object-open').length;
+  const pssReadCount = captures.filter((capture) => capture.type === 'pss-file-read').length;
+  const pssMethodCount = captures.filter((capture) => capture.type === 'pss-object-method-call').length;
   const decodedRows = captures.filter((capture) => capture.pathDecodedFrom === 'pathBytesHex');
   const replacementRows = captures.filter((capture) => capture.rawPathHadReplacement);
   const bullets = [];
   if (skillGroups.length) bullets.push(`Grouped ${skillGroups.length} skill/cast window(s); open a group to inspect its TANI roots and contained PSS files.`);
+  if (pssOpenCount || pssReadCount || pssMethodCount) bullets.push(`PSS runtime trace: ${pssOpenCount} open/object row(s), ${pssReadCount} read row(s), ${pssMethodCount} object method row(s).`);
   if (assets.length) bullets.push(`Focused ${assets.length} useful root/action resource(s) from ${allAssets.length} captured asset(s).`);
   if (abilityWindows.length) bullets.push(`Ability windows: ${abilityWindows.length}; root candidates inside those windows are ranked first.`);
   if (hiddenNoise || hiddenDependencies) bullets.push(`Hidden noise/dependency rows: ${hiddenNoise + hiddenDependencies} (${hiddenNoise} noise, ${hiddenDependencies} dependency).`);
@@ -3091,6 +3871,9 @@ function summarizeClientMonitorAnimationFindings(captures, assetSummary, skillGr
       needsCdn: needsCdn.length,
       fileOpenRows: fileOpenCount,
       probeRows: probeCount,
+      pssOpenRows: pssOpenCount,
+      pssReadRows: pssReadCount,
+      pssObjectMethodRows: pssMethodCount,
       decodedRows: decodedRows.length,
       hiddenNoise,
       hiddenDependencies,
@@ -3376,14 +4159,589 @@ function summarizeClientMonitorFindings(captures) {
   };
 }
 
+const CLIENT_TRACER_ROW_TYPES = new Set([
+  'client-animation-file',
+  'pss-file-open',
+  'pss-file-read',
+  'pss-file-close',
+  'pss-object-open',
+  'pss-object-method-call',
+  'represent-sfx-call',
+  'particle-export-scan',
+  'kg3d-particle-export-call',
+  'kg3d-particle-rva-call',
+  'kg3d-display-proof-call',
+]);
+
+function clientTracerPssPathsForRecord(record) {
+  const paths = new Set();
+  const decodedPath = decodeClientMonitorAnimationRecordPath(record);
+  if (/\.pss$/i.test(decodedPath.normalized || '')) paths.add(decodedPath.normalized);
+  const collectSource = decodedPath.decodedFrom ? { ...record, path: '' } : record;
+  for (const path of collectClientMonitorAssetPaths(collectSource)) {
+    const normalized = normalizeClientMonitorAssetPath(path);
+    if (/\.pss$/i.test(normalized)) paths.add(normalized);
+  }
+  return [...paths].slice(0, 16);
+}
+
+function clientTracerRawLineLooksRelevant(line) {
+  return /\.pss|pss-file-|pss-object-|represent-sfx-call|particle-export-scan|kg3d-particle-|kg3d-display-proof-|client-animation-file/i.test(String(line || ''));
+}
+
+function readClientTracerRecords(limit = CLIENT_TRACER_RECORD_LIMIT) {
+  const files = listClientMonitorLogFiles();
+  const records = [];
+  let scannedLines = 0;
+  let skippedLargeFiles = 0;
+  for (const filePath of files) {
+    let stats;
+    try { stats = statSync(filePath); } catch { continue; }
+    if (stats.size > CLIENT_TRACER_FILE_BYTE_LIMIT) {
+      skippedLargeFiles += 1;
+      continue;
+    }
+    const lines = readFileSync(filePath, 'utf8').split(/\r?\n/);
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      scannedLines += 1;
+      if (!clientTracerRawLineLooksRelevant(line)) continue;
+      const type = clientMonitorLogLineType(line);
+      if (!type || CLIENT_MONITOR_IGNORED_LOG_TYPES.has(type)) continue;
+      try {
+        const parsed = JSON.parse(line);
+        const compact = compactClientMonitorLogRecord(parsed, filePath, { view: 'animation' });
+        if (compact && (CLIENT_TRACER_ROW_TYPES.has(compact.type) || clientTracerPssPathsForRecord(compact).length)) {
+          records.push(compact);
+        }
+      } catch { /* skip malformed log lines */ }
+    }
+  }
+  records.sort((left, right) => getClientMonitorTimestamp(left) - getClientMonitorTimestamp(right));
+  return {
+    records: records.slice(-limit),
+    scannedLines,
+    skippedLargeFiles,
+  };
+}
+
+function clientTracerStageForType(type) {
+  if (type === 'client-animation-file' || type === 'pss-file-open' || type === 'pss-file-close') return 'file-open';
+  if (type === 'pss-file-read') return 'byte-read';
+  if (type === 'pss-object-open' || type === 'pss-object-method-call') return 'object-method';
+  if (type === 'represent-sfx-call') return 'represent';
+  if (type === 'particle-export-scan' || type === 'kg3d-particle-export-call' || type === 'kg3d-particle-rva-call') return 'particle-engine';
+  return 'other';
+}
+
+function clientTracerModule(record) {
+  const module = record.moduleInfo || (record.module && typeof record.module === 'object' ? record.module : null) || record.methodModule || null;
+  return module ? compactClientMonitorLogModule(module) : null;
+}
+
+function clientTracerStringCandidates(args) {
+  const rows = [];
+  for (const candidate of args?.stringCandidates || []) {
+    const texts = [candidate.ansi, candidate.utf16].map((value) => String(value || '').replace(/\0/g, '').trim()).filter(Boolean);
+    if (!texts.length) continue;
+    rows.push({
+      arg: Number(candidate.arg || 0),
+      address: String(candidate.address || ''),
+      text: texts.join(' | ').slice(0, 360),
+      pssPaths: [...collectClientMonitorAssetPaths(texts.join(' | '))].filter((path) => /\.pss$/i.test(path)).slice(0, 6),
+    });
+    if (rows.length >= 8) break;
+  }
+  return rows;
+}
+
+function compactClientTracerRow(record, pssPath) {
+  const decodedPath = decodeClientMonitorAnimationRecordPath(record);
+  const args = record.args && typeof record.args === 'object' ? record.args : null;
+  return {
+    ts: getClientMonitorTimestamp(record),
+    time: new Date(getClientMonitorTimestamp(record) || Date.now()).toISOString(),
+    type: String(record.type || ''),
+    stage: clientTracerStageForType(record.type),
+    pssPath,
+    api: String(record.api || record.form || record.openApi || ''),
+    path: decodedPath.normalized || normalizeClientMonitorAssetPath(record.path || ''),
+    pathEncoding: decodedPath.encoding || String(record.pathEncoding || ''),
+    pathDecodedFrom: decodedPath.decodedFrom || '',
+    label: String(record.label || ''),
+    exportName: String(record.exportName || ''),
+    rva: String(record.rva || ''),
+    address: String(record.address || ''),
+    module: clientTracerModule(record),
+    result: String(record.result || ''),
+    traceId: String(record.traceId || ''),
+    handle: String(record.handle || ''),
+    object: String(record.object || ''),
+    targetKind: String(record.targetKind || ''),
+    matchedBy: String(record.matchedBy || ''),
+    method: String(record.methodSymbol || record.methodAddress || ''),
+    slot: record.slot != null ? Number(record.slot) || 0 : null,
+    requested: record.requested != null ? Number(record.requested) || 0 : null,
+    bytesRead: record.bytesRead != null ? Number(record.bytesRead) || 0 : null,
+    readIndex: record.readIndex != null ? Number(record.readIndex) || 0 : null,
+    totalBytesRead: record.totalBytesRead != null ? Number(record.totalBytesRead) || 0 : null,
+    byteOffsetHex: String(record.byteOffsetHex || ''),
+    headerHex: String(record.headerHex || '').slice(0, 192),
+    argsRaw: Array.isArray(record.argsRaw) ? record.argsRaw.slice(0, 8) : [],
+    rawArgs: Array.isArray(args?.raw) ? args.raw.slice(0, 8) : [],
+    stringCandidates: clientTracerStringCandidates(args),
+    callRegisters: args?.callContext?.registers || record.callContext?.registers || null,
+    stack: compactClientMonitorStack(record.stack).slice(0, 8),
+  };
+}
+
+function clientTracerEnsureFlow(map, pssPath) {
+  const key = pssPath.toLowerCase();
+  if (!map.has(key)) {
+    map.set(key, {
+      id: `pss-${map.size + 1}`,
+      path: pssPath,
+      name: basename(pssPath),
+      firstTs: 0,
+      lastTs: 0,
+      rows: [],
+    });
+  }
+  return map.get(key);
+}
+
+function clientTracerStageDetail(stageId, rows) {
+  if (stageId === 'file-open') {
+    const apis = [...new Set(rows.map((row) => row.api).filter(Boolean))];
+    const results = [...new Set(rows.map((row) => row.result).filter(Boolean))].slice(0, 6);
+    return rows.length ? `${rows.length} request/open row(s)${apis.length ? ` via ${apis.join(', ')}` : ''}${results.length ? `; result ${results.join(', ')}` : ''}` : 'No file-open row captured for this PSS path.';
+  }
+  if (stageId === 'particle-engine') {
+    const labels = [...new Set(rows.map((row) => row.label || row.exportName).filter(Boolean))];
+    return rows.length ? `${rows.length} KG3D particle row(s) carried this PSS path as an input${labels.length ? `: ${labels.slice(0, 4).join(', ')}` : ''}` : 'No KG3D particle loader handoff captured for this PSS path.';
+  }
+  if (stageId === 'byte-read') {
+    const bytes = rows.reduce((sum, row) => sum + (Number(row.bytesRead || 0) || 0), 0);
+    return rows.length ? `${rows.length} read row(s), ${bytes} byte(s) observed${rows.some((row) => row.headerHex) ? '; header bytes captured' : ''}` : 'No PSS byte-read row captured, so exact file bytes consumed by the client were not observed.';
+  }
+  if (stageId === 'object-method') {
+    const methods = [...new Set(rows.map((row) => row.method).filter(Boolean))].slice(0, 6);
+    return rows.length ? `${rows.length} object/method row(s)${methods.length ? `; methods ${methods.join(', ')}` : ''}` : 'No PSS runtime object or method-call row captured.';
+  }
+  if (stageId === 'represent') {
+    const labels = [...new Set(rows.map((row) => row.label).filter(Boolean))].slice(0, 6);
+    return rows.length ? `${rows.length} represent attach row(s)${labels.length ? `: ${labels.join(', ')}` : ''}` : 'No represent-layer attachment row captured for this PSS path.';
+  }
+  return rows.length ? `${rows.length} row(s)` : 'No rows captured.';
+}
+
+function clientTracerBuildStages(flow) {
+  const definitions = [
+    { id: 'file-open', label: 'Client requested PSS resource' },
+    { id: 'particle-engine', label: 'KG3D particle engine received PSS input' },
+    { id: 'byte-read', label: 'Client read PSS bytes' },
+    { id: 'object-method', label: 'Client created/used PSS runtime object' },
+    { id: 'represent', label: 'Represent layer attached/rendered effect' },
+  ];
+  return definitions.map((definition) => {
+    const rows = flow.rows.filter((row) => row.stage === definition.id);
+    return {
+      ...definition,
+      status: rows.length ? 'ok' : 'missing',
+      detail: clientTracerStageDetail(definition.id, rows),
+      rows: rows.slice(0, 24),
+    };
+  });
+}
+
+function finalizeClientTracerFlow(flow) {
+  flow.rows.sort((left, right) => left.ts - right.ts);
+  flow.firstTs = flow.rows[0]?.ts || 0;
+  flow.lastTs = flow.rows[flow.rows.length - 1]?.ts || 0;
+  const stages = clientTracerBuildStages(flow);
+  const counts = {
+    totalRows: flow.rows.length,
+    opens: stages.find((stage) => stage.id === 'file-open')?.rows.length || 0,
+    particleRows: stages.find((stage) => stage.id === 'particle-engine')?.rows.length || 0,
+    byteReads: stages.find((stage) => stage.id === 'byte-read')?.rows.length || 0,
+    objectRows: stages.find((stage) => stage.id === 'object-method')?.rows.length || 0,
+    representRows: stages.find((stage) => stage.id === 'represent')?.rows.length || 0,
+    bytesRead: flow.rows.reduce((sum, row) => sum + (Number(row.bytesRead || 0) || 0), 0),
+  };
+  const complete = counts.byteReads > 0 || counts.objectRows > 0;
+  const partial = counts.particleRows > 0;
+  const verdict = complete
+    ? 'Captured client consumption past the PSS path: byte/object evidence exists.'
+    : partial
+      ? 'Partial client trace: captured this PSS path as KG3D particle loader input, but not byte reads or runtime PSS object methods.'
+      : counts.opens > 0
+        ? 'Path-level trace only: captured the PSS resource request, but not what the client did after opening it.'
+        : 'PSS reference captured without enough follow-up rows to prove client consumption.';
+  return {
+    id: flow.id,
+    path: flow.path,
+    name: flow.name,
+    firstTs: flow.firstTs,
+    lastTs: flow.lastTs,
+    startTime: flow.firstTs ? new Date(flow.firstTs).toISOString() : '',
+    endTime: flow.lastTs ? new Date(flow.lastTs).toISOString() : '',
+    durationMs: Math.max(0, flow.lastTs - flow.firstTs),
+    verdict,
+    confidence: complete ? 'strong' : partial ? 'partial' : 'path-only',
+    counts,
+    stages,
+  };
+}
+
+function buildClientTracerPssFlowResponse(reqUrl) {
+  const requestedLimit = Number(reqUrl.searchParams.get('limit') || CLIENT_TRACER_RECORD_LIMIT) || CLIENT_TRACER_RECORD_LIMIT;
+  const limit = Math.min(Math.max(Math.round(requestedLimit), 100), CLIENT_TRACER_RECORD_LIMIT);
+  const pathFilter = normalizeClientMonitorAssetPath(reqUrl.searchParams.get('path') || '').toLowerCase();
+  const tracerRecords = readClientTracerRecords(limit);
+  const records = tracerRecords.records;
+  const flows = new Map();
+  const typeCounts = {};
+  let relevantRows = 0;
+  for (const record of records) {
+    const paths = clientTracerPssPathsForRecord(record);
+    const type = String(record.type || '');
+    if (!paths.length && !CLIENT_TRACER_ROW_TYPES.has(type)) continue;
+    typeCounts[type] = (typeCounts[type] || 0) + 1;
+    if (!paths.length) continue;
+    relevantRows += 1;
+    for (const pssPath of paths) {
+      const normalized = normalizeClientMonitorAssetPath(pssPath);
+      if (!normalized || (pathFilter && normalized.toLowerCase() !== pathFilter)) continue;
+      const flow = clientTracerEnsureFlow(flows, normalized);
+      flow.rows.push(compactClientTracerRow(record, normalized));
+    }
+  }
+  const outputFlows = [...flows.values()]
+    .map(finalizeClientTracerFlow)
+    .sort((left, right) => (right.lastTs || 0) - (left.lastTs || 0));
+  const strong = outputFlows.filter((flow) => flow.confidence === 'strong').length;
+  const partial = outputFlows.filter((flow) => flow.confidence === 'partial').length;
+  const pathOnly = outputFlows.filter((flow) => flow.confidence === 'path-only').length;
+  return {
+    ok: true,
+    proofVersion: 2,
+    generatedAt: new Date().toISOString(),
+    recordLimit: limit,
+    sourceRecords: records.length,
+    scannedLines: tracerRecords.scannedLines,
+    skippedLargeFiles: tracerRecords.skippedLargeFiles,
+    relevantRows,
+    counts: { flows: outputFlows.length, strong, partial, pathOnly, byType: typeCounts },
+    verdict: strong
+      ? 'Some PSS paths include byte/object evidence from the client.'
+      : partial
+        ? 'Current capture proves PSS path open plus KG3D particle loader handoff, but not exact PSS byte/object consumption.'
+        : outputFlows.length
+          ? 'Current capture is path-level only; exact client PSS consumption was not captured.'
+          : 'No PSS flow evidence found in the current monitor log.',
+    flows: outputFlows.slice(0, 120),
+    logFiles: listClientMonitorLogFiles().map((filePath) => {
+      const stats = statSync(filePath);
+      return { name: basename(filePath), path: filePath, size: stats.size, mtimeMs: stats.mtimeMs };
+    }),
+  };
+}
+
+const CLIENT_FLOW_PROOF_FILE_BYTE_LIMIT = 64 * 1024 * 1024;
+
+function clientFlowProofRawLineLooksRelevant(line) {
+  return /\.pss|\.tani|\.ani|pss-object-|represent-sfx-call|kg3d-particle-|kg3d-display-proof-|client-animation-file|wwise-post-event/i.test(String(line || ''));
+}
+
+function clientFlowProofValues(row) {
+  const values = [
+    row.type, row.api, row.path, row.decodedPath, row.rawPath, row.pathBytesHex, row.traceId, row.object, row.result,
+    row.handle, row.label, row.rva, row.address, row.eventName, row.eventNameWide, row.kind,
+  ];
+  if (Array.isArray(row.argsRaw)) values.push(...row.argsRaw);
+  if (Array.isArray(row.rawArgs)) values.push(...row.rawArgs);
+  for (const candidate of row.stringCandidates || []) {
+    values.push(candidate.text, candidate.address, ...(candidate.pssPaths || []));
+  }
+  return values.map((value) => String(value || '')).filter(Boolean);
+}
+
+function clientFlowProofRowMatches(row, token) {
+  const lowerToken = String(token || '').trim().toLowerCase();
+  if (!lowerToken) return false;
+  return clientFlowProofValues(row).some((value) => value.toLowerCase().includes(lowerToken));
+}
+
+function clientFlowProofSamePath(left, right) {
+  const leftPath = normalizeClientMonitorAssetPath(left?.decodedPath || left?.path || '').toLowerCase();
+  const rightPath = normalizeClientMonitorAssetPath(right?.decodedPath || right?.path || '').toLowerCase();
+  return !!leftPath && !!rightPath && leftPath === rightPath;
+}
+
+function clientFlowProofCompactRow(record, filePath, lineNumber) {
+  const compact = compactClientMonitorLogRecord(record, filePath, { view: 'animation' });
+  if (!compact) return null;
+  const decodedPath = decodeClientMonitorAnimationRecordPath(record);
+  const args = record.args && typeof record.args === 'object' ? record.args : null;
+  const rawArgs = Array.isArray(args?.raw) ? args.raw.map((value) => String(value || '')).filter(Boolean).slice(0, 8) : [];
+  return {
+    ...compact,
+    lineNumber,
+    logName: basename(filePath),
+    time: new Date(getClientMonitorTimestamp(compact) || Date.now()).toISOString(),
+    kind: String(record.kind || compact.kind || ''),
+    path: decodedPath.normalized || normalizeClientMonitorAssetPath(record.path || compact.path || ''),
+    decodedPath: decodedPath.normalized || '',
+    rawPath: String(record.path || compact.path || ''),
+    pathEncoding: decodedPath.encoding || String(record.pathEncoding || compact.pathEncoding || ''),
+    pathDecodedFrom: decodedPath.decodedFrom || '',
+    rawPathHadReplacement: Boolean(record.rawPathHadReplacement || String(record.path || '').includes('\uFFFD')),
+    rawArgs,
+    stringCandidates: clientTracerStringCandidates(args),
+  };
+}
+
+function readClientFlowProofRows() {
+  const rows = [];
+  const files = listClientMonitorLogFiles();
+  let scannedLines = 0;
+  let skippedLargeFiles = 0;
+  for (const filePath of files) {
+    let stats;
+    try { stats = statSync(filePath); } catch { continue; }
+    if (stats.size > CLIENT_FLOW_PROOF_FILE_BYTE_LIMIT) {
+      skippedLargeFiles += 1;
+      continue;
+    }
+    const lines = readFileSync(filePath, 'utf8').split(/\r?\n/);
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      if (!line.trim()) continue;
+      scannedLines += 1;
+      if (!clientFlowProofRawLineLooksRelevant(line)) continue;
+      try {
+        const parsed = JSON.parse(line);
+        const row = clientFlowProofCompactRow(parsed, filePath, index + 1);
+        if (row) rows.push(row);
+      } catch { /* skip malformed log lines */ }
+    }
+  }
+  rows.sort((left, right) => getClientMonitorTimestamp(left) - getClientMonitorTimestamp(right));
+  return { rows, scannedLines, skippedLargeFiles };
+}
+
+function clientFlowProofRowsInWindow(rows, startTs, endTs) {
+  return rows.filter((row) => row.ts >= startTs && row.ts <= endTs);
+}
+
+function clientFlowProofFirstPointer(row) {
+  return (Array.isArray(row?.argsRaw) && row.argsRaw[0]) || (Array.isArray(row?.rawArgs) && row.rawArgs[0]) || '';
+}
+
+function clientFlowProofStage(id, label, rows, status, detail) {
+  return { id, label, status, detail, rows: rows.slice(0, 40) };
+}
+
+function buildClientMonitorDisplayProofResponse(reqUrl) {
+  const query = String(reqUrl.searchParams.get('q') || 'buff01').trim();
+  const allRows = readClientFlowProofRows();
+  const rows = allRows.rows;
+  const pssFileOpenRows = rows.filter((row) => {
+    const path = normalizeClientMonitorAssetPath(row.decodedPath || row.path || '');
+    if (!/\.pss$/i.test(path)) return false;
+    if (row.type !== 'client-animation-file' && row.type !== 'pss-file-open') return false;
+    if (!query) return true;
+    return clientFlowProofRowMatches(row, query);
+  });
+  const pssObjectOpenRows = rows.filter((row) => {
+    const path = normalizeClientMonitorAssetPath(row.decodedPath || row.path || '');
+    if (!/\.pss$/i.test(path) || row.type !== 'pss-object-open') return false;
+    if (!query) return true;
+    return clientFlowProofRowMatches(row, query);
+  });
+  const pssCandidates = pssFileOpenRows.length ? pssFileOpenRows : pssObjectOpenRows;
+  const focus = pssCandidates[pssCandidates.length - 1] || rows.filter((row) => /\.pss$/i.test(row.path || '')).at(-1) || null;
+  if (!focus) {
+    return {
+      ok: true,
+      generatedAt: new Date().toISOString(),
+      query,
+      scannedLines: allRows.scannedLines,
+      skippedLargeFiles: allRows.skippedLargeFiles,
+      verdict: 'No PSS open row found in the captured client flow.',
+      focus: null,
+      stages: [],
+      edges: [],
+      rows: [],
+      missing: ['PSS file-open row'],
+    };
+  }
+
+  const focusTs = getClientMonitorTimestamp(focus);
+  const focusPointer = clientFlowProofFirstPointer(focus);
+  const focusObject = String(focus.result || focus.object || '');
+  const focusPath = normalizeClientMonitorAssetPath(focus.decodedPath || focus.path || '');
+  const windowStart = focusTs - 1500;
+  const windowEnd = focusTs + 10000;
+  const windowRows = clientFlowProofRowsInWindow(rows, windowStart, windowEnd);
+  const samePathRows = windowRows.filter((row) => clientFlowProofSamePath(row, focus));
+  const pointerRows = focusPointer ? windowRows.filter((row) => clientFlowProofRowMatches(row, focusPointer)) : [];
+  const objectRows = focusObject ? windowRows.filter((row) => clientFlowProofRowMatches(row, focusObject)) : [];
+  const objectOpenRows = windowRows.filter((row) => row.type === 'pss-object-open' && (objectRows.includes(row) || clientFlowProofSamePath(row, focus)));
+  const traceIds = [...new Set(objectOpenRows.map((row) => row.traceId).filter(Boolean))];
+  const traceRows = traceIds.length ? windowRows.filter((row) => traceIds.some((traceId) => clientFlowProofRowMatches(row, traceId))) : [];
+  const methodRows = windowRows.filter((row) => row.type === 'pss-object-method-call' && (objectRows.includes(row) || traceRows.includes(row) || clientFlowProofSamePath(row, focus)));
+  const kg3dPointerRows = windowRows.filter((row) => /^kg3d-particle-/i.test(row.type || '') && focusPointer && clientFlowProofRowMatches(row, focusPointer));
+  const nearbyTimelineRows = windowRows.filter((row) => row.type === 'client-animation-file' && /\.(?:tani|ani)$/i.test(row.path || '') && row.ts >= focusTs - 600 && row.ts <= focusTs + 600);
+  const representRows = windowRows.filter((row) => row.type === 'represent-sfx-call' && (samePathRows.includes(row) || pointerRows.includes(row) || objectRows.includes(row) || traceRows.includes(row)));
+  const displayProofRows = windowRows.filter((row) => row.type === 'kg3d-display-proof-call' && objectOpenRows.length && row.ts >= objectOpenRows[0].ts - 100 && row.ts <= objectOpenRows[0].ts + 1000);
+  const displayProofMatchedRows = displayProofRows.filter((row) => samePathRows.includes(row) || pointerRows.includes(row) || objectRows.includes(row) || traceRows.includes(row));
+  const displayRows = [...representRows, ...displayProofMatchedRows];
+  const particleAfterObjectRows = windowRows.filter((row) => /^kg3d-particle-/i.test(row.type || '') && objectOpenRows.length && row.ts >= objectOpenRows[0].ts && row.ts <= objectOpenRows[0].ts + 250 && !kg3dPointerRows.includes(row));
+  const relatedRows = [...new Map([
+    ...nearbyTimelineRows,
+    ...kg3dPointerRows,
+    ...samePathRows,
+    ...pointerRows,
+    ...objectRows,
+    ...traceRows,
+    ...particleAfterObjectRows,
+    ...displayProofRows,
+    ...representRows,
+  ].map((row) => [`${row.logName}:${row.lineNumber}`, row])).values()].sort((left, right) => left.ts - right.ts);
+
+  const stages = [
+    clientFlowProofStage(
+      'nearby-action',
+      'Nearby TANI/ANI resource open',
+      nearbyTimelineRows,
+      nearbyTimelineRows.length ? 'nearby' : 'missing',
+      nearbyTimelineRows.length ? 'Captured near the PSS open, but no call-stack/correlation ID proves parentage.' : 'No nearby TANI/ANI row was captured in this window.',
+    ),
+    clientFlowProofStage(
+      'kg3d-pointer',
+      'KG3D received the PSS path pointer',
+      kg3dPointerRows,
+      kg3dPointerRows.length ? 'proved' : 'missing',
+      kg3dPointerRows.length ? `KG3D row carries pointer ${focusPointer}, the same pointer used by the PSS open.` : `No KG3D row carried pointer ${focusPointer || '(none)'}.`,
+    ),
+    clientFlowProofStage(
+      'pss-open',
+      'PSS opened through g-open-file',
+      samePathRows.filter((row) => row.type === 'client-animation-file' || row.type === 'pss-file-open'),
+      samePathRows.some((row) => row.type === 'client-animation-file' || row.type === 'pss-file-open') ? 'proved' : 'missing',
+      `Focus path: ${focusPath || '(unknown)'}`,
+    ),
+    clientFlowProofStage(
+      'object-open',
+      'Runtime PSS object opened',
+      objectOpenRows,
+      objectOpenRows.length ? 'proved' : 'missing',
+      objectOpenRows.length ? `Object ${focusObject || objectOpenRows[0].object || ''} appears in pss-object-open.` : `No pss-object-open row matched object ${focusObject || '(none)'}.`,
+    ),
+    clientFlowProofStage(
+      'object-methods',
+      'Runtime PSS object methods called',
+      methodRows,
+      methodRows.length ? 'proved' : 'missing',
+      methodRows.length ? `Captured ${methodRows.length} vtable call row(s) on the matched object/trace.` : 'No object method calls matched the object or trace.',
+    ),
+    clientFlowProofStage(
+      'particle-after-object',
+      'Particle material/block processing after object use',
+      particleAfterObjectRows,
+      particleAfterObjectRows.length ? 'adjacent' : 'missing',
+      particleAfterObjectRows.length ? 'Captured immediately after object calls, but no shared object/pointer makes this a hard proof edge.' : 'No adjacent KG3D material/block row was captured after object use.',
+    ),
+    clientFlowProofStage(
+      'represent-display',
+      'Represent/render attachment or display call',
+      displayRows,
+      displayRows.length ? 'proved' : displayProofRows.length ? 'adjacent' : 'missing',
+      displayRows.length ? 'Represent/render row matched the PSS/object evidence.' : displayProofRows.length ? 'Opt-in render hook fired near this flow, but it did not expose a shared pointer/object yet.' : 'No represent/render-display row matched this PSS flow.',
+    ),
+  ];
+
+  const edges = [
+    {
+      from: 'KG3D filedata-load-current',
+      to: 'PSS g-open-file',
+      status: kg3dPointerRows.length && focusPointer ? 'proved' : 'missing',
+      reason: focusPointer ? `shared pointer ${focusPointer}` : 'no pointer captured',
+    },
+    {
+      from: 'PSS g-open-file',
+      to: 'runtime PSS object',
+      status: objectOpenRows.length && focusObject ? 'proved' : 'missing',
+      reason: focusObject ? `open result/object ${focusObject}` : 'no object result captured',
+    },
+    {
+      from: 'runtime PSS object',
+      to: 'vtable method calls',
+      status: methodRows.length ? 'proved' : 'missing',
+      reason: traceIds.length ? `shared trace ${traceIds.join(', ')}` : (focusObject ? `shared object ${focusObject}` : 'no trace/object match'),
+    },
+    {
+      from: 'object/material processing',
+      to: 'screen display',
+      status: displayRows.length ? 'proved' : displayProofRows.length ? 'adjacent' : 'missing',
+      reason: displayRows.length ? 'render row shares the captured PSS evidence' : displayProofRows.length ? 'render hook fired nearby without shared evidence' : 'no represent/render-submit row in capture',
+    },
+  ];
+  const missing = stages.filter((stage) => stage.status === 'missing').map((stage) => stage.label);
+  const verdict = displayRows.length
+    ? 'Display path is proved for this captured PSS flow.'
+    : displayProofRows.length
+      ? 'Open/use path is proved, and a render hook fired nearby, but display path is still not proved because no render row shared the PSS pointer/object.'
+    : 'Open/use path is proved, but display path is still not proved because no represent/render attachment row matched this flow.';
+
+  return {
+    ok: true,
+    proofVersion: 4,
+    generatedAt: new Date().toISOString(),
+    query,
+    scannedLines: allRows.scannedLines,
+    skippedLargeFiles: allRows.skippedLargeFiles,
+    verdict,
+    focus: {
+      path: focusPath,
+      rawPath: focus.rawPath,
+      pointer: focusPointer,
+      object: focusObject,
+      traceIds,
+      time: focus.time,
+      ts: focus.ts,
+      logName: focus.logName,
+      lineNumber: focus.lineNumber,
+      pathEncoding: focus.pathEncoding,
+      pathDecodedFrom: focus.pathDecodedFrom,
+    },
+    counts: {
+      rows: relatedRows.length,
+      pssCandidates: pssFileOpenRows.length + pssObjectOpenRows.length,
+      kg3dPointerRows: kg3dPointerRows.length,
+      objectOpenRows: objectOpenRows.length,
+      methodRows: methodRows.length,
+      representRows: representRows.length,
+      displayProofRows: displayProofRows.length,
+      displayProofMatchedRows: displayProofMatchedRows.length,
+    },
+    stages,
+    edges,
+    rows: relatedRows,
+    missing,
+  };
+}
+
 let cachedClientMonitorSnapshot = { key: '', value: null };
 
-function readClientMonitorSnapshot(activeSince = '', pausedAt = '') {
-  const cacheKey = `${activeSince || ''}|${pausedAt || ''}|${clientMonitorLogFilesStateKey()}`;
+function readClientMonitorSnapshot(activeSince = '', pausedAt = '', options = {}) {
+  const statusOptions = normalizeClientMonitorStatusOptions(options);
+  const cacheKey = `${statusOptions.view}|${activeSince || ''}|${pausedAt || ''}|${clientMonitorLogFilesStateKey()}`;
   if (cachedClientMonitorSnapshot.key === cacheKey && cachedClientMonitorSnapshot.value) {
     return cachedClientMonitorSnapshot.value;
   }
-  const records = readClientMonitorRecords(5000);
+  const records = readClientMonitorRecords(CLIENT_MONITOR_SNAPSHOT_RECORD_LIMIT, statusOptions);
   const activeSinceMs = Date.parse(activeSince || '') || 0;
   const pausedAtMs = Date.parse(pausedAt || '') || 0;
   const visibleRecords = pausedAtMs
@@ -3399,29 +4757,51 @@ function readClientMonitorSnapshot(activeSince = '', pausedAt = '') {
   const freshCaptures = freshRecords
     .filter((record) => CLIENT_MONITOR_AUDIO_TYPES.has(record.type))
     .map(buildClientMonitorCapture);
-  const allAnimationCaptures = visibleRecords
-    .filter((record) => CLIENT_MONITOR_ANIMATION_TYPES.has(record.type))
-    .map(buildClientMonitorAnimationCapture)
-    .filter(Boolean);
-  const freshAnimationCaptures = freshRecords
-    .filter((record) => CLIENT_MONITOR_ANIMATION_TYPES.has(record.type))
-    .map(buildClientMonitorAnimationCapture)
-    .filter(Boolean);
+  const allAnimationCaptures = statusOptions.includeAnimation
+    ? visibleRecords
+      .filter((record) => CLIENT_MONITOR_ANIMATION_TYPES.has(record.type))
+      .map(buildClientMonitorAnimationCapture)
+      .filter(Boolean)
+    : [];
+  const freshAnimationCaptures = statusOptions.includeAnimation
+    ? freshRecords
+      .filter((record) => CLIENT_MONITOR_ANIMATION_TYPES.has(record.type))
+      .map(buildClientMonitorAnimationCapture)
+      .filter(Boolean)
+    : [];
   const primaryLeadObjects = getClientMonitorPrimaryLeadObjects(allCaptures);
-  const animationAbilityWindows = buildClientMonitorAnimationAbilityWindows(allCaptures);
-  const animationAssets = summarizeClientMonitorAnimationAssets(allAnimationCaptures, animationAbilityWindows);
-  const animationSkillGroups = buildClientMonitorAnimationSkillGroups(allCaptures, allAnimationCaptures, animationAbilityWindows);
+  const animationAbilityWindows = statusOptions.includeAnimation
+    ? mergeClientMonitorAnimationWindows([
+      ...buildClientMonitorAnimationAbilityWindows(allCaptures),
+      ...buildClientMonitorPssTraceWindows(allAnimationCaptures),
+    ]).slice(-40)
+    : [];
+  const animationAssets = statusOptions.includeAnimation
+    ? summarizeClientMonitorAnimationAssets(allAnimationCaptures, animationAbilityWindows)
+    : { assets: [], allAssets: [], abilityWindows: [], hiddenNoise: 0, hiddenDependencies: 0 };
+  const animationSkillGroups = statusOptions.includeAnimation
+    ? buildClientMonitorAnimationSkillGroups(allCaptures, allAnimationCaptures, animationAbilityWindows)
+    : [];
+  const animationStory = statusOptions.includeAnimation
+    ? summarizeClientMonitorAnimationFindings(allAnimationCaptures, animationAssets, animationSkillGroups)
+    : {
+      headline: 'Animation capture not loaded',
+      verdict: 'Open the Animation tab to load TANI/PSS capture details.',
+      counts: { captures: 0, assets: 0, allAssets: 0, skills: 0 },
+      bullets: [],
+    };
   const captures = allCaptures.filter((capture) => isClientMonitorLeadCapture(capture, primaryLeadObjects)).slice(-80).reverse();
   const errors = freshRecords.filter((record) => record.type === 'agent-error' || record.type === 'error').slice(-30).reverse();
   const wwiseHooksReady = hooks.some((hook) => /wwise-post-event/i.test(String(hook.label || ''))) || freshCaptures.some((capture) => capture.type === 'wwise-post-event');
   const fmodHooksReady = hooks.some((hook) => /^fmod/i.test(String(hook.label || '')) || /fmod/i.test(String(hook.module || ''))) || freshCaptures.some((capture) => /^fmod/i.test(capture.type));
-  const animationHooksReady = hooks.some((hook) => /createfile|g-open-file|animtag-audio-virtual-call/i.test(String(hook.label || ''))) || freshAnimationCaptures.length > 0;
+  const animationHooksReady = hooks.some((hook) => /createfile|g-open-file|animtag-audio-virtual-call|represent-|kg3d-particle/i.test(String(hook.label || ''))) || freshAnimationCaptures.length > 0;
   const agentReady = freshRecords.some((record) => record.type === 'audio-agent-ready');
   const snapshot = {
     records: visibleRecords.length,
     totalRecords: records.length,
     freshRecords: freshRecords.length,
     activeSince: activeSince || '',
+    view: statusOptions.view,
     paused: !!pausedAtMs,
     pausedAt: pausedAt || '',
     agentReady,
@@ -3436,12 +4816,15 @@ function readClientMonitorSnapshot(activeSince = '', pausedAt = '') {
     animationHooksReady,
     hooksReady: wwiseHooksReady || fmodHooksReady || animationHooksReady,
     animation: {
+      deferred: !statusOptions.includeAnimation,
       captures: [],
       allCaptures: [],
-      skills: animationSkillGroups.slice(0, 80),
-      assets: animationAssets.assets.slice(0, 80),
+      skills: animationSkillGroups
+        .slice(0, CLIENT_MONITOR_ANIMATION_SKILL_GROUP_LIMIT)
+        .map(compactClientMonitorAnimationSkillGroup),
+      assets: animationAssets.assets.slice(0, CLIENT_MONITOR_ANIMATION_ASSET_LIMIT),
       allAssets: [],
-      story: summarizeClientMonitorAnimationFindings(allAnimationCaptures, animationAssets, animationSkillGroups),
+      story: animationStory,
       hooksReady: animationHooksReady,
     },
     logFiles: listClientMonitorLogFiles().map((filePath) => {
@@ -3460,37 +4843,54 @@ function resolveClientMonitorCaptureActiveSince(bridgeStartedAt = '') {
   return activeSinceMs ? new Date(activeSinceMs).toISOString() : '';
 }
 
-function captureClientMonitorSnapshot(bridge, pausedAt = '') {
+function captureClientMonitorSnapshot(bridge, pausedAt = '', options = {}) {
   const captureActiveSince = bridge.running && bridge.managed ? resolveClientMonitorCaptureActiveSince(bridge.startedAt) : '';
-  return readClientMonitorSnapshot(captureActiveSince, pausedAt);
+  return readClientMonitorSnapshot(captureActiveSince, pausedAt, options);
 }
 
-function buildClientMonitorStatus() {
+function buildClientMonitorStatus(options = {}) {
+  const statusOptions = normalizeClientMonitorStatusOptions(options);
   const frida = getClientMonitorFridaStatus();
   const clientProcesses = getClientMonitorProcesses();
+  const privilege = getClientMonitorPrivilegeStatus(clientProcesses);
   const bridge = getClientMonitorBridge();
-  const capture = clientMonitorCapturePausedAt && clientMonitorPausedCaptureSnapshot
-    ? { ...clientMonitorPausedCaptureSnapshot, paused: true, pausedAt: clientMonitorCapturePausedAt }
-    : captureClientMonitorSnapshot(bridge, clientMonitorCapturePausedAt);
+  const capture = captureClientMonitorSnapshot(bridge, clientMonitorCapturePausedAt, statusOptions);
   const bridgeAgeMs = bridge.running && bridge.startedAt ? Date.now() - (Date.parse(bridge.startedAt) || Date.now()) : 0;
   const bridgeAttachStuck = !!(bridge.running && bridge.managed && !capture.agentReady && !capture.hooksReady && bridgeAgeMs > 15000);
-  const readyToCast = !!(clientProcesses.length && bridge.running && capture.hooksReady && !bridgeAttachStuck);
+  const currentBridgeHooksReady = !!(bridge.running && capture.hooksReady && !bridgeAttachStuck);
+  const animationDeferred = !!capture.animation?.deferred;
+  const animationView = statusOptions.view === 'animation';
+  const attachEnabled = clientMonitorAttachEnabled();
+  const attachRequiresConfirmation = attachEnabled && clientMonitorAttachRequiresConfirmation();
+  const bridgeLabel = animationView ? 'PSS trace bridge' : 'Audio bridge';
+  const hookReadyDetail = animationView
+    ? (statusOptions.kg3dDisplayProofHooks ? 'animation and display-proof hooks active for current bridge' : 'animation hooks active for current bridge')
+    : 'Wwise/FMOD audio hooks active for current bridge';
+  const readyToCast = !!(clientProcesses.length && currentBridgeHooksReady);
   const castInstruction = !frida.available || !frida.agentExists || !frida.attachExists
     ? 'Bridge files are missing'
     : !clientProcesses.length
       ? 'Waiting for JX3 client'
+      : !attachEnabled
+        ? 'Attach disabled'
       : !bridge.running
-        ? 'Start bridge'
+        ? (animationView ? 'Start PSS Trace' : 'Start bridge')
         : bridgeAttachStuck
-          ? 'Bridge attach stuck; restart JX3 client'
-        : !capture.hooksReady
-          ? 'Waiting for audio hooks'
+          ? 'Bridge attach stuck; check bridge stderr and restart bridge'
+        : !capture.agentReady
+          ? 'Attaching to client'
+        : !currentBridgeHooksReady
+          ? (animationView ? 'Waiting for PSS trace hooks' : 'Waiting for audio hooks')
           : 'CAST NOW';
   return {
     ok: true,
     now: new Date().toISOString(),
+    view: statusOptions.view,
+    attachEnabled,
+    attachRequiresConfirmation,
     targetProcessNames: CLIENT_MONITOR_PROCESS_NAMES,
     frida,
+    privilege,
     clientProcesses,
     bridge: {
       ...bridge,
@@ -3500,13 +4900,15 @@ function buildClientMonitorStatus() {
       stderrTail: clientMonitorStderrTail.slice(-20),
     },
     checks: [
-      { id: 'server', label: 'Server bridge', status: 'ok', detail: `HTTP API on ${PORT}` },
+      { id: 'server', label: 'Server bridge', status: 'ok', detail: `HTTP API on ${PORT}; server pid ${process.pid}; ${privilege.isAdmin ? 'elevated' : privilege.isAdmin === false ? 'not elevated' : 'elevation unknown'}` },
       { id: 'frida', label: 'Frida package', status: frida.available ? 'ok' : 'fail', detail: frida.available ? 'available' : 'missing npm package' },
       { id: 'client', label: 'Client ready', status: clientProcesses.length ? 'ok' : 'wait', detail: clientProcesses.length ? clientProcesses.map((proc) => `${proc.name} ${proc.pid}`).join(', ') : CLIENT_MONITOR_PROCESS_NAMES.join(', ') },
-      { id: 'bridge', label: 'Audio bridge', status: bridge.running ? 'ok' : 'wait', detail: bridge.running ? `pid ${bridge.pid}` : 'not running' },
-      { id: 'hooks', label: 'Hooks armed', status: capture.hooksReady ? 'ok' : bridgeAttachStuck ? 'fail' : bridge.running ? 'wait' : 'idle', detail: capture.hooksReady ? 'Wwise/FMOD/file hooks active for current bridge' : bridgeAttachStuck ? 'Frida attach did not finish; restart JX3 client and start bridge again' : bridge.running ? 'waiting for current bridge hook log' : 'no hook log yet' },
+      { id: 'attach', label: 'Attach safety', status: attachEnabled ? 'ok' : 'wait', detail: attachEnabled ? (attachRequiresConfirmation ? 'live Frida attach requires explicit browser confirmation before starting' : 'Frida attach is enabled for this server session') : 'disabled by JX3_CLIENT_MONITOR_ATTACH_ENABLED=0' },
+      { id: 'privilege', label: 'Process access', status: !clientProcesses.length ? 'idle' : privilege.targetAccessOk ? 'ok' : 'wait', detail: privilege.detail },
+      { id: 'bridge', label: bridgeLabel, status: bridge.running ? 'ok' : 'wait', detail: bridge.running ? `pid ${bridge.pid}` : 'not running' },
+      { id: 'hooks', label: 'Hooks armed', status: currentBridgeHooksReady ? 'ok' : bridgeAttachStuck ? 'fail' : bridge.running ? 'wait' : 'idle', detail: currentBridgeHooksReady ? hookReadyDetail : bridgeAttachStuck ? 'Frida attach did not finish; check bridge stderr and restart bridge' : bridge.running && !capture.agentReady ? 'attaching Frida agent to client process' : bridge.running ? 'waiting for current bridge hook log' : 'bridge is not running' },
       { id: 'capture', label: 'Sound captured', status: capture.captures.length ? 'ok' : 'wait', detail: capture.captures.length ? `${capture.captures.length} event(s)` : 'no sound events yet' },
-      { id: 'animation', label: 'Animation files', status: capture.animation?.assets?.length ? 'ok' : capture.animation?.hooksReady ? 'wait' : 'idle', detail: capture.animation?.assets?.length ? `${capture.animation.assets.length} resource(s)` : capture.animation?.hooksReady ? 'file hooks armed; perform a cast or movement' : 'no animation file hooks yet' },
+      { id: 'animation', label: 'Animation files', status: animationDeferred ? capture.animationHooksReady ? 'wait' : 'idle' : capture.animation?.assets?.length ? 'ok' : capture.animation?.hooksReady ? 'wait' : 'idle', detail: animationDeferred ? capture.animationHooksReady ? 'file hooks armed; open Animation tab for details' : 'animation details deferred on Sound tab' : capture.animation?.assets?.length ? `${capture.animation.assets.length} resource(s)` : capture.animation?.hooksReady ? 'file hooks armed; perform a cast or movement' : 'no animation file hooks yet' },
     ],
     readyToCast,
     castInstruction,
@@ -3514,29 +4916,41 @@ function buildClientMonitorStatus() {
   };
 }
 
-function getClientMonitorStatus(forceRefresh = false) {
+function getClientMonitorStatus(forceRefresh = false, options = {}) {
+  const statusOptions = normalizeClientMonitorStatusOptions(options);
   const now = Date.now();
-  if (!forceRefresh && clientMonitorStatusCache && now - clientMonitorStatusCache.ts < CLIENT_MONITOR_STATUS_CACHE_MS) {
+  const cacheKey = `${statusOptions.view}|${clientMonitorLogFilesStateKey()}`;
+  if (!forceRefresh && clientMonitorStatusCache?.key === cacheKey && now - clientMonitorStatusCache.ts < CLIENT_MONITOR_STATUS_CACHE_MS) {
     return clientMonitorStatusCache.status;
   }
-  const status = buildClientMonitorStatus();
-  clientMonitorStatusCache = { ts: now, status };
+  const status = buildClientMonitorStatus(statusOptions);
+  clientMonitorStatusCache = { key: cacheKey, ts: now, status };
   return status;
 }
 
-function startClientMonitorBridge() {
+function startClientMonitorBridge(options = {}) {
+  const statusOptions = normalizeClientMonitorStatusOptions(options);
+  if (!clientMonitorAttachEnabled()) {
+    return { ok: false, error: 'Frida attach is disabled by JX3_CLIENT_MONITOR_ATTACH_ENABLED=0.', status: getClientMonitorStatus(true, statusOptions) };
+  }
+  if (clientMonitorAttachRequiresConfirmation() && !statusOptions.confirmAttach) {
+    return { ok: false, error: 'Live Frida attach requires explicit confirmation. Start again with confirmAttach=1 only when you intentionally want live tracing.', status: getClientMonitorStatus(true, statusOptions) };
+  }
   const running = getClientMonitorBridge();
-  if (running.running) return { ok: true, note: 'Audio bridge is already running.', status: getClientMonitorStatus(true) };
+  if (running.running) return { ok: true, note: 'Audio bridge is already running.', status: getClientMonitorStatus(true, statusOptions) };
   const frida = getClientMonitorFridaStatus();
   if (!frida.available || !frida.agentExists || !frida.attachExists) {
-    return { ok: false, error: 'Frida bridge files are not ready.', status: getClientMonitorStatus(true) };
+    return { ok: false, error: 'Frida bridge files are not ready.', status: getClientMonitorStatus(true, statusOptions) };
   }
   const clients = getClientMonitorProcesses();
-  if (!clients.length) return { ok: false, error: 'JX3 client process not found.', status: getClientMonitorStatus(true) };
+  if (!clients.length) return { ok: false, error: 'JX3 client process not found.', status: getClientMonitorStatus(true, statusOptions) };
+  const privilege = getClientMonitorPrivilegeStatus(clients);
   ensureDir(dirname(CLIENT_MONITOR_LOG_PATH));
   const target = clients[0];
   const processName = target.name || CLIENT_MONITOR_PROCESS_NAMES[0];
-  const args = ['tools/frida-attach.mjs', '--pid', String(target.pid), '--agent', 'tools/frida-audio-agent.js', '--log', 'log/frida-audio-client-monitor.jsonl'];
+  const agentMode = clientMonitorAgentModeForOptions(statusOptions);
+  const args = ['tools/frida-attach.mjs', '--pid', String(target.pid), '--agent', 'tools/frida-audio-agent.js', '--log', 'log/frida-audio-client-monitor.jsonl', '--agent-mode', agentMode];
+  if (statusOptions.kg3dDisplayProofHooks) args.push('--attach-timeout-ms', '120000', '--agent-config', JSON.stringify({ kg3dDisplayProofHooks: true }));
   const child = spawn(process.execPath, args, { cwd: __dirname, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   clientMonitorBridgeChild = child;
   clientMonitorCapturePausedAt = '';
@@ -3558,45 +4972,49 @@ function startClientMonitorBridge() {
     if (clientMonitorBridgeJob) clientMonitorBridgeJob.lastExit = lastExit;
     if (clientMonitorBridgeChild === child) clientMonitorBridgeChild = null;
   });
-  return { ok: true, started: clientMonitorBridgeJob, status: getClientMonitorStatus(true) };
+  return { ok: true, started: clientMonitorBridgeJob, status: getClientMonitorStatus(true, statusOptions) };
 }
 
-function stopClientMonitorBridge() {
+function stopClientMonitorBridge(options = {}) {
+  const statusOptions = normalizeClientMonitorStatusOptions(options);
   const child = clientMonitorBridgeChild;
   if (child?.pid && isPidAlive(child.pid)) {
     try { child.kill('SIGTERM'); } catch { /* ignore */ }
     clientMonitorCapturePausedAt = '';
     clientMonitorCaptureResumeAt = '';
     clientMonitorPausedCaptureSnapshot = null;
-    return { ok: true, stopped: child.pid, status: getClientMonitorStatus(true) };
+    return { ok: true, stopped: child.pid, status: getClientMonitorStatus(true, statusOptions) };
   }
   clientMonitorCapturePausedAt = '';
   clientMonitorCaptureResumeAt = '';
   clientMonitorPausedCaptureSnapshot = null;
-  return { ok: true, note: 'No managed audio bridge is running.', status: getClientMonitorStatus(true) };
+  return { ok: true, note: 'No managed audio bridge is running.', status: getClientMonitorStatus(true, statusOptions) };
 }
 
-function clearClientMonitorLog() {
+function clearClientMonitorLog(options = {}) {
+  const statusOptions = normalizeClientMonitorStatusOptions(options);
   ensureDir(dirname(CLIENT_MONITOR_LOG_PATH));
   writeFileSync(CLIENT_MONITOR_LOG_PATH, '');
   if (clientMonitorCapturePausedAt) {
-    clientMonitorPausedCaptureSnapshot = captureClientMonitorSnapshot(getClientMonitorBridge(), clientMonitorCapturePausedAt);
+    clientMonitorPausedCaptureSnapshot = captureClientMonitorSnapshot(getClientMonitorBridge(), clientMonitorCapturePausedAt, statusOptions);
   }
-  return { ok: true, cleared: CLIENT_MONITOR_LOG_PATH, status: getClientMonitorStatus(true) };
+  return { ok: true, cleared: CLIENT_MONITOR_LOG_PATH, status: getClientMonitorStatus(true, statusOptions) };
 }
 
-function pauseClientMonitorCapture() {
-  if (clientMonitorCapturePausedAt) return { ok: true, note: 'Capture is already paused.', status: getClientMonitorStatus(true) };
+function pauseClientMonitorCapture(options = {}) {
+  const statusOptions = normalizeClientMonitorStatusOptions(options);
+  if (clientMonitorCapturePausedAt) return { ok: true, note: 'Capture is already paused.', status: getClientMonitorStatus(true, statusOptions) };
   clientMonitorCapturePausedAt = new Date().toISOString();
-  clientMonitorPausedCaptureSnapshot = captureClientMonitorSnapshot(getClientMonitorBridge(), clientMonitorCapturePausedAt);
-  return { ok: true, pausedAt: clientMonitorCapturePausedAt, status: getClientMonitorStatus(true) };
+  clientMonitorPausedCaptureSnapshot = captureClientMonitorSnapshot(getClientMonitorBridge(), clientMonitorCapturePausedAt, statusOptions);
+  return { ok: true, pausedAt: clientMonitorCapturePausedAt, status: getClientMonitorStatus(true, statusOptions) };
 }
 
-function resumeClientMonitorCapture() {
+function resumeClientMonitorCapture(options = {}) {
+  const statusOptions = normalizeClientMonitorStatusOptions(options);
   clientMonitorCapturePausedAt = '';
   clientMonitorCaptureResumeAt = new Date().toISOString();
   clientMonitorPausedCaptureSnapshot = null;
-  return { ok: true, resumedAt: clientMonitorCaptureResumeAt, status: getClientMonitorStatus(true) };
+  return { ok: true, resumedAt: clientMonitorCaptureResumeAt, status: getClientMonitorStatus(true, statusOptions) };
 }
 
 let cdnBrowseResponseCache = new Map();
@@ -3621,6 +5039,7 @@ function findCdnMirrorProcess() {
 async function buildCdnResourceStatusResponse() {
   let summary = readJsonUtf8Loose(CDN_RESOURCE_SUMMARY_PATH, null);
   const indexStat = existsSync(CDN_RESOURCE_INDEX_PATH) ? statSync(CDN_RESOURCE_INDEX_PATH) : null;
+  const statusStat = existsSync(CDN_PACKAGE_STATUS_PATH) ? statSync(CDN_PACKAGE_STATUS_PATH) : null;
   const status = readCdnStatusSnapshot();
   const downloaded = Number(status.counts.fullDownloaded || status.counts.ok || 0);
   let total = Number(summary?.totalFiltered || summary?.totalOnlinePackages || summary?.total || 0);
@@ -3772,8 +5191,21 @@ async function extractCdnHpkgMember(payload = {}) {
   const storedEnd = storedStart + record.storedSize;
   if (storedEnd > hpkg.length) throw new Error(`Member payload extends beyond file: ${memberPath}`);
   const memberHeaderSize = record.storedSize - record.originalSize;
-  if (memberHeaderSize < 0 || memberHeaderSize > 64) throw new Error(`Unexpected member header size ${memberHeaderSize} for ${memberPath}`);
-  const raw = hpkg.subarray(storedStart + memberHeaderSize, storedStart + memberHeaderSize + record.originalSize);
+  let raw;
+  if (memberHeaderSize < 0) {
+    // LZHAM-compressed member — decompress
+    const skip = Math.abs(memberHeaderSize);
+    const stored = hpkg.subarray(storedStart, storedEnd);
+    const output = Buffer.alloc(record.originalSize);
+    const outputLength = [output.length >>> 0];
+    const status = getCdnLzhamUncompress()(output, outputLength, stored.subarray(skip), (stored.length - skip) >>> 0);
+    if (status !== 0) throw new Error(`Member LZHAM decompress failed (${status}) for ${memberPath}`);
+    raw = output;
+  } else if (memberHeaderSize > 64) {
+    throw new Error(`Unexpected member header size ${memberHeaderSize} for ${memberPath}`);
+  } else {
+    raw = hpkg.subarray(storedStart + memberHeaderSize, storedStart + memberHeaderSize + record.originalSize);
+  }
   const extractedRelative = normalizeCdnMemberPath(`${packageName}/${memberPath}`);
   const extractedPath = safeCdnOutputPath(extractedRelative);
   if (!extractedPath) throw new Error('Invalid extracted member path');
@@ -4305,6 +5737,9 @@ function getLogicalPathVariants(value) {
   if (!normalized) return [];
 
   const variants = [normalized];
+  // Try all-lowercase variant (game cache may store case-insensitively)
+  const lower = normalized.toLowerCase();
+  if (lower !== normalized) variants.push(lower);
   const extension = extname(normalized).toLowerCase();
   if (extension === '.tga') {
     variants.push(`${normalized.slice(0, -4)}.dds`);
@@ -4908,6 +6343,97 @@ function parsePssEffectScene(buffer, options = {}) {
 
   const roundFloat = v => Math.round(v * 1000000) / 1000000;
 
+  function parsePssCameraShakeBlock(blockStart, blockEnd) {
+    const blockSize = Math.max(0, blockEnd - blockStart);
+    const readU32 = (relativeOffset) => (
+      blockStart + relativeOffset + 4 <= blockEnd ? buffer.readUInt32LE(blockStart + relativeOffset) : null
+    );
+    const readF32 = (relativeOffset) => {
+      if (blockStart + relativeOffset + 4 > blockEnd) return null;
+      const value = buffer.readFloatLE(blockStart + relativeOffset);
+      return Number.isFinite(value) ? roundFloat(value) : null;
+    };
+
+    const sampleDataOffset = 0x44;
+    const sampleAxisCount = 3;
+    const sampleStrideBytes = sampleAxisCount * 4;
+    const sampleCount = readU32(0x34);
+    const sampleRateFps = readU32(0x08);
+    const expectedSampleBytes = Number.isInteger(sampleCount) ? sampleCount * sampleStrideBytes : 0;
+    const expectedBlockSize = sampleDataOffset + expectedSampleBytes;
+    const canDecodeSamples = Number.isInteger(sampleCount)
+      && sampleCount >= 0
+      && expectedBlockSize <= blockSize;
+
+    const samples = [];
+    if (canDecodeSamples) {
+      for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
+        const sampleOffset = sampleDataOffset + sampleIndex * sampleStrideBytes;
+        const x = readF32(sampleOffset);
+        const y = readF32(sampleOffset + 4);
+        const z = readF32(sampleOffset + 8);
+        samples.push({
+          index: sampleIndex,
+          timeSeconds: sampleRateFps > 0 ? roundFloat(sampleIndex / sampleRateFps) : null,
+          x,
+          y,
+          z,
+        });
+      }
+    }
+
+    const channelStats = ['x', 'y', 'z'].map((axis) => {
+      const values = samples.map((sample) => sample[axis]).filter((value) => Number.isFinite(value));
+      return {
+        axis,
+        min: values.length ? roundFloat(Math.min(...values)) : null,
+        max: values.length ? roundFloat(Math.max(...values)) : null,
+        nonZeroCount: values.filter((value) => Math.abs(value) > 0.000001).length,
+      };
+    });
+
+    const durationSeconds = readF32(0x00);
+    const startDelaySeconds = readF32(0x04);
+    const durationFromSamples = sampleRateFps > 0 && sampleCount != null
+      ? roundFloat(sampleCount / sampleRateFps)
+      : null;
+
+    return {
+      blockSize,
+      headerSize: sampleDataOffset,
+      symbolClass: 'KG3D_ParticleCameraShake',
+      symbolReader: '_PARSYS_ReadParticleCameraShakeBlock',
+      parameters: {
+        fDuration: durationSeconds,
+        startDelaySeconds,
+        sampleRateFps,
+        nType: readU32(0x28),
+        sampleCount,
+        sampleAxisCount,
+        sampleStrideBytes,
+        sampleDataOffset,
+      },
+      derived: {
+        expectedBlockSize,
+        expectedSampleBytes,
+        durationFromSamples,
+        durationMatchesSamples: durationSeconds != null && durationFromSamples != null
+          ? Math.abs(durationSeconds - durationFromSamples) < 0.000001
+          : null,
+      },
+      samples,
+      channelStats,
+      warning: canDecodeSamples
+        ? null
+        : `camera-shake sample stream does not fit expected ${sampleCount ?? '?'} vec3 samples`,
+      semanticProof: [
+        'KG3D_ParticleCameraShake::FrameMove (KG3DEngineDX11EX64.dll RVA 0xDAA650) adds frame time into the object elapsed timer, compares m_pBaseData+0x04 against that elapsed timer, and only advances the local shake/sample timer after elapsed crosses +0x04.',
+        'The same function then compares the local shake/sample timer against m_pBaseData+0x00, proving +0x00 is active duration and +0x04 is the pre-shake start delay in seconds.',
+      ],
+      uncertainty: [],
+    };
+  }
+
   function findTailMarker(blockStart, blockEnd) {
     const lookback = Math.min(240, blockEnd - blockStart);
     for (let off = blockEnd - 4; off >= blockEnd - lookback; off -= 4) {
@@ -5395,6 +6921,21 @@ function parsePssEffectScene(buffer, options = {}) {
       if (mpv >= 1 && mpv <= 100000) maxParticles = mpv;
     }
 
+    if (semantic === 'unknown') {
+      if (Number.isFinite(spatialScalar)) {
+        semantic = 'spatialScalarMetadata';
+        confidence = Math.max(confidence, 0.7);
+      } else if (Number.isFinite(maxParticles)) {
+        semantic = 'fixedTrailerMetadata';
+        confidence = Math.max(confidence, 0.7);
+      } else if (values.length === 0) {
+        semantic = 'emptyTailTrailer';
+        confidence = Math.max(confidence, 0.6);
+      } else {
+        semantic = 'unclassifiedTailScalars';
+      }
+    }
+
     return {
       markerOffset,
       layerToken,
@@ -5415,15 +6956,20 @@ function parsePssEffectScene(buffer, options = {}) {
   function buildRuntimeParams(tailParams) {
     if (!tailParams) return null;
 
+    const hasMeaningfulNumberArray = (value) => {
+      return Array.isArray(value)
+        && value.some((item) => Number.isFinite(Number(item)) && Math.abs(Number(item)) > 0.000001);
+    };
+
     const out = {
       semantic: tailParams.semantic,
       confidence: tailParams.confidence,
     };
 
-    if (Array.isArray(tailParams.sizeCurve) && tailParams.sizeCurve.length === 3) {
+    if (Array.isArray(tailParams.sizeCurve) && tailParams.sizeCurve.length === 3 && hasMeaningfulNumberArray(tailParams.sizeCurve)) {
       out.sizeCurve = tailParams.sizeCurve;
     }
-    if (Array.isArray(tailParams.sizeCurveKeyframes) && tailParams.sizeCurveKeyframes.length >= 3) {
+    if (Array.isArray(tailParams.sizeCurveKeyframes) && tailParams.sizeCurveKeyframes.length >= 3 && hasMeaningfulNumberArray(tailParams.sizeCurveKeyframes)) {
       out.sizeCurveKeyframes = tailParams.sizeCurveKeyframes;
     }
     if (isFinite(tailParams.lifetimeSeconds) && tailParams.lifetimeSeconds > 0) {
@@ -5447,6 +6993,27 @@ function parsePssEffectScene(buffer, options = {}) {
     }
 
     return Object.keys(out).length > 0 ? out : null;
+  }
+
+  function applyGlobalLifetimeRuntime(runtimeParams, moduleEntries) {
+    const runtime = runtimeParams && typeof runtimeParams === 'object'
+      ? { ...runtimeParams }
+      : {};
+    if (Number.isFinite(Number(runtime.lifetimeSeconds)) && Number(runtime.lifetimeSeconds) > 0) return runtime;
+    if (!Number.isFinite(globalPlayDuration) || globalPlayDuration <= 0) return runtimeParams;
+
+    const timeModules = new Set(['生命', '尺寸']);
+    const hasPerParticleTimeModule = Array.isArray(moduleEntries)
+      && moduleEntries.some((entry) => timeModules.has(String(entry?.name || entry || '')));
+    if (hasPerParticleTimeModule) return runtimeParams;
+
+    runtime.lifetimeSeconds = roundFloat(globalPlayDuration / 1000);
+    runtime.lifetimeSource = 'pss-global-play-duration';
+    runtime.lifetimeSourceMs = roundFloat(globalPlayDuration);
+    if (runtime.semantic && runtime.semantic !== 'unknown') runtime.tailSemantic = runtime.semantic;
+    runtime.semantic = 'globalPlayDuration';
+    runtime.confidence = Math.max(Number(runtime.confidence) || 0, 0.95);
+    return Object.keys(runtime).length > 0 ? runtime : null;
   }
 
   function hasRuntimeShape(runtimeParams) {
@@ -5575,25 +7142,52 @@ function parsePssEffectScene(buffer, options = {}) {
     }
   }
 
-  // Issue #7 (2026-04-26): trackParams field-index extractor REMOVED.
-  // The previous implementation read floats[9] as alphaScale, floats[11]
-  // as speedHint, floats[14] as flowScale, uints[13] as tailToken — all
-  // unverified guesses ("APPROXIMATE indices" per the type3 audit string).
-  // Per user directive ("anything goes wrong is a warning, never silent
-  // fallback / heuristic"), we no longer extract these fields. Each type-3
-  // emitter records a structured warning so downstream code knows the
-  // params are intentionally unavailable. The client already gracefully
-  // falls back when trackParams is null (see actor-animation-player.js:
-  // sliceTrackNodesForEmitter / linkedTrack rendering — defaults
-  // widthScale=1, speedHint=80, flowScale=1).
-  function extractTrackRuntimeParams(_blockStart, _blockEnd) {
-    return null;
+  function extractTrackRuntimeParams(blockStart, blockEnd) {
+    const blockSize = blockEnd - blockStart;
+    const expectedBlockSize = 236;
+    if (blockSize !== expectedBlockSize) return null;
+    const readF32 = (relativeOffset) => {
+      if (blockStart + relativeOffset + 4 > blockEnd) return null;
+      const value = buffer.readFloatLE(blockStart + relativeOffset);
+      return Number.isFinite(value) ? roundFloat(value) : null;
+    };
+    const readU32 = (relativeOffset) => (
+      blockStart + relativeOffset + 4 <= blockEnd ? buffer.readUInt32LE(blockStart + relativeOffset) : null
+    );
+    const miscParams = [0xA8, 0xAC, 0xB0, 0xB4, 0xB8, 0xBC].map((relativeOffset) => ({
+      offset: relativeOffset,
+      hexOffset: formatHexOffset(relativeOffset),
+      uint: readU32(relativeOffset),
+      float: readF32(relativeOffset),
+    }));
+    return {
+      struct: 'KG3D_PARSYS_TRACK_BLOCK',
+      blockSize,
+      pathOffset: 0x00,
+      pathByteLength: 64,
+      scaleXYZ: [readF32(0x9C), readF32(0xA0), readF32(0xA4)],
+      miscParams,
+      uniformScale: readF32(0xC0),
+      radiusCandidate: readF32(0xC8),
+      segmentCountCandidate: readU32(0xD0),
+      alpha: readF32(0xD4),
+      decodedOffsets: {
+        scaleXYZ: '+0x9C..+0xA7',
+        miscParams: '+0xA8..+0xBF',
+        uniformScale: '+0xC0',
+        radiusCandidate: '+0xC8',
+        segmentCountCandidate: '+0xD0',
+        alpha: '+0xD4',
+      },
+    };
   }
 
-  function buildTrackRuntimeWarning(blockStart, blockEnd) {
+  function buildTrackRuntimeWarning(blockStart, blockEnd, trackParams) {
+    if (trackParams) return null;
+    const blockSize = blockEnd - blockStart;
     return {
-      reason: 'trackParams field offsets are not engine-verified; previously-extracted indices (alphaScale@floats[9], speedHint@floats[11], flowScale@floats[14], tailToken@uints[13]) were unverified guesses and have been removed per no-silent-fallback policy (issue #7).',
-      blockSize: blockEnd - blockStart,
+      reason: `expected KG3D_PARSYS_TRACK_BLOCK size 236 bytes before decoding track runtime params; got ${blockSize}`,
+      blockSize,
     };
   }
 
@@ -5664,6 +7258,7 @@ function parsePssEffectScene(buffer, options = {}) {
       let blendMode = readJsondefBlendMode(matPath);
       let blendModeSource = blendMode ? 'jsondef' : 'jsondef:missing';
       let blendModeFallbackKeyword = null;
+      const materialTint = readJsondefMaterialTint(matPath);
       if (!blendMode) {
         // Test unambiguous suffix tokens first (engine convention in
         // 独立材质). The token must appear as an underscore-bounded word so
@@ -5733,21 +7328,21 @@ function parsePssEffectScene(buffer, options = {}) {
       const { validModules, unknownModules } = extractConfirmedSpriteModules(buffer, blockStart, blockEnd);
 
       // ── KG3D_ParticleColor seed: authoritative colorCurve scan origin ──
-      // When the sprite declares a 颜色 module, its payload (immediately after
+      // When the sprite declares a color module, its payload (immediately after
       // the 2-byte-per-Hanzi module name) is an RGBA keyframe table. Collect
-      // ALL 颜色 seed offsets; some emitters carry multiple copies (header
+      // ALL color seed offsets; some emitters carry multiple copies (header
       // fragment + real keyframe region) and only the latter decodes cleanly.
+      const isColorModuleName = (name) => name === '颜色' || String(name || '').endsWith('颜色');
       const colorModuleSeeds = [];
       for (let mi = 0; mi < validModules.length; mi++) {
         const mod = validModules[mi];
-        if (mod.name !== '颜色') continue;
-        const nameAbs = blockStart + mod.offset;
+        if (!isColorModuleName(mod.name)) continue;
         const nameLen = [...mod.name].length * 2; // GB18030 Hanzi: 2 bytes each
-        let seed = nameAbs + nameLen;
-        seed += (4 - (seed % 4)) % 4;
-        colorModuleSeeds.push(seed);
+        let seedRel = mod.offset + nameLen;
+        seedRel += (4 - (seedRel % 4)) % 4;
+        colorModuleSeeds.push({ seed: blockStart + seedRel, name: mod.name });
       }
-      const colorModuleSeedAbs = colorModuleSeeds.length > 0 ? colorModuleSeeds[0] : null;
+      const colorModuleSeedAbs = colorModuleSeeds.length > 0 ? colorModuleSeeds[0].seed : null;
 
       // ── Extract RGBA color curve from trailing data ──
       // Priority: if the 颜色 module header was located above, try that
@@ -5757,21 +7352,59 @@ function parsePssEffectScene(buffer, options = {}) {
       let colorCurve = null;
       let colorCurveSource = null;
       {
+        const colorScanEnd = Math.max(blockStart, blockEnd - 152);
+        const decodePackedFloat2ColorCurve = (scanStart) => {
+          let best = null;
+          for (let off = scanStart; off + 12 <= colorScanEnd; off += 4) {
+            const valueCount = buffer.readUInt32LE(off);
+            if (valueCount < 8 || valueCount > 512 || (valueCount % 2) !== 0) continue;
+            const valuesStart = off + 4;
+            const valuesEnd = valuesStart + valueCount * 4;
+            if (valuesEnd > colorScanEnd) continue;
+            const values = [];
+            let valid = true;
+            let maxValue = 0;
+            for (let p = valuesStart; p < valuesEnd; p += 4) {
+              const value = buffer.readFloatLE(p);
+              if (!Number.isFinite(value) || value < -0.01 || value > 4.01) {
+                valid = false;
+                break;
+              }
+              const clamped = Math.max(0, Math.min(4, value));
+              values.push(clamped);
+              maxValue = Math.max(maxValue, clamped);
+            }
+            if (!valid || maxValue <= 0.02) continue;
+            const pairs = [];
+            for (let i = 0; i + 1 < values.length; i += 2) pairs.push([values[i], values[i + 1]]);
+            if (pairs.length < 4) continue;
+            const curve = pairs.map(([left, right]) => {
+              const high = Math.max(left, right);
+              const low = Math.min(left, right);
+              return [high, low, high, high];
+            });
+            const score = pairs.length * 10 + maxValue;
+            if (!best || score > best.score) best = { curve, score, valueCount, offset: off };
+          }
+          return best;
+        };
+
         const runScan = (scanStart) => {
-          const inRange = v => isFinite(v) && v >= -0.01 && v <= 1.01;
+          const inRange = v => isFinite(v) && v >= -0.01 && v <= 4.01;
           const keyframes = [];
-          for (let off = scanStart; off + 16 <= blockEnd; off += 4) {
+          for (let off = scanStart; off + 16 <= colorScanEnd; off += 4) {
             const r = buffer.readFloatLE(off);
             const g = buffer.readFloatLE(off + 4);
             const b = buffer.readFloatLE(off + 8);
             const a = buffer.readFloatLE(off + 12);
             const nz = (r > 0.001 ? 1 : 0) + (g > 0.001 ? 1 : 0) + (b > 0.001 ? 1 : 0) + (a > 0.001 ? 1 : 0);
-            if (inRange(r) && inRange(g) && inRange(b) && inRange(a) && nz >= 2) {
+            const hasDenorm = [r, g, b, a].some(v => v > 0 && v < 0.00001);
+            if (inRange(r) && inRange(g) && inRange(b) && a <= 1.01 && nz >= 2 && !hasDenorm) {
               keyframes.push([
-                Math.max(0, Math.min(1, r)),
-                Math.max(0, Math.min(1, g)),
-                Math.max(0, Math.min(1, b)),
-                Math.max(0, Math.min(1, a)),
+                Math.max(0, Math.min(4, r)),
+                Math.max(0, Math.min(4, g)),
+                Math.max(0, Math.min(4, b)),
+                Math.max(0, Math.min(4, a)),
               ]);
               off += 12;
             } else {
@@ -5812,26 +7445,40 @@ function parsePssEffectScene(buffer, options = {}) {
         // (e.g. class-header fragment + real keyframe record); try each
         // until we get ≥4 valid keyframes.
         let keyframes = [];
-        for (const seed of colorModuleSeeds) {
+        let colorCurveModuleName = null;
+        let colorCurveLayout = null;
+        for (const colorSeed of colorModuleSeeds) {
           if (keyframes.length >= 4) break;
+          const packed = decodePackedFloat2ColorCurve(colorSeed.seed);
+          if (packed?.curve?.length >= 4) {
+            keyframes = packed.curve;
+            colorCurveModuleName = colorSeed.name;
+            colorCurveLayout = 'float2-ramp';
+            break;
+          }
           for (let pad = 0; pad <= 16; pad += 4) {
-            const attempt = runScan(seed + pad);
-            if (attempt.length >= 4) { keyframes = attempt; break; }
+            const attempt = runScan(colorSeed.seed + pad);
+            if (attempt.length >= 4) {
+              keyframes = attempt;
+              colorCurveModuleName = colorSeed.name;
+              colorCurveLayout = 'rgba-keyframes';
+              break;
+            }
           }
         }
-        if (keyframes.length >= 4) colorCurveSource = 'module:颜色';
+        if (keyframes.length >= 4) colorCurveSource = `module:${colorCurveModuleName || '颜色'}:${colorCurveLayout || 'rgba-keyframes'}`;
 
         // afterLastTex texture-path heuristic removed — colorCurve is only
         // trusted when it comes from a declared 颜色 module seed. Any other
         // tail scan is guesswork and can produce phantom gradients.
 
         if (keyframes.length >= 4) {
-          colorCurve = rotateRGBA(keyframes);
+          colorCurve = colorCurveLayout === 'float2-ramp' ? keyframes : rotateRGBA(keyframes);
         } else {
-          // If the 颜色 module was declared but we could not decode a curve,
-          // expose that state so callers can distinguish "no color" from
-          // "declared but unparsed".
-          colorCurveSource = (colorModuleSeedAbs != null) ? 'module:颜色 (undecoded)' : null;
+          // If the color module was declared but no valid keyframe run is
+          // present, expose the engine-default state without calling it
+          // undecoded. The status below remains the machine-readable value.
+          colorCurveSource = (colorModuleSeeds.length > 0) ? `module:${colorModuleSeeds[0].name}:no-animation` : null;
         }
       }
 
@@ -5845,6 +7492,7 @@ function parsePssEffectScene(buffer, options = {}) {
       const activeModuleSet = new Set();
       const inactiveModuleSet = new Set();
       const moduleByteCounts = {};
+      const moduleByteOccurrences = [];
       for (let mi = 0; mi < validModules.length; mi++) {
         const cur = validModules[mi];
         const nameAbs = blockStart + cur.offset;
@@ -5855,7 +7503,9 @@ function parsePssEffectScene(buffer, options = {}) {
         const payloadEnd = Math.max(payloadStart, nextAbs);
         let nonZero = 0;
         for (let p = payloadStart; p < payloadEnd; p++) { if (buffer[p] !== 0) nonZero++; }
-        moduleByteCounts[cur.name] = { bytes: payloadEnd - payloadStart, nonZero };
+        const bytes = payloadEnd - payloadStart;
+        moduleByteCounts[cur.name] = { bytes, nonZero };
+        moduleByteOccurrences.push({ name: cur.name, moduleOffsetIdx: mi, payloadStart, payloadEnd, bytes, nonZero });
         if (nonZero > 0) activeModuleSet.add(cur.name); else inactiveModuleSet.add(cur.name);
       }
 
@@ -5885,6 +7535,418 @@ function parsePssEffectScene(buffer, options = {}) {
         };
       };
 
+      const classifyScalePayloadStatus = (payload) => {
+        if (!payload) return { status: 'unparsed', layoutKind: null, keyCount: null };
+        const payloadStart = payload.payloadStart;
+        const payloadEnd = payload.payloadEnd;
+        const payloadLen = payloadEnd - payloadStart;
+        if (payloadEnd > buffer.length) return { status: 'unparsed', layoutKind: null, keyCount: null };
+        if (payloadLen >= 0 && payloadLen <= 8) {
+          return { status: 'no-animation', layoutKind: 'no-animation', keyCount: 0 };
+        }
+
+        const asRecord24 = decodeScaleRecord24Payload(payloadStart, payloadEnd);
+        if (asRecord24) {
+          return { status: 'authored', layoutKind: 'scale-record24', keyCount: asRecord24.recordCount };
+        }
+
+        const tryOneDimensionalImplicit = () => {
+          if (payloadLen < 14) return null;
+          const stride = 12;
+          const startOff = 10;
+          let count = 0;
+          for (let off = startOff; off + stride <= payloadLen; off += stride) {
+            const p = payloadStart + off;
+            const value = buffer.readFloatLE(p);
+            if (!Number.isFinite(value) || Math.abs(value) > 1e6) break;
+            let zeroPad = true;
+            for (let q = 4; q < 12; q++) {
+              if (buffer[p + q] !== 0) { zeroPad = false; break; }
+            }
+            if (!zeroPad) break;
+            count++;
+            if (count > 512) break;
+          }
+          return count >= 2 ? { keyCount: count } : null;
+        };
+        const asOneDimensional = tryOneDimensionalImplicit();
+        if (asOneDimensional) {
+          return { status: 'authored', layoutKind: '1d-implicit-time', keyCount: asOneDimensional.keyCount };
+        }
+
+        const tryImplicitStride16NoHeader = () => {
+          if (payloadLen < 32) return null;
+          const candidates = [0, 1, 14, 16, 17, 18];
+          let best = null;
+          for (const headerBytes of candidates) {
+            if (headerBytes >= payloadLen) continue;
+            const remain = payloadLen - headerBytes;
+            if (remain < 32 || remain % 16 > 8) continue;
+            const count = Math.floor(remain / 16);
+            if (count < 2 || count > 1024) continue;
+            let bounded = 0;
+            let nonZeroRecords = 0;
+            let ok = true;
+            for (let k = 0; k < count; k++) {
+              const p = payloadStart + headerBytes + k * 16;
+              const a = buffer.readFloatLE(p);
+              const b = buffer.readFloatLE(p + 4);
+              const c = buffer.readFloatLE(p + 8);
+              const d = buffer.readFloatLE(p + 12);
+              if (![a, b, c, d].every(Number.isFinite)) { ok = false; break; }
+              if ([a, b, c, d].every((value) => Math.abs(value) < 1e6)) bounded++;
+              if (a !== 0 || b !== 0 || c !== 0 || d !== 0) nonZeroRecords++;
+            }
+            if (!ok || bounded < count * 0.9 || nonZeroRecords < 2) continue;
+            if (!best || bounded > best.bounded || (bounded === best.bounded && headerBytes < best.headerBytes)) {
+              best = { headerBytes, count, bounded, nonZeroRecords };
+            }
+          }
+          return best;
+        };
+        const asImplicitStride16 = tryImplicitStride16NoHeader();
+        if (asImplicitStride16) {
+          return { status: 'authored', layoutKind: '4d-implicit-no-header', keyCount: asImplicitStride16.count };
+        }
+
+        const tryParticleIndexTable = () => {
+          if (payloadLen < 16 || payloadLen > 1024) return null;
+          const dataStart = 4;
+          const dataLen = payloadLen - dataStart;
+          if (dataLen < 8 || dataLen % 2 !== 0) return null;
+          const u16Count = dataLen / 2;
+          let small = 0;
+          let monotonicHits = 0;
+          let prev = -1;
+          for (let q = 0; q < u16Count; q++) {
+            const value = buffer.readUInt16LE(payloadStart + dataStart + q * 2);
+            if (value < 0x1000) small++;
+            if (value > prev && value - prev <= 8) monotonicHits++;
+            prev = value;
+          }
+          if (small < u16Count * 0.95 || monotonicHits < u16Count * 0.5) return null;
+          return { keyCount: u16Count };
+        };
+        const asIndexTable = tryParticleIndexTable();
+        if (asIndexTable) {
+          return { status: 'no-animation', layoutKind: 'particle-index-table', keyCount: asIndexTable.keyCount };
+        }
+
+        const tryConstantSentinel16 = () => {
+          if (payloadLen < 66) return null;
+          const tailLooksForeign = (tailStart, tailLen) => {
+            if (tailLen <= 15) return true;
+            const scanLen = Math.min(tailLen, 160);
+            let ascii = '';
+            let printable = 0;
+            let alpha = 0;
+            let maxAlphaRun = 0;
+            let runLen = 0;
+            for (let q = 0; q < scanLen; q++) {
+              const value = buffer[tailStart + q];
+              const isPrint = (value >= 0x20 && value < 0x7f) || value === 0x09 || value === 0x0a || value === 0x0d;
+              const isAlpha = (value >= 0x41 && value <= 0x5a) || (value >= 0x61 && value <= 0x7a) || value === 0x5f;
+              ascii += isPrint ? String.fromCharCode(value).toLowerCase() : '.';
+              if (isPrint) printable++;
+              if (isAlpha) {
+                alpha++;
+                runLen++;
+                if (runLen > maxAlphaRun) maxAlphaRun = runLen;
+              } else {
+                runLen = 0;
+              }
+            }
+            if (ascii.includes('data\\source') || ascii.includes('.tga') || ascii.includes('.dds')) return true;
+            return printable / scanLen >= 0.45 && alpha / scanLen >= 0.2 && maxAlphaRun >= 6;
+          };
+          for (const headerBytes of [0, 2]) {
+            const remain = payloadLen - headerBytes;
+            if (remain < 64) continue;
+            const count = Math.floor(remain / 16);
+            if (count < 4 || count > 512) continue;
+            const first = buffer.subarray(payloadStart + headerBytes, payloadStart + headerBytes + 16);
+            const f0 = first.readFloatLE(0);
+            const f1 = first.readFloatLE(4);
+            const sentinel = first.readUInt32LE(8);
+            const f3 = first.readFloatLE(12);
+            if (sentinel !== 0xffffffff) continue;
+            if (![f0, f1, f3].every((value) => Number.isFinite(value) && Math.abs(value) < 1e6)) continue;
+            let repeated = 1;
+            let terminal = false;
+            let valid = true;
+            let consumedRecords = count;
+            for (let k = 1; k < count; k++) {
+              const p = payloadStart + headerBytes + k * 16;
+              let identical = true;
+              for (let q = 0; q < 16; q++) {
+                if (buffer[p + q] !== first[q]) { identical = false; break; }
+              }
+              if (identical) { repeated++; continue; }
+              const t0 = buffer.readFloatLE(p);
+              const t1 = buffer.readFloatLE(p + 4);
+              const t2 = buffer.readFloatLE(p + 8);
+              const t3 = buffer.readFloatLE(p + 12);
+              const terminalRecord = k === count - 1
+                && Math.abs(t0 - f0) < 0.0002
+                && Math.abs(t1 - f1) < 0.0002
+                && [t2, t3].every((value) => Number.isFinite(value) && Math.abs(value) < 1e6);
+              if (terminalRecord) {
+                terminal = true;
+                consumedRecords = k + 1;
+                continue;
+              }
+              consumedRecords = k;
+              valid = false;
+              break;
+            }
+            const consumedBytes = headerBytes + consumedRecords * 16;
+            const trailingBytes = Math.max(0, payloadLen - consumedBytes);
+            const hasForeignTail = trailingBytes > 0 && tailLooksForeign(payloadStart + consumedBytes, trailingBytes);
+            const exactOrSmallTail = consumedRecords === count && trailingBytes <= 15;
+            const hasTerminalTail = terminal && trailingBytes <= 15;
+            const hasPrefixTail = !valid && repeated >= 4 && consumedRecords === repeated && hasForeignTail;
+            if ((valid && repeated >= count - 1 && (repeated === count || terminal) && (exactOrSmallTail || hasTerminalTail)) || hasPrefixTail) {
+              return { keyCount: 0, repeatedRecords: repeated, trailingBytes, consumedBytes };
+            }
+          }
+          return null;
+        };
+        const asConstantSentinel16 = tryConstantSentinel16();
+        if (asConstantSentinel16) {
+          return { status: 'no-animation', layoutKind: 'constant-sentinel16', keyCount: 0, trailingBytes: asConstantSentinel16.trailingBytes };
+        }
+
+        const tryTaggedScaleRecord24 = () => {
+          const strideBytes = 24;
+          if (payloadLen < strideBytes * 4) return null;
+          for (const headerBytes of [0, 12]) {
+            let recordCount = 0;
+            for (let recordOffset = headerBytes; recordOffset + 22 <= payloadLen; recordOffset += strideBytes) {
+              const tagLo = buffer.readUInt16LE(payloadStart + recordOffset + 2);
+              const tagMid = buffer[payloadStart + recordOffset + 4];
+              const value = buffer.readFloatLE(payloadStart + recordOffset + 10);
+              const aux = buffer.readFloatLE(payloadStart + recordOffset + 14);
+              const marker = buffer.readFloatLE(payloadStart + recordOffset + 18);
+              if (tagLo !== 0x1203 || tagMid !== 0x96) break;
+              if (!Number.isFinite(value) || value <= 0.001 || value > 64) break;
+              if (!Number.isFinite(aux) || Math.abs(aux) > 1e6) break;
+              if (!Number.isFinite(marker) || marker < -0.01 || marker > 4.01) break;
+              recordCount++;
+              if (recordCount > 512) break;
+            }
+            if (recordCount >= 4) {
+              const consumedBytes = headerBytes + recordCount * strideBytes;
+              return { keyCount: recordCount, headerBytes, consumedBytes, trailingBytes: payloadLen - consumedBytes };
+            }
+          }
+          return null;
+        };
+        const asTaggedScaleRecord24 = tryTaggedScaleRecord24();
+        if (asTaggedScaleRecord24) {
+          return { status: 'authored', layoutKind: 'scale-record24-tagged', keyCount: asTaggedScaleRecord24.keyCount, trailingBytes: asTaggedScaleRecord24.trailingBytes };
+        }
+
+        const tryVectorScaleRecord24 = () => {
+          const headerBytes = 2;
+          const strideBytes = 24;
+          if (payloadLen < headerBytes + strideBytes * 4) return null;
+          let recordCount = 0;
+          for (let recordOffset = headerBytes; recordOffset + strideBytes <= payloadLen; recordOffset += strideBytes) {
+            const x = buffer.readFloatLE(payloadStart + recordOffset);
+            const y = buffer.readFloatLE(payloadStart + recordOffset + 4);
+            const scaleA = buffer.readFloatLE(payloadStart + recordOffset + 8);
+            const scaleB = buffer.readFloatLE(payloadStart + recordOffset + 12);
+            const z = buffer.readFloatLE(payloadStart + recordOffset + 20);
+            if (![x, y, scaleA, scaleB, z].every(Number.isFinite)) break;
+            if ([x, y, z].some((value) => Math.abs(value) > 1e6)) break;
+            if (scaleA < -0.01 || scaleA > 4.01 || scaleB < -0.01 || scaleB > 4.01) break;
+            if (Math.abs(x) < 0.0001 && Math.abs(y) < 0.0001 && Math.abs(z) < 0.0001 && Math.abs(scaleA) < 0.0001 && Math.abs(scaleB) < 0.0001) break;
+            recordCount++;
+            if (recordCount > 512) break;
+          }
+          if (recordCount < 4) return null;
+          return { keyCount: recordCount, consumedBytes: headerBytes + recordCount * strideBytes, trailingBytes: payloadLen - headerBytes - recordCount * strideBytes };
+        };
+        const asVectorScaleRecord24 = tryVectorScaleRecord24();
+        if (asVectorScaleRecord24) {
+          return { status: 'authored', layoutKind: 'scale-vector24', keyCount: asVectorScaleRecord24.keyCount, trailingBytes: asVectorScaleRecord24.trailingBytes };
+        }
+
+        const tryHeaderedFragmentedStride16 = () => {
+          let best = null;
+          for (const headerBytes of [0, 2, 10]) {
+            if (headerBytes >= payloadLen) continue;
+            const remain = payloadLen - headerBytes;
+            if (remain < 32 || remain % 16 > 8) continue;
+            const count = Math.floor(remain / 16);
+            if (count < 4 || count > 1024) continue;
+            let validRecords = 0;
+            let endMarkers = 0;
+            let zeroRecords = 0;
+            for (let k = 0; k < count; k++) {
+              const p = payloadStart + headerBytes + k * 16;
+              const a = buffer.readFloatLE(p);
+              const b = buffer.readFloatLE(p + 4);
+              const c = buffer.readFloatLE(p + 8);
+              const d = buffer.readFloatLE(p + 12);
+              const allFinite = [a, b, c, d].every(Number.isFinite);
+              const allBounded = allFinite && [a, b, c, d].every((value) => Math.abs(value) < 1e6);
+              const allZero = a === 0 && b === 0 && c === 0 && d === 0;
+              const isEndMarker = allBounded && (
+                (Math.abs(a - 1) < 1e-3 && b === 0 && c === 0 && d === 0)
+                || (Math.abs(c - 1) < 1e-3 && Math.abs(d - 3) < 1e-3)
+                || Math.abs(d - 1) < 1e-3
+              );
+              if (allZero) zeroRecords++;
+              if (isEndMarker) endMarkers++;
+              if (allBounded && !allZero) validRecords++;
+            }
+            if (endMarkers < 1 || validRecords < count * 0.25) continue;
+            const candidate = { headerBytes, count, validRecords, endMarkers, zeroRecords };
+            if (!best || candidate.validRecords > best.validRecords || (candidate.validRecords === best.validRecords && candidate.headerBytes < best.headerBytes)) best = candidate;
+          }
+          return best;
+        };
+        const asHeaderedFragmentedStride16 = tryHeaderedFragmentedStride16();
+        if (asHeaderedFragmentedStride16) {
+          return { status: 'authored', layoutKind: 'legacy-fragmented-curve', keyCount: asHeaderedFragmentedStride16.count };
+        }
+
+        const tryForeignResourceTable = () => {
+          if (payloadLen < 64) return null;
+          let zeroBytes = 0;
+          let asciiRuns = 0;
+          let runLen = 0;
+          const u32Counts = new Map();
+          for (let q = 0; q < payloadLen; q++) {
+            const value = buffer[payloadStart + q];
+            const isAlphaNum = (value >= 0x41 && value <= 0x5a) || (value >= 0x61 && value <= 0x7a) || (value >= 0x30 && value <= 0x39);
+            if (value === 0) zeroBytes++;
+            if (isAlphaNum) {
+              runLen++;
+              if (runLen === 3) asciiRuns++;
+            } else {
+              runLen = 0;
+            }
+          }
+          for (let q = 0; q + 4 <= payloadLen; q += 4) {
+            const value = buffer.readUInt32LE(payloadStart + q);
+            if (value !== 0) u32Counts.set(value, (u32Counts.get(value) || 0) + 1);
+          }
+          const repeatedU32 = [...u32Counts.values()].some((count) => count >= 3);
+          return zeroBytes >= payloadLen * 0.45 && asciiRuns >= 2 && repeatedU32 ? { keyCount: 0 } : null;
+        };
+        const asForeignResourceTable = tryForeignResourceTable();
+        if (asForeignResourceTable) {
+          return { status: 'no-animation', layoutKind: 'foreign-resource-table', keyCount: 0 };
+        }
+
+        const tryEmbeddedTextBlobRelaxed = () => {
+          if (payloadLen < 64) return null;
+          let printable = 0;
+          let alpha = 0;
+          let maxRun = 0;
+          let runLen = 0;
+          const scanLen = Math.min(payloadLen, 512);
+          for (let q = 0; q < scanLen; q++) {
+            const value = buffer[payloadStart + q];
+            const isPrint = (value >= 0x20 && value < 0x7f) || value === 0x09 || value === 0x0a || value === 0x0d;
+            const isAlpha = (value >= 0x41 && value <= 0x5a) || (value >= 0x61 && value <= 0x7a) || value === 0x5f;
+            if (isPrint) printable++;
+            if (isAlpha) {
+              alpha++;
+              runLen++;
+              if (runLen > maxRun) maxRun = runLen;
+            } else {
+              runLen = 0;
+            }
+          }
+          return printable / scanLen >= 0.45 && alpha / scanLen >= 0.25 && maxRun >= 8 ? { keyCount: 0 } : null;
+        };
+        const asEmbeddedTextBlobRelaxed = tryEmbeddedTextBlobRelaxed();
+        if (asEmbeddedTextBlobRelaxed) {
+          return { status: 'no-animation', layoutKind: 'engine-rejected-text-blob', keyCount: 0 };
+        }
+
+        const tryLegacyFwriteMemoryLeak = () => {
+          if (payloadLen < 64) return null;
+          const payloadBytes = buffer.subarray(payloadStart, payloadEnd);
+          const probeRecords = Math.floor(payloadLen / 16);
+          if (probeRecords < 4) return null;
+          let asciiRuns = 0;
+          let runLen = 0;
+          let pointerHits = 0;
+          let zeroByteCount = 0;
+          let probeGoodMarkers = 0;
+          for (let q = 0; q < payloadBytes.length; q++) {
+            const value = payloadBytes[q];
+            const isAlphaNum = (value >= 0x41 && value <= 0x5a) || (value >= 0x61 && value <= 0x7a) || (value >= 0x30 && value <= 0x39);
+            if (isAlphaNum) {
+              runLen++;
+              if (runLen === 3) asciiRuns++;
+            } else {
+              runLen = 0;
+            }
+            if (value === 0) zeroByteCount++;
+          }
+          for (let q = 0; q + 1 < payloadBytes.length; q += 2) {
+            if (payloadBytes[q] === 0x7f && payloadBytes[q + 1] === 0x01) pointerHits++;
+          }
+          for (let k = 0; k < probeRecords; k++) {
+            const recordBase = k * 16;
+            if (recordBase + 8 > payloadBytes.length) break;
+            if (payloadBytes.readUInt32LE(recordBase + 4) === 0) probeGoodMarkers++;
+          }
+          const tagAt0 = payloadStart + 4 <= buffer.length ? buffer.readUInt32LE(payloadStart) : 0xffffffff;
+          const tagInRange = tagAt0 >= 0 && tagAt0 <= 0x0b;
+          if (tagInRange) return null;
+          const looksLikeLegacyLeak = (
+            (pointerHits >= 3 && probeGoodMarkers >= probeRecords * 0.25)
+            || pointerHits >= probeRecords * 0.5
+            || (zeroByteCount >= payloadBytes.length * 0.5 && asciiRuns >= 2)
+          );
+          return looksLikeLegacyLeak ? { keyCount: 0, recordCount: probeRecords } : null;
+        };
+        const asLegacyFwriteMemoryLeak = tryLegacyFwriteMemoryLeak();
+        if (asLegacyFwriteMemoryLeak) {
+          return { status: 'no-animation', layoutKind: 'legacy-fwrite-memory-leak', keyCount: 0 };
+        }
+
+        const tryDistributionTagDefault = () => {
+          if (payloadLen < 4) return null;
+          const tagAt0 = buffer.readUInt32LE(payloadStart);
+          if (tagAt0 > 0x0b) {
+            return { layoutKind: 'engine-rejected-binary-blob', keyCount: 0, tagAt0 };
+          }
+          if (tagAt0 !== 0 || payloadLen < 8) return null;
+          const declaredCountAtPlus4 = buffer.readUInt32LE(payloadStart + 4);
+          if (declaredCountAtPlus4 === 0) {
+            return { layoutKind: 'valid-keyframe-zero-count-body', keyCount: 0, tagAt0, declaredCountAtPlus4 };
+          }
+          const maxPossibleFloatBodyRecords = Math.max(0, Math.floor((payloadLen - 8) / 4));
+          if (declaredCountAtPlus4 > 1024 && declaredCountAtPlus4 > maxPossibleFloatBodyRecords) {
+            return { layoutKind: 'malformed-valid-keyframe-body', keyCount: 0, tagAt0, declaredCountAtPlus4 };
+          }
+          return null;
+        };
+        const asDistributionTagDefault = tryDistributionTagDefault();
+        if (asDistributionTagDefault) {
+          return { status: 'no-animation', ...asDistributionTagDefault };
+        }
+
+        const density = payload.bytes > 0 ? (payload.nonZero / payload.bytes) : 0;
+        return { status: density < 0.15 ? 'no-animation' : 'unparsed', layoutKind: null, keyCount: null };
+      };
+
+      const scalePayloadStatuses = moduleByteOccurrences
+        .filter((payload) => payload.name === '缩放')
+        .map((payload) => ({
+          moduleOffsetIdx: payload.moduleOffsetIdx,
+          payloadBytes: payload.bytes,
+          nonZeroBytes: payload.nonZero,
+          ...classifyScalePayloadStatus(payload),
+        }));
+
       const decodedScaleRecord24 = (() => {
         for (let mi = 0; mi < validModules.length; mi++) {
           const cur = validModules[mi];
@@ -5901,7 +7963,7 @@ function parsePssEffectScene(buffer, options = {}) {
       })();
 
       const tailParams = extractTailParams(blockStart, blockEnd);
-      const runtimeParams = buildRuntimeParams(tailParams);
+      const runtimeParams = applyGlobalLifetimeRuntime(buildRuntimeParams(tailParams), validModules);
 
       // Summarize colorCurve parse state so the renderer can distinguish
       // legitimate "no color-over-lifetime authored" (block only carries
@@ -5913,69 +7975,49 @@ function parsePssEffectScene(buffer, options = {}) {
       let colorCurveStatus;
       if (Array.isArray(colorCurve) && colorCurve.length > 0) {
         colorCurveStatus = 'authored';
-      } else if (colorCurveSource === 'module:颜色 (undecoded)') {
+      } else if (String(colorCurveSource || '').endsWith(':no-animation')) {
         // Distinguish "declared but empty" (engine-correct: author added 颜色
         // module but never keyed any animation → white tint is the correct
         // default) from a real parser gap (block contains ≥1 valid RGBA
         // keyframe quad that our decoder missed).
         //
-        // Authoritative check: scan the ENTIRE post-seed region for any
-        // stride-4 offset where four consecutive f32s all fall in [-0.01,
-        // 1.01] with ≥2 non-zero channels. If no such quad exists
-        // anywhere, the module is metadata-only (class-id + type tokens +
-        // large non-float values) — no animation was authored, no parser
-        // gap. Only when such a quad IS present do we flag 'unparsed'.
-        const inColorRange = v => isFinite(v) && v >= -0.01 && v <= 1.01;
-        let hasRgbaQuad = false;
-        for (const s of colorModuleSeeds) {
-          for (let o = s; o + 16 <= blockEnd; o += 4) {
-            const r = buffer.readFloatLE(o);
-            const g = buffer.readFloatLE(o + 4);
-            const b = buffer.readFloatLE(o + 8);
-            const a = buffer.readFloatLE(o + 12);
-            const nz = (r > 0.001 ? 1 : 0) + (g > 0.001 ? 1 : 0) + (b > 0.001 ? 1 : 0) + (a > 0.001 ? 1 : 0);
-            if (inColorRange(r) && inColorRange(g) && inColorRange(b) && inColorRange(a) && nz >= 2) {
-              hasRgbaQuad = true;
-              break;
-            }
-          }
-          if (hasRgbaQuad) break;
-        }
-        colorCurveStatus = hasRgbaQuad ? 'unparsed' : 'no-animation';
+        colorCurveStatus = 'no-animation';
       } else {
         colorCurveStatus = 'no-module';
       }
 
-      // Classify size-curve in the same shape as colorCurveStatus so the
-      // renderer can distinguish "no animation authored" (engine-default
-      // constant 1.0 IS the authored outcome) from "real parser gap".
-      // Authoritative: if runtimeParams already carries sizeCurveKeyframes
-      // → 'authored'. If the named 缩放 module decodes as a verified scalar
-      // multiplier curve, also treat it as authored. If 缩放 module not
-      // declared → 'no-module'. If declared but its payload bytes are <15%
-      // non-zero → 'no-animation' (metadata-only; engine default applies).
-      // Otherwise 'unparsed'.
+      // Classify size-curve in the same shape as colorCurveStatus so reports
+      // can distinguish default/non-animated authored state from real parser
+      // gaps. A declared 缩放 occurrence that does not match any known payload
+      // schema must win over a separate tail size triplet; otherwise the report
+      // hides the still-undecoded module bytes.
       let sizeCurveStatus;
       const declaredScale = validModules.some(m => m.name === '缩放');
-      if (Array.isArray(runtimeParams?.sizeCurveKeyframes) && runtimeParams.sizeCurveKeyframes.length >= 3) {
+      const hasUnparsedScalePayload = scalePayloadStatuses.some((entry) => entry.status === 'unparsed');
+      const hasRuntimeSizeKeyframes = Array.isArray(runtimeParams?.sizeCurveKeyframes) && runtimeParams.sizeCurveKeyframes.length >= 3;
+      const hasRuntimeSizeCurve = Array.isArray(runtimeParams?.sizeCurve) && runtimeParams.sizeCurve.length === 3;
+      if (declaredScale && hasUnparsedScalePayload) {
+        sizeCurveStatus = 'unparsed';
+      } else if (hasRuntimeSizeKeyframes) {
         sizeCurveStatus = 'authored';
-      } else if (Array.isArray(runtimeParams?.sizeCurve) && runtimeParams.sizeCurve.length === 3) {
+      } else if (hasRuntimeSizeCurve) {
         sizeCurveStatus = 'authored';
-      } else if (decodedScaleRecord24) {
+      } else if (decodedScaleRecord24 || scalePayloadStatuses.some((entry) => entry.status === 'authored')) {
         sizeCurveStatus = 'authored';
       } else if (!declaredScale) {
         sizeCurveStatus = 'no-module';
       } else {
-        const scaleBytes = moduleByteCounts['缩放'];
-        const density = (scaleBytes && scaleBytes.bytes > 0) ? (scaleBytes.nonZero / scaleBytes.bytes) : 0;
-        sizeCurveStatus = density < 0.15 ? 'no-animation' : 'unparsed';
+        sizeCurveStatus = 'no-animation';
       }
 
+      const launcherTypeId = tailParams?.layerToken ?? null;
+      const launcherTypeInfo = resolvePssLauncherType(launcherTypeId);
       emitters.push({
         index: i,
         type: 'sprite',
         material: matPath,
         materialName: matName,
+        materialTint,
         blendMode,
         blendModeSource,
         layerCount: texCount,
@@ -5992,7 +8034,14 @@ function parsePssEffectScene(buffer, options = {}) {
         emitterFlags,
         uvRows,
         uvCols,
-        spawnLauncherTypeId: tailParams?.layerToken ?? null,
+        launcherTypeId,
+        launcherClass: launcherTypeInfo?.className ?? null,
+        launcherLabel: launcherTypeInfo?.label ?? null,
+        launcherHint: launcherTypeInfo?.hint ?? null,
+        spawnLauncherTypeId: launcherTypeId,
+        spawnLauncherClass: launcherTypeInfo?.className ?? null,
+        spawnLauncherLabel: launcherTypeInfo?.label ?? null,
+        spawnLauncherHint: launcherTypeInfo?.hint ?? null,
         maxParticles: tailParams?.maxParticles ?? null,
         // De-duplicate the user-facing module name list (multi-emitter
         // sprite blocks repeat the same module set per emitter — e.g. block
@@ -6023,7 +8072,7 @@ function parsePssEffectScene(buffer, options = {}) {
         // 80 cached PSS files. Gravity is not a Chinese-named sprite module
         // in this format. (see tools/audit-parser-logic.cjs)
         hasBrightness: validModules.some(m => m.name === '亮度'),
-        hasColorCurve: validModules.some(m => m.name === '颜色' || m.name.startsWith('颜色')),
+        hasColorCurve: validModules.some(m => isColorModuleName(m.name) || m.name.startsWith('颜色')),
         tailParams,
         runtimeParams,
         // Emitter ordering — used for stagger timing
@@ -6150,6 +8199,8 @@ function parsePssEffectScene(buffer, options = {}) {
           '01000100': 'ParticleSmall',          // 小粒子 / 星星 / 枫叶
           '03010100': 'Cloth',                  // 碎布
           '04010100': 'Flame',                  // 火焰
+          '03000100': 'ClothVariantB',          // 碎布02a/b (55-file sweep: 2/2 blocks, cloth flag set)
+          '04010000': 'Liquid',                 // 液体 (c_曹雪阳枪01.pss: 2/2 blocks, flame-family flag set)
           // ── Confirmed in additional sweeps (≥2 files) ──
           '01010004': 'TrailVariantB',          // 手拖尾红/黑 (ribbon with feature=0xd01)
           '01000200': 'ParticleSmokeB',         // 黑烟_普通粒子 / 火星_普通粒子 / 浓烟 / 烟图
@@ -6177,6 +8228,19 @@ function parsePssEffectScene(buffer, options = {}) {
           '05010200': 'LauncherVariant_05010200', // 水花02 (2 files)
           '06000100': 'LauncherVariant_06000100', // 模板1 / 鬼烟 (2 files)
           '08010200': 'LauncherVariant_08010200', // 光点 / 刀光火 (2 files)
+          // ── Singleton/small-count sweep keys. These get structural labels
+          //     unless the subtype name is specific enough to promote safely. ──
+          '01000105': 'LauncherVariant_01000105', // 底模循环 / 挂坠循环 (4 blocks, 1 file)
+          '03010200': 'ClothParticleVariant',     // 碎布_普通粒子 / 碎布2_普通粒子 (2 blocks, cloth family)
+          '04000200': 'LauncherVariant_04000200', // 水花透明 / 碎屑 (2 blocks, 1 file)
+          '01000007': 'DecalEmitter',             // 地面_贴花发射器 (1 block)
+          '01000206': 'SoundReference',           // 模板6_声音引用 (1 block)
+          '01000209': 'SoundReference',           // 模板6_声音引用 variant (2 blocks, no render payload)
+          '0a000100': 'LauncherVariant_0a000100', // 拉丝 (1 block)
+          '08000100': 'LauncherVariant_08000100', // 光点亮_普通粒子 (1 block)
+          '08010100': 'LauncherVariant_08010100', // 火焰高亮_普通粒子 (1 block)
+          '02010101': 'LauncherVariant_02010101', // 风 (1 block)
+          '06010200': 'LauncherVariant_06010200', // 火2_普通粒子 (1 block)
         };
         const launcherClass = launcherClassKey ? (LAUNCHER_CLASS_MAP[launcherClassKey] || null) : null;
 
@@ -6222,8 +8286,17 @@ function parsePssEffectScene(buffer, options = {}) {
       const tracks = findPaths(blockStart, blockEnd, /track/i);
       tracks.forEach((path) => allTrackPaths.add(path));
       const trackParams = extractTrackRuntimeParams(blockStart, blockEnd);
-      const trackParamsWarning = buildTrackRuntimeWarning(blockStart, blockEnd);
+      const trackParamsWarning = buildTrackRuntimeWarning(blockStart, blockEnd, trackParams);
       emitters.push({ index: i, type: 'track', tracks, trackParams, trackParamsWarning });
+    } else if (entry.type === 4) {
+      const cameraShake = parsePssCameraShakeBlock(blockStart, blockEnd);
+      emitters.push({
+        index: i,
+        type: 'camera-shake',
+        blockSize: entry.size,
+        cameraShake,
+        cameraShakeWarning: cameraShake.warning,
+      });
     }
     // type 0 already handled above
   }
@@ -6257,20 +8330,13 @@ function parsePssEffectScene(buffer, options = {}) {
       paths.push(tp);
       if (/\.tga$/i.test(tp)) paths.push(tp.replace(/\.tga$/i, '.dds'));
     }
-    const pathlistFile = join(texExtractDir, '_pathlist.txt');
-    try {
-      execFileSync('powershell.exe', [
-        '-NoProfile', '-Command',
-        `[System.IO.File]::WriteAllText('${pathlistFile.replace(/'/g, "''")}', '${paths.join('\n').replace(/'/g, "''")}' + [char]10, [System.Text.Encoding]::GetEncoding('gb18030'))`,
-      ], { timeout: 5000, windowsHide: true });
-    } catch {
-      writeFileSync(pathlistFile, paths.join('\n') + '\n', 'utf-8');
-    }
+    const pathlistFile = writePakV4Pathlist(texExtractDir, paths, '_tex_pathlist');
     try {
       execFileSync(PAKV4_EXTRACT_EXE, [pathlistFile, texExtractDir], {
         timeout: 30000, windowsHide: true, cwd: dirname(PAKV4_EXTRACT_EXE),
       });
     } catch { /* may exit non-zero but still extract */ }
+    finally { removeFileQuiet(pathlistFile); }
   }
 
   // Build texture lookup: path → resolved info
@@ -6430,14 +8496,15 @@ function parsePssEffectScene(buffer, options = {}) {
     }
   }
 
-  // ── Mesh-emitter texture binding via launcher.materialIndex (+292) ──
+  // ── Type-2 launcher texture binding via launcher.materialIndex (+292) ──
   // ENGINE-AUTHORITATIVE binding: launcher+292 holds u32 nMaterialIndex
   // (sentinel 0xFFFFFFFF = no material). meshFields.materialIndex above
-  // is -1 for the sentinel. Launchers with -1 (ribbon/trail meshes)
-  // skip this binding and fall through to the name-match heuristic.
+  // is -1 for the sentinel. Material-class procedural launchers can have
+  // no .Mesh path but still reference the shared type-1 material array.
+  // Launchers with -1 (ribbon/trail meshes) skip this binding and fall
+  // through to the name-match heuristic if they have an authored mesh.
   for (const em of emitters) {
     if (em.type !== 'mesh') continue;
-    if (!Array.isArray(em.meshes) || em.meshes.length === 0) continue;
     if (Array.isArray(em.texturePaths) && em.texturePaths.length > 0) continue;
     const mi = em.meshFields?.materialIndex;
     if (mi == null || mi < 0) continue; // -1 sentinel = no material slot
@@ -6449,6 +8516,12 @@ function parsePssEffectScene(buffer, options = {}) {
     em.textureSource = 'material-index';
     em.materialIndex = mi;
     em.materialRefPath = matEntry.refPath || null;
+    const materialBlendMode = readJsondefBlendMode(matEntry.refPath);
+    if (materialBlendMode) {
+      em.blendMode = materialBlendMode;
+      em.blendModeSource = 'jsondef';
+    }
+    em.materialTint = readJsondefMaterialTint(matEntry.refPath);
     em.resolvedTextures = em.texturePaths.map((p) => texLookup.get(p)).filter(Boolean);
   }
 
@@ -6529,16 +8602,75 @@ function parsePssEffectScene(buffer, options = {}) {
   const trackEmitters = emitters.filter((e) => e.type === 'track');
   for (let i = 0; i < ribbonMeshEmitters.length; i++) {
     const trackEm = trackEmitters[i] || trackEmitters[trackEmitters.length - 1];
-    if (!trackEm) break;
+    const meshEmitter = ribbonMeshEmitters[i];
+    if (!trackEm) {
+      const meshCount = Array.isArray(meshEmitter.meshes) ? meshEmitter.meshes.length : 0;
+      const resolvedMeshCount = Array.isArray(meshEmitter.resolvedMeshes) ? meshEmitter.resolvedMeshes.length : 0;
+      const animationCount = Array.isArray(meshEmitter.animations) ? meshEmitter.animations.length : 0;
+      const resolvedAnimationCount = Array.isArray(meshEmitter.resolvedAnimations) ? meshEmitter.resolvedAnimations.length : 0;
+      const materialIndex = meshEmitter.meshFields?.materialIndex;
+      const textureCount = Array.isArray(meshEmitter.texturePaths) ? meshEmitter.texturePaths.length : 0;
+      const resolvedTextureCount = Array.isArray(meshEmitter.resolvedTextures) ? meshEmitter.resolvedTextures.length : 0;
+      const status = resolvedMeshCount > 0 && resolvedAnimationCount > 0
+        ? 'baked-mesh-animation'
+        : resolvedMeshCount > 0 && resolvedTextureCount > 0
+          ? 'static-mesh-material'
+          : materialIndex != null && Number(materialIndex) >= 0
+            ? 'external-runtime-trail'
+            : 'missing-motion-source';
+      meshEmitter.trackBindingStatus = status;
+      meshEmitter.trackBinding = {
+        status,
+        expectedOrdinal: i,
+        trackEmitterCount: trackEmitters.length,
+        meshCount,
+        resolvedMeshCount,
+        animationCount,
+        resolvedAnimationCount,
+        textureCount,
+        resolvedTextureCount,
+        materialIndex: materialIndex ?? null,
+      };
+      continue;
+    }
+    const trackPaths = Array.isArray(trackEm.tracks) ? trackEm.tracks : [];
+    const resolvedTracks = Array.isArray(trackEm.resolvedTracks) ? trackEm.resolvedTracks : [];
     const firstDecoded = (trackEm.resolvedTracks || []).find((a) => a?.decodedTrack?.nodeCount > 0);
-    if (!firstDecoded) continue;
-    ribbonMeshEmitters[i].linkedTrack = {
+    if (!firstDecoded) {
+      const status = trackPaths.length === 0
+        ? 'track-path-missing'
+        : resolvedTracks.length === 0
+          ? 'track-path-unresolved'
+          : 'track-undecoded';
+      meshEmitter.trackBindingStatus = status;
+      meshEmitter.trackBinding = {
+        status,
+        expectedOrdinal: i,
+        trackEmitterIndex: trackEm.index,
+        trackEmitterCount: trackEmitters.length,
+        trackPaths,
+        resolvedTrackCount: resolvedTracks.length,
+        decodedNodeCounts: resolvedTracks.map((asset) => asset?.decodedTrack?.nodeCount ?? null),
+      };
+      continue;
+    }
+    meshEmitter.linkedTrack = {
       sourcePath: firstDecoded.sourcePath || '',
       decodedTrack: firstDecoded.decodedTrack,
       trackParams: trackEm.trackParams || null,
       trackEmitterIndex: trackEm.index,
-      launcherClass: ribbonMeshEmitters[i].meshFields.launcherClass,
-      launcherClassKey: ribbonMeshEmitters[i].meshFields.launcherClassKey,
+      launcherClass: meshEmitter.meshFields.launcherClass,
+      launcherClassKey: meshEmitter.meshFields.launcherClassKey,
+    };
+    meshEmitter.trackBindingStatus = 'linked';
+    meshEmitter.trackBinding = {
+      status: 'linked',
+      expectedOrdinal: i,
+      trackEmitterIndex: trackEm.index,
+      trackEmitterCount: trackEmitters.length,
+      trackPaths,
+      resolvedTrackCount: resolvedTracks.length,
+      decodedNodeCounts: resolvedTracks.map((asset) => asset?.decodedTrack?.nodeCount ?? null),
     };
   }
 
@@ -7121,19 +9253,7 @@ function buildPssCatalogResponse(queryRaw, limitRaw) {
  */
 function extractFromPakV4(logicalPath, outputDir) {
   ensureDir(outputDir);
-  const pathlistFile = join(outputDir, '_pathlist.txt');
-
-  // PakV4SfxExtract.exe expects GBK-encoded pathlist.
-  // Use PowerShell to write GBK-encoded file since Node.js lacks native GBK support.
-  try {
-    execFileSync('powershell.exe', [
-      '-NoProfile', '-Command',
-      `[System.IO.File]::WriteAllText('${pathlistFile.replace(/'/g, "''")}', '${logicalPath.replace(/'/g, "''")}' + [char]10, [System.Text.Encoding]::GetEncoding('gb18030'))`,
-    ], { timeout: 5000, windowsHide: true });
-  } catch {
-    // Fallback: write UTF-8 and hope the tool handles it
-    writeFileSync(pathlistFile, logicalPath + '\n', 'utf-8');
-  }
+  const pathlistFile = writePakV4Pathlist(outputDir, logicalPath, '_pathlist');
 
   try {
     execFileSync(PAKV4_EXTRACT_EXE, [pathlistFile, outputDir], {
@@ -7143,6 +9263,8 @@ function extractFromPakV4(logicalPath, outputDir) {
     });
   } catch {
     // Tool may return non-zero but still extract
+  } finally {
+    removeFileQuiet(pathlistFile);
   }
 
   // Find extracted file — it preserves directory structure
@@ -7163,7 +9285,7 @@ function findFileRecursive(dir, filename) {
   try {
     const entries = readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
-      if (entry.name === '_pathlist.txt') continue;
+      if (/^_.*pathlist.*\.txt$/i.test(entry.name)) continue;
       const full = join(dir, entry.name);
       if (entry.isDirectory()) {
         const found = findFileRecursive(full, filename);
@@ -7336,6 +9458,80 @@ function runPssMeshConversionScript(args) {
   const stdout = lastErr?.stdout ? String(lastErr.stdout).trim() : '';
   const detail = stderr || stdout || lastErr?.message || 'unknown error';
   throw new Error(`PSS mesh conversion failed. Ensure Python 3 is available. ${detail}`);
+}
+
+const MESH_BUILD_TEMP_DIR = resolve(join(__dirname, 'tmp', 'mesh-build'));
+
+function buildMeshGlbFromPath(meshPath) {
+  const normalized = normalizeLogicalResourcePath(meshPath);
+  if (!normalized) throw new Error('path required');
+  if (extname(normalized).toLowerCase() !== '.mesh') throw new Error(`Only .mesh assets supported: ${normalized}`);
+
+  // Try to resolve in local game cache — try path variants
+  const resolved = tryResolveCacheLogicalPath(normalized);
+  if (!resolved) throw new Error(`Mesh not found in game cache: ${normalized}`);
+
+  // Extract mesh bytes
+  const { output: meshBytes } = getJx3CacheReader().readEntry(resolved.resolvedPath);
+  if (!meshBytes || meshBytes.length < 16) throw new Error(`Empty mesh data: ${normalized}`);
+
+  // Write mesh to temp
+  ensureDir(MESH_BUILD_TEMP_DIR);
+  const meshName = basename(normalized);
+  const meshTemp = join(MESH_BUILD_TEMP_DIR, meshName);
+  writeFileSync(meshTemp, meshBytes);
+
+  // Try to find and extract .JsonInspack companion
+  let companionAbs = null;
+  for (const companionExt of ['.JsonInspack', '.jsoninspack']) {
+    const companionPath = normalized.replace(/\.[^/.\\]+$/i, companionExt);
+    const companionResolved = tryResolveCacheLogicalPath(companionPath);
+    if (companionResolved) {
+      try {
+        const { output: compBytes } = getJx3CacheReader().readEntry(companionResolved.resolvedPath);
+        if (compBytes && compBytes.length > 0) {
+          const compName = basename(companionPath);
+          const compTemp = join(MESH_BUILD_TEMP_DIR, compName);
+          writeFileSync(compTemp, compBytes);
+          companionAbs = compTemp;
+          break;
+        }
+      } catch { /* no companion */ }
+    }
+  }
+
+  // Determine output glb name and path
+  const glbName = meshName.replace(/\.mesh$/i, '.glb');
+  const glbOut = join(MESH_BUILD_TEMP_DIR, glbName);
+
+  // Run converter
+  const args = [
+    PSS_MESH_CONVERTER_SCRIPT,
+    '--input', meshTemp,
+    '--output', glbOut,
+  ];
+  if (companionAbs) args.push('--jsoninspack', companionAbs);
+
+  runPssMeshConversionScript(args);
+
+  if (!existsSync(glbOut)) throw new Error(`GLB conversion failed, output missing: ${glbName}`);
+
+  // Copy to meshes directory if not already there
+  const meshesDir = join(PUBLIC_DIR, 'map-data', 'meshes');
+  ensureDir(meshesDir);
+  const finalGlbPath = join(meshesDir, glbName);
+  if (!existsSync(finalGlbPath)) {
+    copyFileSync(glbOut, finalGlbPath);
+  }
+
+  return {
+    ok: true,
+    meshPath: normalized,
+    glbName,
+    glbUrl: `/map-data/meshes/${encodeURIComponent(glbName)}`,
+    glbPath: finalGlbPath,
+    companionAvailable: !!companionAbs,
+  };
 }
 
 function resolvePssMeshGlbAsset(resourcePath, options = {}) {
@@ -7562,11 +9758,10 @@ function readPssSourceBuffer(sourcePathRaw) {
 //   0 = none/opaque, 1 = alpha/normal, 2 = additive, 3 = multiply, 4 = subtractive
 // This replaces the keyword guessing from the material NAME.
 const JSONDEF_BLEND_CACHE = new Map();
-function readJsondefBlendMode(matLogicalPath) {
-  if (!matLogicalPath) return null;
-  const key = matLogicalPath.toLowerCase();
-  if (JSONDEF_BLEND_CACHE.has(key)) return JSONDEF_BLEND_CACHE.get(key);
+const JSONDEF_TINT_CACHE = new Map();
 
+function readJsondefBuffer(matLogicalPath) {
+  if (!matLogicalPath) return null;
   let buf = null;
   try {
     const norm = normalizeLogicalResourcePath(matLogicalPath);
@@ -7576,22 +9771,26 @@ function readJsondefBlendMode(matLogicalPath) {
       const local = join(PSS_EXTRACT_DIR, norm.replace(/\//g, '\\'));
       if (existsSync(local)) buf = readFileSync(local);
     }
-  } catch { /* not found */ }
-
-  if (!buf) {
-    // Defensive on-disk fallback: installs that have the MovieEditor source
-    // checked out may have the .jsondef sitting on disk even when the packed
-    // cache does not carry it. We also try the ResourcePack tree.
-    const norm = normalizeLogicalResourcePath(matLogicalPath);
-    const diskCandidates = [
-      join(MOVIE_EDITOR_SOURCE_ROOT, norm.replace(/\//g, '\\')),
-      join(MOVIE_EDITOR_SOURCE_ROOT, norm.replace(/^data\/source\//i, '').replace(/\//g, '\\')),
-      join(MOVIE_EDITOR_RESOURCEPACK_ROOT, norm.replace(/\//g, '\\')),
-    ];
-    for (const candidate of diskCandidates) {
-      if (existsSync(candidate)) { buf = readFileSync(candidate); break; }
+    if (!buf) {
+      const diskCandidates = [
+        join(MOVIE_EDITOR_SOURCE_ROOT, norm.replace(/\//g, '\\')),
+        join(MOVIE_EDITOR_SOURCE_ROOT, norm.replace(/^data\/source\//i, '').replace(/\//g, '\\')),
+        join(MOVIE_EDITOR_RESOURCEPACK_ROOT, norm.replace(/\//g, '\\')),
+      ];
+      for (const candidate of diskCandidates) {
+        if (existsSync(candidate)) { buf = readFileSync(candidate); break; }
+      }
     }
-  }
+  } catch { return null; }
+  return buf;
+}
+
+function readJsondefBlendMode(matLogicalPath) {
+  if (!matLogicalPath) return null;
+  const key = matLogicalPath.toLowerCase();
+  if (JSONDEF_BLEND_CACHE.has(key)) return JSONDEF_BLEND_CACHE.get(key);
+
+  const buf = readJsondefBuffer(matLogicalPath);
   if (!buf) { JSONDEF_BLEND_CACHE.set(key, null); return null; }
 
   try {
@@ -7606,6 +9805,44 @@ function readJsondefBlendMode(matLogicalPath) {
     JSONDEF_BLEND_CACHE.set(key, result);
     return result;
   } catch { JSONDEF_BLEND_CACHE.set(key, null); return null; }
+}
+
+function readJsondefMaterialTint(matLogicalPath) {
+  if (!matLogicalPath) return null;
+  const key = matLogicalPath.toLowerCase();
+  if (JSONDEF_TINT_CACHE.has(key)) return JSONDEF_TINT_CACHE.get(key);
+
+  const buf = readJsondefBuffer(matLogicalPath);
+  if (!buf) { JSONDEF_TINT_CACHE.set(key, null); return null; }
+
+  try {
+    const parsed = JSON.parse(buf.toString('latin1'));
+    const params = Array.isArray(parsed?.Param) ? parsed.Param : [];
+    for (const param of params) {
+      if (param?.Type !== 'Color' || !Array.isArray(param.Value) || param.Value.length < 3) continue;
+      const rgba = param.Value.slice(0, 4).map((value, index) => {
+        const parsedValue = Number(value);
+        return Number.isFinite(parsedValue) ? parsedValue : (index === 3 ? 1 : 0);
+      });
+      const rgb = rgba.slice(0, 3);
+      const max = Math.max(...rgb);
+      const min = Math.min(...rgb);
+      const isWhite = rgb.every((value) => Math.abs(value - 1) < 0.0001);
+      const isBlack = max < 0.0001;
+      if (isWhite || isBlack) continue;
+      const tint = [
+        Math.max(0, Math.min(4, rgba[0])),
+        Math.max(0, Math.min(4, rgba[1])),
+        Math.max(0, Math.min(4, rgba[2])),
+        Math.max(0, Math.min(1, Number.isFinite(rgba[3]) ? rgba[3] : 1)),
+      ];
+      if ((max - min) < 0.0001 && max <= 1) continue;
+      JSONDEF_TINT_CACHE.set(key, tint);
+      return tint;
+    }
+  } catch { /* invalid jsondef */ }
+  JSONDEF_TINT_CACHE.set(key, null);
+  return null;
 }
 
 function extractPssGlobalTiming(buffer) {
@@ -9325,6 +11562,614 @@ function parseTaniBinary(buf, originalPath) {
   };
 }
 
+function formatHexOffset(offset, width = 6) {
+  const n = Number(offset) || 0;
+  return `0x${n.toString(16).padStart(width, '0')}`;
+}
+
+function hexBytes(buffer, start = 0, end = buffer?.length || 0) {
+  const out = [];
+  const safeStart = Math.max(0, start | 0);
+  const safeEnd = Math.max(safeStart, Math.min(end | 0, buffer?.length || 0));
+  for (let i = safeStart; i < safeEnd; i++) out.push(buffer[i].toString(16).padStart(2, '0'));
+  return out.join(' ');
+}
+
+function asciiPreview(buffer, start = 0, end = buffer?.length || 0) {
+  let out = '';
+  const safeStart = Math.max(0, start | 0);
+  const safeEnd = Math.max(safeStart, Math.min(end | 0, buffer?.length || 0));
+  for (let i = safeStart; i < safeEnd; i++) {
+    const b = buffer[i];
+    out += b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : '.';
+  }
+  return out;
+}
+
+function buildFullHexDumpLines(buffer, bytesPerLine = 16, baseOffset = 0) {
+  const lines = [];
+  if (!buffer) return lines;
+  for (let offset = 0; offset < buffer.length; offset += bytesPerLine) {
+    const end = Math.min(offset + bytesPerLine, buffer.length);
+    const hex = hexBytes(buffer, offset, end).padEnd(bytesPerLine * 3 - 1, ' ');
+    const ascii = asciiPreview(buffer, offset, end);
+    lines.push(`${formatHexOffset(baseOffset + offset)}  ${hex}  ${ascii}`);
+  }
+  return lines;
+}
+
+function decodeGb18030Safe(bytes) {
+  try {
+    return GB18030_DECODER.decode(Buffer.from(bytes)).replace(/\0+$/g, '');
+  } catch {
+    return Buffer.from(bytes).toString('latin1').replace(/\0+$/g, '');
+  }
+}
+
+function categorizeTaniText(value) {
+  const text = String(value || '').trim();
+  const lower = text.toLowerCase();
+  if (/\.pss$/i.test(text)) return 'pss-path';
+  if (/\.ani$/i.test(text)) return 'ani-path';
+  if (/\.tani$/i.test(text)) return 'tani-path';
+  if (/^jx3_/i.test(text)) return 'wwise-system';
+  if (/\/(skill|music|sound)\//i.test(text)) return 'wwise-event';
+  if (/tag/i.test(text)) return 'timeline-tag';
+  if (/^data[\\/]/i.test(text)) return 'asset-path';
+  if (/\.(?:mesh|track|jsondef|dds|tga|sfx)$/i.test(lower)) return 'asset-path';
+  if (MODULE_NAME_WHITELIST.has(text)) return 'pss-module';
+  return 'text';
+}
+
+function shouldKeepReadableStringRun(text, category) {
+  const value = String(text || '').trim();
+  if (value.length < 3) return false;
+  if (/[\u0000-\u001f\u007f\ufffd\ue000-\uf8ff]/u.test(value)) return false;
+  if (category === 'asset-path' || category === 'pss-path' || category === 'ani-path' || category === 'tani-path') {
+    if (!/^data[\\/]/i.test(value)) return false;
+    if (category === 'pss-path') return /\.pss$/i.test(value);
+    if (category === 'ani-path') return /\.ani$/i.test(value);
+    if (category === 'tani-path') return /\.tani$/i.test(value);
+    return /\.(?:mesh|track|jsondef|jsoninspack|dds|tga|sfx|pss|ani|tani)$/i.test(value);
+  }
+  if (category !== 'text') return true;
+  if (MODULE_NAME_WHITELIST.has(value)) return true;
+
+  // Generic GB18030 binary scans are very noisy: arbitrary float/int bytes can
+  // decode into plausible Hanzi. Keep only plain ASCII labels here; PSS module
+  // names are added separately from parser-confirmed offsets.
+  if (!/[A-Za-z0-9]/.test(value)) return false;
+  if (/^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(value)) return false;
+  if (!/^[A-Za-z0-9_ .:/\\\-()[\]+#]+$/.test(value)) return false;
+  if (/^\[[A-Za-z0-9_ .:/\\\-()[\]+#]{3,80}\]$/.test(value)) return true;
+  if (/^Microsoft \(R\) HLSL Shader Compiler \d+(?:\.\d+)*$/i.test(value)) return true;
+  if (/^Texture(?:1D|2D|3D|Cube)?\s+[A-Za-z_][A-Za-z0-9_]*\s*:\s*register\(\s*[A-Za-z]\d+\s*\)$/i.test(value)) return true;
+  if (/^skillremake_[A-Za-z0-9_]+$/i.test(value)) return true;
+  return false;
+}
+
+function findAsciiDataPathStart(bytes) {
+  for (let index = 0; index + 4 < bytes.length; index++) {
+    if (bytes[index] === 0x64
+      && bytes[index + 1] === 0x61
+      && bytes[index + 2] === 0x74
+      && bytes[index + 3] === 0x61
+      && (bytes[index + 4] === 0x2f || bytes[index + 4] === 0x5c)) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function extractTaniReadableStringRuns(buffer, minBytes = 4) {
+  const runs = [];
+  if (!buffer) return runs;
+  let bytes = [];
+  let start = 0;
+
+  const flush = () => {
+    if (bytes.length >= minBytes) {
+      let rowBytes = bytes;
+      let rowStart = start;
+      let text = decodeGb18030Safe(rowBytes).trim();
+      let category = categorizeTaniText(text);
+      if (category === 'asset-path') {
+        const dataStart = findAsciiDataPathStart(rowBytes);
+        if (dataStart > 0) {
+          rowBytes = rowBytes.slice(dataStart);
+          rowStart += dataStart;
+          text = decodeGb18030Safe(rowBytes).trim();
+          category = categorizeTaniText(text);
+        }
+      }
+      if (/[A-Za-z0-9_./\\\-\u4e00-\u9fff]/u.test(text)
+        && scoreTextCandidate(text) >= 0.62
+        && shouldKeepReadableStringRun(text, category)) {
+        runs.push({
+          offset: rowStart,
+          hexOffset: formatHexOffset(rowStart),
+          byteLength: rowBytes.length,
+          endOffset: rowStart + rowBytes.length,
+          endHexOffset: formatHexOffset(rowStart + rowBytes.length),
+          category,
+          text,
+        });
+      }
+    }
+    bytes = [];
+  };
+
+  for (let i = 0; i < buffer.length; i++) {
+    const b = buffer[i];
+    const isAscii = b >= 0x20 && b < 0x7f;
+    const isGb18030Four = b >= 0x81 && b <= 0xfe
+      && i + 3 < buffer.length
+      && buffer[i + 1] >= 0x30 && buffer[i + 1] <= 0x39
+      && buffer[i + 2] >= 0x81 && buffer[i + 2] <= 0xfe
+      && buffer[i + 3] >= 0x30 && buffer[i + 3] <= 0x39;
+    const isGb18030Two = b >= 0x81 && b <= 0xfe
+      && i + 1 < buffer.length
+      && buffer[i + 1] >= 0x40 && buffer[i + 1] <= 0xfe
+      && buffer[i + 1] !== 0x7f;
+
+    if (isAscii || isGb18030Four || isGb18030Two) {
+      if (bytes.length === 0) start = i;
+      if (isAscii) {
+        bytes.push(b);
+      } else if (isGb18030Four) {
+        bytes.push(b, buffer[i + 1], buffer[i + 2], buffer[i + 3]);
+        i += 3;
+      } else {
+        bytes.push(b, buffer[i + 1]);
+        i += 1;
+      }
+      continue;
+    }
+    flush();
+  }
+  flush();
+  return runs;
+}
+
+function buildParsedPssStringRows(emitters, tocEntries) {
+  const rows = [];
+  const seen = new Set();
+  for (const emitter of Array.isArray(emitters) ? emitters : []) {
+    if (!emitter || emitter.type !== 'sprite') continue;
+    const tocEntry = tocEntries?.[emitter.index];
+    if (!tocEntry || !Array.isArray(emitter.moduleOffsets)) continue;
+    for (const moduleEntry of emitter.moduleOffsets) {
+      const name = String(moduleEntry?.name || '').trim();
+      if (!name || !MODULE_NAME_WHITELIST.has(name)) continue;
+      const relativeOffset = Number(moduleEntry.offset);
+      if (!Number.isFinite(relativeOffset) || relativeOffset < 0) continue;
+      const offset = tocEntry.offset + relativeOffset;
+      const byteLength = iconv.encode(name, 'gb18030').length;
+      const key = `${offset}:${name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push({
+        offset,
+        hexOffset: formatHexOffset(offset),
+        byteLength,
+        endOffset: offset + byteLength,
+        endHexOffset: formatHexOffset(offset + byteLength),
+        category: 'pss-module',
+        text: name,
+        source: 'parser-module-offset',
+      });
+    }
+  }
+  return rows;
+}
+
+function mergeReadableStringRows(...groups) {
+  const out = [];
+  const seen = new Set();
+  for (const group of groups) {
+    for (const row of Array.isArray(group) ? group : []) {
+      const key = `${row.offset}:${row.byteLength}:${row.category}:${row.text}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(row);
+    }
+  }
+  out.sort((left, right) => (left.offset ?? 0) - (right.offset ?? 0) || String(left.text || '').localeCompare(String(right.text || '')));
+  return out;
+}
+
+function extractTaniLengthPrefixedStrings(buffer, maxResults = 500) {
+  const results = [];
+  if (!buffer) return results;
+  const seen = new Set();
+  for (let offset = 0; offset + 8 <= buffer.length; offset++) {
+    const byteLength = buffer.readUInt32LE(offset);
+    if (byteLength < 4 || byteLength > 1024) continue;
+    if (offset + 4 + byteLength > buffer.length) continue;
+    const payload = buffer.subarray(offset + 4, offset + 4 + byteLength);
+    let rowPayload = payload;
+    let payloadOffset = offset + 4;
+    let text = GB18030_DECODER.decode(rowPayload).replace(/\0+$/g, '').trim();
+    if (text.length < 3) continue;
+    let category = categorizeTaniText(text);
+    if (category === 'asset-path' || category === 'pss-path' || category === 'ani-path' || category === 'tani-path') {
+      const dataStart = findAsciiDataPathStart(rowPayload);
+      if (dataStart > 0) {
+        rowPayload = rowPayload.subarray(dataStart);
+        payloadOffset += dataStart;
+        text = GB18030_DECODER.decode(rowPayload).replace(/\0+$/g, '').trim();
+        category = categorizeTaniText(text);
+      }
+    }
+    if (!/[A-Za-z0-9_./\\\-\u4e00-\u9fff]/u.test(text)) continue;
+    if (scoreTextCandidate(text) < 0.72) continue;
+    if (!shouldKeepReadableStringRun(text, category)) continue;
+    const key = `${offset}:${text}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    results.push({
+      offset,
+      hexOffset: formatHexOffset(offset),
+      declaredByteLength: byteLength,
+      payloadOffset,
+      payloadHexOffset: formatHexOffset(payloadOffset),
+      category,
+      text,
+    });
+    if (results.length >= maxResults) break;
+  }
+  return results;
+}
+
+function buildBinaryWordTable(buffer, baseOffset = 0) {
+  const words = [];
+  if (!buffer) return words;
+  for (let offset = 0; offset + 4 <= buffer.length; offset += 4) {
+    const absoluteOffset = baseOffset + offset;
+    const u32 = buffer.readUInt32LE(offset);
+    const i32 = buffer.readInt32LE(offset);
+    const f32 = buffer.readFloatLE(offset);
+    words.push({
+      offset: absoluteOffset,
+      relativeOffset: offset,
+      hexOffset: formatHexOffset(absoluteOffset),
+      relativeHexOffset: formatHexOffset(offset),
+      bytes: hexBytes(buffer, offset, offset + 4),
+      ascii: asciiPreview(buffer, offset, offset + 4),
+      u32,
+      i32,
+      f32: Number.isFinite(f32) && Math.abs(f32) < 1e20 ? Math.round(f32 * 1000000) / 1000000 : null,
+      nonZero: u32 !== 0,
+    });
+  }
+  const tailStart = words.length * 4;
+  return {
+    words,
+    tailBytes: tailStart < buffer.length ? {
+      offset: baseOffset + tailStart,
+      relativeOffset: tailStart,
+      hexOffset: formatHexOffset(baseOffset + tailStart),
+      relativeHexOffset: formatHexOffset(tailStart),
+      bytes: hexBytes(buffer, tailStart, buffer.length),
+      ascii: asciiPreview(buffer, tailStart, buffer.length),
+    } : null,
+  };
+}
+
+function buildTaniWordTable(buffer) {
+  return buildBinaryWordTable(buffer);
+}
+
+function buildTaniSections(buffer, parsed, stringRuns) {
+  if (!buffer) return [];
+  const sections = [
+    { name: 'magic', offset: 0, hexOffset: formatHexOffset(0), byteLength: Math.min(4, buffer.length), value: buffer.subarray(0, Math.min(4, buffer.length)).toString('latin1') },
+  ];
+  if (buffer.length >= 8) {
+    sections.push({ name: 'version', offset: 4, hexOffset: formatHexOffset(4), byteLength: 4, value: buffer.readUInt32LE(4) });
+  }
+  let aniEnd = 8;
+  while (aniEnd < buffer.length && buffer[aniEnd] !== 0) aniEnd++;
+  if (aniEnd >= 8 && aniEnd <= buffer.length) {
+    sections.push({
+      name: 'baseAniPath',
+      offset: 8,
+      hexOffset: formatHexOffset(8),
+      byteLength: Math.max(0, aniEnd - 8),
+      terminatorOffset: aniEnd < buffer.length ? aniEnd : null,
+      terminatorHexOffset: aniEnd < buffer.length ? formatHexOffset(aniEnd) : null,
+      value: parsed?.aniPath || '',
+    });
+  }
+  for (const run of stringRuns || []) {
+    if (run.category === 'pss-path' || run.category === 'wwise-system' || run.category === 'wwise-event' || run.category === 'timeline-tag' || run.category === 'asset-path') {
+      sections.push({
+        name: run.category,
+        offset: run.offset,
+        hexOffset: run.hexOffset,
+        byteLength: run.byteLength,
+        value: run.text,
+      });
+    }
+  }
+  return sections.sort((a, b) => a.offset - b.offset);
+}
+
+function buildPssTaniDetailSummary(pssEntry, index) {
+  const sourcePath = normalizeLogicalResourcePath(pssEntry?.path || pssEntry || '');
+  const timing = {
+    startTimeMs: pssEntry?.startTimeMs ?? null,
+    effectiveStartTimeMs: pssEntry?.effectiveStartTimeMs ?? null,
+    timingSource: pssEntry?.timingSource || null,
+    pssStartDelayMs: pssEntry?.pssStartDelayMs ?? null,
+    pssPlayDurationMs: pssEntry?.pssPlayDurationMs ?? null,
+    pssTotalDurationMs: pssEntry?.pssTotalDurationMs ?? null,
+    warning: pssEntry?.gataTimingWarning || null,
+  };
+  if (!sourcePath) return { index, ok: false, error: 'missing PSS path', timing };
+  try {
+    const analyzed = getPssAnalyzeCached(sourcePath);
+    const emitters = Array.isArray(analyzed?.emitters) ? analyzed.emitters : [];
+    const counts = emitters.reduce((acc, emitter) => {
+      const type = emitter?.type || 'unknown';
+      acc[type] = (acc[type] || 0) + 1;
+      return acc;
+    }, {});
+    return {
+      index,
+      path: sourcePath,
+      fileName: sourcePath.replace(/\\/g, '/').split('/').pop(),
+      timing,
+      ok: analyzed?.ok === true,
+      source: analyzed?.source || null,
+      error: analyzed?.error || null,
+      format: analyzed?.format || null,
+      version: analyzed?.version ?? null,
+      fileSize: analyzed?.fileSize ?? null,
+      particleCount: analyzed?.particleCount ?? null,
+      globalStartDelay: analyzed?.globalStartDelay ?? null,
+      globalPlayDuration: analyzed?.globalPlayDuration ?? null,
+      globalDuration: analyzed?.globalDuration ?? null,
+      globalLoopEnd: analyzed?.globalLoopEnd ?? null,
+      counts,
+      assetCounts: {
+        textures: analyzed?.totalTextures ?? 0,
+        cachedTextures: analyzed?.cachedTextures ?? 0,
+        meshes: Array.isArray(analyzed?.meshes) ? analyzed.meshes.length : 0,
+        resolvedMeshes: analyzed?.resolvedMeshes ?? 0,
+        animations: Array.isArray(analyzed?.animations) ? analyzed.animations.length : 0,
+        resolvedAnimations: analyzed?.resolvedAnimations ?? 0,
+        tracks: Array.isArray(analyzed?.tracks) ? analyzed.tracks.length : 0,
+        resolvedTrackAssets: analyzed?.resolvedTrackAssets ?? 0,
+        decodedTrackAssets: analyzed?.decodedTrackAssets ?? 0,
+      },
+      textures: Array.isArray(analyzed?.textures) ? analyzed.textures : [],
+      meshes: Array.isArray(analyzed?.meshes) ? analyzed.meshes : [],
+      animations: Array.isArray(analyzed?.animations) ? analyzed.animations : [],
+      tracks: Array.isArray(analyzed?.tracks) ? analyzed.tracks : [],
+      emitters: emitters.map((emitter) => ({
+        index: emitter?.index ?? null,
+        type: emitter?.type || null,
+        subType: emitter?.subType || null,
+        subTypeName: emitter?.subTypeName || null,
+        material: emitter?.material || null,
+        materialName: emitter?.materialName || null,
+        blendMode: emitter?.blendMode || null,
+        blendModeSource: emitter?.blendModeSource || null,
+        layerCount: emitter?.layerCount ?? null,
+        texturePaths: Array.isArray(emitter?.texturePaths) ? emitter.texturePaths : [],
+        resolvedTextures: Array.isArray(emitter?.resolvedTextures) ? emitter.resolvedTextures : [],
+        meshes: Array.isArray(emitter?.meshes) ? emitter.meshes : [],
+        animations: Array.isArray(emitter?.animations) ? emitter.animations : [],
+        tracks: Array.isArray(emitter?.tracks) ? emitter.tracks : [],
+        modules: Array.isArray(emitter?.modules) ? emitter.modules : [],
+        activeModules: Array.isArray(emitter?.activeModules) ? emitter.activeModules : [],
+        inactiveModules: Array.isArray(emitter?.inactiveModules) ? emitter.inactiveModules : [],
+        unknownModules: Array.isArray(emitter?.unknownModules) ? emitter.unknownModules : [],
+        maxParticles: emitter?.maxParticles ?? null,
+        colorCurveStatus: emitter?.colorCurveStatus || null,
+        sizeCurveStatus: emitter?.sizeCurveStatus || null,
+        runtimeParams: emitter?.runtimeParams || null,
+        tailParams: emitter?.tailParams || null,
+        meshFields: emitter?.meshFields || null,
+        textureSource: emitter?.textureSource || null,
+        linkedTrack: emitter?.linkedTrack || null,
+        trackBindingStatus: emitter?.trackBindingStatus || null,
+        trackBinding: emitter?.trackBinding || null,
+        trackParams: emitter?.trackParams || null,
+        trackParamsWarning: emitter?.trackParamsWarning || null,
+      })),
+      analyze: analyzed,
+    };
+  } catch (err) {
+    return {
+      index,
+      path: sourcePath,
+      fileName: sourcePath.replace(/\\/g, '/').split('/').pop(),
+      timing,
+      ok: false,
+      error: err?.message || String(err),
+    };
+  }
+}
+
+function buildTaniDetailResponse(buffer, originalPath, parsed = null) {
+  const base = parsed || parseTaniBinary(buffer, originalPath);
+  const stringRuns = extractTaniReadableStringRuns(buffer);
+  const lengthPrefixedStrings = extractTaniLengthPrefixedStrings(buffer);
+  const wordTable = buildTaniWordTable(buffer);
+  const pssSourceEntries = Array.isArray(base?.pssEntries)
+    ? base.pssEntries
+    : (Array.isArray(base?.pssPaths) ? base.pssPaths.map((path) => ({ path })) : []);
+  return {
+    ok: !base?.error,
+    ...base,
+    detail: {
+      byteLength: buffer?.length || 0,
+      sections: buildTaniSections(buffer, base, stringRuns),
+      strings: stringRuns,
+      lengthPrefixedStrings,
+      wordTable,
+      hexDumpLines: buildFullHexDumpLines(buffer),
+      headerBytes: hexBytes(buffer, 0, Math.min(64, buffer?.length || 0)),
+    },
+    pssDetails: pssSourceEntries.map((entry, index) => buildPssTaniDetailSummary(entry, index)),
+  };
+}
+
+function getPssTocTypeLabel(type) {
+  if (type === 0) return 'global';
+  if (type === 1) return 'sprite';
+  if (type === 2) return 'mesh';
+  if (type === 3) return 'track';
+  if (type === 4) return 'camera-shake';
+  return 'unknown';
+}
+
+function buildPssSections(buffer, analyze, toc) {
+  const sections = [];
+  if (!buffer) return sections;
+  sections.push({
+    name: 'magic',
+    offset: 0,
+    hexOffset: formatHexOffset(0),
+    byteLength: Math.min(4, buffer.length),
+    value: buffer.subarray(0, Math.min(4, buffer.length)).toString('latin1').replace(/\0/g, '\\0'),
+  });
+  if (buffer.length >= 6) {
+    sections.push({ name: 'version', offset: 4, hexOffset: formatHexOffset(4), byteLength: 2, value: buffer.readUInt16LE(4) });
+  }
+  if (buffer.length >= 16) {
+    sections.push({ name: 'particleCount', offset: 12, hexOffset: formatHexOffset(12), byteLength: 4, value: buffer.readUInt32LE(12) });
+    sections.push({ name: 'toc', offset: 16, hexOffset: formatHexOffset(16), byteLength: Math.max(0, toc.length * 12), value: `${toc.length} entries` });
+  }
+  if (analyze?.globalStartDelay != null || analyze?.globalPlayDuration != null || analyze?.globalDuration != null) {
+    sections.push({ name: 'globalTiming', offset: toc.find((entry) => entry.type === 0)?.offset ?? 0, hexOffset: formatHexOffset(toc.find((entry) => entry.type === 0)?.offset ?? 0), byteLength: 16, value: `start=${analyze?.globalStartDelay ?? '—'} play=${analyze?.globalPlayDuration ?? '—'} duration=${analyze?.globalDuration ?? '—'} loop=${analyze?.globalLoopEnd ?? '—'}` });
+  }
+  return sections;
+}
+
+function summarizePssBlockEmitter(emitter) {
+  if (!emitter) return null;
+  return {
+    index: emitter.index ?? null,
+    type: emitter.type || null,
+    subType: emitter.subType || null,
+    subTypeName: emitter.subTypeName || null,
+    materialName: emitter.materialName || null,
+    material: emitter.material || null,
+    blendMode: emitter.blendMode || null,
+    launcherClass: emitter.meshFields?.launcherClass || null,
+    launcherClassKey: emitter.meshFields?.launcherClassKey || null,
+    texturePaths: Array.isArray(emitter.texturePaths) ? emitter.texturePaths : [],
+    meshes: Array.isArray(emitter.meshes) ? emitter.meshes : [],
+    animations: Array.isArray(emitter.animations) ? emitter.animations : [],
+    tracks: Array.isArray(emitter.tracks) ? emitter.tracks : [],
+    modules: Array.isArray(emitter.modules) ? emitter.modules : [],
+    activeModules: Array.isArray(emitter.activeModules) ? emitter.activeModules : [],
+    inactiveModules: Array.isArray(emitter.inactiveModules) ? emitter.inactiveModules : [],
+    maxParticles: emitter.maxParticles ?? null,
+    runtimeParams: emitter.runtimeParams || null,
+    tailParams: emitter.tailParams || null,
+    meshFields: emitter.meshFields || null,
+    linkedTrack: emitter.linkedTrack || null,
+    trackBindingStatus: emitter.trackBindingStatus || null,
+    trackBinding: emitter.trackBinding || null,
+    trackParams: emitter.trackParams || null,
+    trackParamsWarning: emitter.trackParamsWarning || null,
+    blockSize: emitter.blockSize ?? null,
+    cameraShake: emitter.cameraShake || null,
+    cameraShakeWarning: emitter.cameraShakeWarning || null,
+  };
+}
+
+function buildPssDetailResponse(sourcePathRaw) {
+  const sourcePath = normalizeLogicalResourcePath(sourcePathRaw);
+  if (!sourcePath) throw new Error('sourcePath is required');
+
+  const buffer = readPssSourceBuffer(sourcePath);
+  if (!buffer || buffer.length < 16) {
+    return { ok: false, sourcePath, error: 'PSS not found or too small' };
+  }
+
+  const magic = buffer.subarray(0, 4).toString('latin1');
+  const isPar = buffer[0] === 0x50 && buffer[1] === 0x41 && buffer[2] === 0x52 && buffer[3] === 0x00;
+  const analyzed = getPssAnalyzeCached(sourcePath);
+  const emitters = Array.isArray(analyzed?.emitters) ? analyzed.emitters : [];
+  const toc = [];
+  const version = buffer.length >= 6 ? buffer.readUInt16LE(4) : null;
+  const particleCount = buffer.length >= 16 ? buffer.readUInt32LE(12) : null;
+  const tocEnd = Number.isFinite(particleCount) ? 16 + particleCount * 12 : 16;
+  const tocEntries = [];
+
+  if (isPar && particleCount != null && tocEnd <= buffer.length) {
+    for (let index = 0; index < particleCount; index++) {
+      const base = 16 + index * 12;
+      const type = buffer.readUInt32LE(base);
+      const offset = buffer.readUInt32LE(base + 4);
+      const size = buffer.readUInt32LE(base + 8);
+      tocEntries[index] = { type, offset, size };
+    }
+  }
+
+  const strings = mergeReadableStringRows(
+    extractTaniReadableStringRuns(buffer, 4),
+    buildParsedPssStringRows(emitters, tocEntries),
+  );
+
+  if (isPar && particleCount != null && tocEnd <= buffer.length) {
+    for (let index = 0; index < particleCount; index++) {
+      const base = 16 + index * 12;
+      const { type, offset, size } = tocEntries[index];
+      const endOffset = Math.min(offset + size, buffer.length);
+      const blockStrings = strings.filter((row) => row.offset >= offset && row.offset < endOffset);
+      let nonZeroWordCount = 0;
+      for (let p = offset; p + 4 <= endOffset; p += 4) {
+        if (buffer.readUInt32LE(p) !== 0) nonZeroWordCount++;
+      }
+      toc.push({
+        index,
+        type,
+        typeLabel: getPssTocTypeLabel(type),
+        offset,
+        hexOffset: formatHexOffset(offset),
+        size,
+        endOffset,
+        endHexOffset: formatHexOffset(endOffset),
+        tocOffset: base,
+        tocHexOffset: formatHexOffset(base),
+        headHex32: hexBytes(buffer, offset, Math.min(offset + 32, endOffset)),
+        strings: blockStrings,
+        stringCount: blockStrings.length,
+        nonZeroWordCount,
+        emitter: summarizePssBlockEmitter(emitters.find((emitter) => emitter.index === index)),
+      });
+    }
+  }
+
+  return {
+    ok: analyzed?.ok === true,
+    sourcePath,
+    fileName: sourcePath.replace(/\\/g, '/').split('/').pop(),
+    magic: magic.replace(/\0/g, '\\0'),
+    version,
+    fileSize: buffer.length,
+    particleCount,
+    parseError: analyzed?.error || null,
+    analyze: analyzed,
+    detail: {
+      byteLength: buffer.length,
+      isPar,
+      toc,
+      sections: buildPssSections(buffer, analyzed, toc),
+      strings,
+      wordTable: buildBinaryWordTable(buffer),
+      hexDumpLines: buildFullHexDumpLines(buffer),
+      headerBytes: hexBytes(buffer, 0, Math.min(64, buffer.length)),
+    },
+  };
+}
+
 function parseMin2AniHeader(buf) {
   if (!buf || buf.length < 0x42) return { error: 'Buffer too small', size: buf?.length || 0 };
   const magic = buf.subarray(0, 4).toString('latin1');
@@ -9495,6 +12340,8 @@ function listFullExports() {
         name: manifest.name || d,
         createdAt: manifest.createdAt || 0,
         stats: manifest.stats || {},
+        region: manifest.region || null,
+        regionCorners: manifest.regionCorners || null,
       });
     } catch {
       // ignore bad manifest
@@ -10367,33 +13214,33 @@ server = createServer(async (req, res) => {
   }
 
   if (method === 'GET' && urlPath === '/api/client-monitor/status') {
-    sendJson(res, 200, getClientMonitorStatus());
+    sendJson(res, 200, getClientMonitorStatus(false, clientMonitorStatusOptionsFromRequest(reqUrl)));
     return;
   }
 
   if (method === 'POST' && urlPath === '/api/client-monitor/start') {
-    const result = startClientMonitorBridge();
+    const result = startClientMonitorBridge(clientMonitorStatusOptionsFromRequest(reqUrl));
     sendJson(res, result.ok ? 200 : 409, result);
     return;
   }
 
   if (method === 'POST' && urlPath === '/api/client-monitor/stop') {
-    sendJson(res, 200, stopClientMonitorBridge());
+    sendJson(res, 200, stopClientMonitorBridge(clientMonitorStatusOptionsFromRequest(reqUrl)));
     return;
   }
 
   if (method === 'POST' && urlPath === '/api/client-monitor/pause') {
-    sendJson(res, 200, pauseClientMonitorCapture());
+    sendJson(res, 200, pauseClientMonitorCapture(clientMonitorStatusOptionsFromRequest(reqUrl)));
     return;
   }
 
   if (method === 'POST' && urlPath === '/api/client-monitor/resume') {
-    sendJson(res, 200, resumeClientMonitorCapture());
+    sendJson(res, 200, resumeClientMonitorCapture(clientMonitorStatusOptionsFromRequest(reqUrl)));
     return;
   }
 
   if (method === 'POST' && urlPath === '/api/client-monitor/clear') {
-    sendJson(res, 200, clearClientMonitorLog());
+    sendJson(res, 200, clearClientMonitorLog(clientMonitorStatusOptionsFromRequest(reqUrl)));
     return;
   }
 
@@ -10402,6 +13249,24 @@ server = createServer(async (req, res) => {
       sendJson(res, 200, await buildClientMonitorAnimationResourceResponse(reqUrl));
     } catch (err) {
       sendJson(res, 400, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'GET' && (urlPath === '/api/client-monitor/client-flow' || urlPath === '/api/client-tracer/pss-flow')) {
+    try {
+      sendJson(res, 200, buildClientTracerPssFlowResponse(reqUrl));
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  if (method === 'GET' && urlPath === '/api/client-monitor/display-proof') {
+    try {
+      sendJson(res, 200, buildClientMonitorDisplayProofResponse(reqUrl));
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err?.message || String(err) });
     }
     return;
   }
@@ -10983,7 +13848,12 @@ server = createServer(async (req, res) => {
       if (!filePath) { sendJson(res, 400, { error: 'path required' }); return; }
       const buf = extractFromPakV4(filePath, join(__dirname, 'cache-extraction', 'actor-assets'));
       if (!buf) { sendJson(res, 404, { error: `Could not extract: ${filePath}` }); return; }
-      sendJson(res, 200, parseTaniBinary(buf, filePath));
+      const parsed = parseTaniBinary(buf, filePath);
+      if (reqUrl.searchParams.get('detail') === '1') {
+        sendJson(res, 200, buildTaniDetailResponse(buf, filePath, parsed));
+      } else {
+        sendJson(res, 200, parsed);
+      }
     } catch (err) {
       sendJson(res, 500, { error: err?.message || String(err) });
     }
@@ -11200,11 +14070,7 @@ server = createServer(async (req, res) => {
         const out = {
           index: entry.index,
           type: entry.type,
-          typeLabel: entry.type === 0 ? 'global'
-            : entry.type === 1 ? 'sprite'
-            : entry.type === 2 ? 'mesh'
-            : entry.type === 3 ? 'track'
-            : 'unknown',
+          typeLabel: getPssTocTypeLabel(entry.type),
           offset: entry.offset,
           size: entry.size,
           headHex32: hexBytes,
@@ -11255,6 +14121,8 @@ server = createServer(async (req, res) => {
           const uvRowsVal = size > 328 ? buf.readUInt32LE(base + 320) : null;
           const uvColsVal = size > 328 ? buf.readUInt32LE(base + 324) : null;
           const moduleNames = new Set(Array.isArray(meta?.modules) ? meta.modules : []);
+          const launcherTypeId = meta?.spawnLauncherTypeId ?? null;
+          const launcherTypeInfo = resolvePssLauncherType(launcherTypeId);
           const spriteUncertain = [];
           out.parsed = {
             material: meta?.material || null,
@@ -11268,7 +14136,8 @@ server = createServer(async (req, res) => {
             uvRows: (uvRowsVal >= 1 && uvRowsVal <= 64) ? uvRowsVal : null,
             uvCols: (uvColsVal >= 1 && uvColsVal <= 64) ? uvColsVal : null,
             maxParticles: meta?.maxParticles ?? null,
-            spawnLauncherTypeId: meta?.spawnLauncherTypeId ?? null,
+            launcherTypeId,
+            spawnLauncherTypeId: launcherTypeId,
             modules: meta?.modules || [],
             moduleCount: Array.isArray(meta?.modules) ? meta.modules.length : 0,
             activeModules: meta?.activeModules || [],
@@ -11290,7 +14159,7 @@ server = createServer(async (req, res) => {
             'uvRows@+320',
             'uvCols@+324',
             'maxParticles (from fixed-trailer 5\u00d7u32=120 region at markerAbs+72)',
-            'spawnLauncherTypeId (from layerToken at blockEnd-152; resolved via PSS_SPAWN_SHAPE_TYPE_MAP — engine RTTI: KG3D_Launcher{Shape}::GetShape vtable slot 11 in kg3denginedx11ex64.dll)',
+            'launcherTypeId/spawnLauncherTypeId (from layerToken at blockEnd-152; resolved via PSS_LAUNCHER_TYPE_MAP — engine RTTI: KG3D_Launcher* vtable slot 11 in kg3denginedx11ex64.dll)',
             'modules (GB18030 Chinese module names scanned from variable section +856..blockEnd-152)',
             'hasVelocity / hasGravity / hasBrightness / hasColorCurve (derived from module name presence)',
           ];
@@ -11340,7 +14209,7 @@ server = createServer(async (req, res) => {
             // containing the prefix of the next field name "UV..."): the
             // 颜色 module exists but has zero authored animation.
             if (payloadEnd > buf.length) return null;
-            if (payloadLen >= 0 && payloadLen <= 8) {
+            if (payloadLen >= 0 && payloadLen < 14) {
               return {
                 count: 0,
                 keys: [],
@@ -11355,9 +14224,8 @@ server = createServer(async (req, res) => {
                 },
               };
             }
-            if (payloadLen < 14) return null;
-            // Empirically verified from T_\u5929\u7B56\u9F99\u7259.pss sprite
-            // #1 \u901F\u5EA6 module: engine stores a 1D float curve as
+            // Empirically verified from T_天策龙牙.pss sprite
+            // #1 速度 module: engine stores a 1D float curve as
             //   [??? 10-byte header, {f32 value, f32 0, f32 0}\u00d710+]
             // i.e. each key is 12 bytes with value in the first 4 bytes and
             // 8 zero bytes (unused y/z channels of vec3). Time is implicit
@@ -11696,73 +14564,269 @@ server = createServer(async (req, res) => {
                 note: 'u32 header + u16 index/state stream. NOT a keyframe curve — engine uses this as a particle vertex/index lookup table or layer-state map. Verified on t_天策龙牙.pss em#1 速度 occ#2 and em#8/#15 缩放 occ#0.',
               };
             };
+            const _tryConstantSentinel16 = () => {
+              if (moduleName !== '缩放') return null;
+              if (payloadLen < 66) return null;
+              const round6 = (value) => Math.round(value * 1000000) / 1000000;
+              const tailLooksForeign = (tailStart, tailLen) => {
+                if (tailLen <= 15) return true;
+                const scanLen = Math.min(tailLen, 160);
+                let ascii = '';
+                let printable = 0;
+                let alpha = 0;
+                let maxAlphaRun = 0;
+                let runLen = 0;
+                for (let q = 0; q < scanLen; q++) {
+                  const value = buf[tailStart + q];
+                  const isPrint = (value >= 0x20 && value < 0x7f) || value === 0x09 || value === 0x0a || value === 0x0d;
+                  const isAlpha = (value >= 0x41 && value <= 0x5a) || (value >= 0x61 && value <= 0x7a) || value === 0x5f;
+                  ascii += isPrint ? String.fromCharCode(value).toLowerCase() : '.';
+                  if (isPrint) printable++;
+                  if (isAlpha) {
+                    alpha++;
+                    runLen++;
+                    if (runLen > maxAlphaRun) maxAlphaRun = runLen;
+                  } else {
+                    runLen = 0;
+                  }
+                }
+                if (ascii.includes('data\\source') || ascii.includes('.tga') || ascii.includes('.dds')) return true;
+                return printable / scanLen >= 0.45 && alpha / scanLen >= 0.2 && maxAlphaRun >= 6;
+              };
+              for (const headerBytes of [0, 2]) {
+                const remain = payloadLen - headerBytes;
+                if (remain < 64) continue;
+                const count = Math.floor(remain / 16);
+                if (count < 4 || count > 512) continue;
+                const firstStart = payloadStart + headerBytes;
+                const first = buf.subarray(firstStart, firstStart + 16);
+                const f0 = first.readFloatLE(0);
+                const f1 = first.readFloatLE(4);
+                const sentinel = first.readUInt32LE(8);
+                const f3 = first.readFloatLE(12);
+                if (sentinel !== 0xffffffff) continue;
+                if (![f0, f1, f3].every((value) => Number.isFinite(value) && Math.abs(value) < 1e6)) continue;
+                let repeated = 1;
+                let terminalRecord = null;
+                let valid = true;
+                let consumedRecords = count;
+                for (let k = 1; k < count; k++) {
+                  const p = payloadStart + headerBytes + k * 16;
+                  let identical = true;
+                  for (let q = 0; q < 16; q++) {
+                    if (buf[p + q] !== first[q]) { identical = false; break; }
+                  }
+                  if (identical) { repeated++; continue; }
+                  const t0 = buf.readFloatLE(p);
+                  const t1 = buf.readFloatLE(p + 4);
+                  const t2 = buf.readFloatLE(p + 8);
+                  const t3 = buf.readFloatLE(p + 12);
+                  const isTerminal = k === count - 1
+                    && Math.abs(t0 - f0) < 0.0002
+                    && Math.abs(t1 - f1) < 0.0002
+                    && [t2, t3].every((value) => Number.isFinite(value) && Math.abs(value) < 1e6);
+                  if (isTerminal) {
+                    terminalRecord = { f0: round6(t0), f1: round6(t1), f2: round6(t2), f3: round6(t3) };
+                    consumedRecords = k + 1;
+                    continue;
+                  }
+                  consumedRecords = k;
+                  valid = false;
+                  break;
+                }
+                const consumedBytes = headerBytes + consumedRecords * 16;
+                const trailingBytes = Math.max(0, payloadLen - consumedBytes);
+                const hasForeignTail = trailingBytes > 0 && tailLooksForeign(payloadStart + consumedBytes, trailingBytes);
+                const exactOrSmallTail = consumedRecords === count && trailingBytes <= 15;
+                const hasTerminalTail = terminalRecord && trailingBytes <= 15;
+                const hasPrefixTail = !valid && repeated >= 4 && consumedRecords === repeated && hasForeignTail;
+                if (!((valid && repeated >= count - 1 && (repeated === count || terminalRecord) && (exactOrSmallTail || hasTerminalTail)) || hasPrefixTail)) continue;
+                return {
+                  count: 0,
+                  keys: null,
+                  stride: 16,
+                  startOff: headerBytes,
+                  layoutKind: 'constant-sentinel16',
+                  effectiveValue: 'constant scale metadata (no animated keyframes)',
+                  structuralProbe: {
+                    headerBytes,
+                    recordCount: consumedRecords,
+                    strideSlots: count,
+                    repeatedRecords: repeated,
+                    consumedBytes,
+                    trailingBytes,
+                    trailingClass: trailingBytes > 15 ? 'foreign-resource-tail' : (trailingBytes > 0 ? 'overlap-tail' : 'none'),
+                    record: {
+                      f0: round6(f0),
+                      f1: round6(f1),
+                      sentinelU32: '0xffffffff',
+                      f3: round6(f3),
+                    },
+                    terminalRecord,
+                  },
+                  note: 'Scale module payload with a short prefix, repeated identical 16-byte sentinel records, and an optional terminal marker record or foreign resource tail. The third field in the repeated records is the 0xffffffff sentinel, and the numeric fields do not vary, so this is constant/non-animated scale metadata rather than a keyframe curve. Verified on T_天策龙牙_狼头版.pss em#1/em#3/em#6/em#7/em#18/em#20 scale payloads.',
+                };
+              }
+              return null;
+            };
+            const _tryTaggedScaleRecord24 = () => {
+              if (moduleName !== '缩放') return null;
+              const strideBytes = 24;
+              const round6 = (value) => Math.round(value * 1000000) / 1000000;
+              for (const headerBytes of [0, 12]) {
+                if (payloadLen < headerBytes + strideBytes * 4) continue;
+                const keys24 = [];
+                for (let recordOffset = headerBytes; recordOffset + 22 <= payloadLen; recordOffset += strideBytes) {
+                  const recordStart = payloadStart + recordOffset;
+                  const tagLo = buf.readUInt16LE(recordStart + 2);
+                  const tagMid = buf[recordStart + 4];
+                  const value = buf.readFloatLE(recordStart + 10);
+                  const aux = buf.readFloatLE(recordStart + 14);
+                  const marker = buf.readFloatLE(recordStart + 18);
+                  if (tagLo !== 0x1203 || tagMid !== 0x96) break;
+                  if (!Number.isFinite(value) || value <= 0.001 || value > 64) break;
+                  if (!Number.isFinite(aux) || Math.abs(aux) > 1e6) break;
+                  if (!Number.isFinite(marker) || marker < -0.01 || marker > 4.01) break;
+                  keys24.push({ index: keys24.length, value: round6(value), aux: round6(aux), marker: round6(marker) });
+                  if (keys24.length > 512) break;
+                }
+                if (keys24.length < 4) continue;
+                const consumedBytes = headerBytes + keys24.length * strideBytes;
+                return {
+                  count: keys24.length,
+                  keys: keys24,
+                  stride: strideBytes,
+                  startOff: headerBytes,
+                  layoutKind: 'scale-record24-tagged',
+                  structuralProbe: {
+                    headerBytes,
+                    recordStrideBytes: strideBytes,
+                    tagOffset: 2,
+                    tagLE: '0x961203',
+                    valueOffset: 10,
+                    auxOffset: 14,
+                    markerOffset: 18,
+                    consumedBytes,
+                    trailingBytes: payloadLen - consumedBytes,
+                    firstValues: keys24.slice(0, 8).map((key) => [key.value, key.aux, key.marker]),
+                  },
+                  note: 'Scale module payload with 24-byte records tagged by 0x03 0x12 0x96 at record+2. The scale scalar is f32 at record+10; aux/marker fields are preserved for inspection. Recognized with 0B or 12B header alignment.',
+                };
+              }
+              return null;
+            };
+            const _tryVectorScaleRecord24 = () => {
+              if (moduleName !== '缩放') return null;
+              const headerBytes = 2;
+              const strideBytes = 24;
+              if (payloadLen < headerBytes + strideBytes * 4) return null;
+              const round6 = (value) => Math.round(value * 1000000) / 1000000;
+              const keys24 = [];
+              for (let recordOffset = headerBytes; recordOffset + strideBytes <= payloadLen; recordOffset += strideBytes) {
+                const recordStart = payloadStart + recordOffset;
+                const x = buf.readFloatLE(recordStart);
+                const y = buf.readFloatLE(recordStart + 4);
+                const scaleA = buf.readFloatLE(recordStart + 8);
+                const scaleB = buf.readFloatLE(recordStart + 12);
+                const leaked = buf.readFloatLE(recordStart + 16);
+                const z = buf.readFloatLE(recordStart + 20);
+                if (![x, y, scaleA, scaleB, z].every(Number.isFinite)) break;
+                if ([x, y, z].some((value) => Math.abs(value) > 1e6)) break;
+                if (scaleA < -0.01 || scaleA > 4.01 || scaleB < -0.01 || scaleB > 4.01) break;
+                if (Math.abs(x) < 0.0001 && Math.abs(y) < 0.0001 && Math.abs(z) < 0.0001 && Math.abs(scaleA) < 0.0001 && Math.abs(scaleB) < 0.0001) break;
+                keys24.push({
+                  index: keys24.length,
+                  x: round6(x),
+                  y: round6(y),
+                  z: round6(z),
+                  value: round6(scaleA),
+                  secondaryValue: round6(scaleB),
+                  leaked: Number.isFinite(leaked) ? round6(leaked) : null,
+                });
+                if (keys24.length > 512) break;
+              }
+              if (keys24.length < 4) return null;
+              const consumedBytes = headerBytes + keys24.length * strideBytes;
+              return {
+                count: keys24.length,
+                keys: keys24,
+                stride: strideBytes,
+                startOff: headerBytes,
+                valueOffset: 8,
+                secondaryValueOffset: 12,
+                layoutKind: 'scale-vector24',
+                structuralProbe: {
+                  headerBytes,
+                  recordStrideBytes: strideBytes,
+                  valueOffset: 8,
+                  secondaryValueOffset: 12,
+                  leakedOffset: 16,
+                  zOffset: 20,
+                  consumedBytes,
+                  trailingBytes: payloadLen - consumedBytes,
+                  firstPairs: keys24.slice(0, 8).map((key) => [key.value, key.secondaryValue]),
+                },
+                note: 'Scale module payload with a 2-byte header and 24-byte vector records. record+8/record+12 are the authored scale channels; record+16 is leaked/foreign float data and is not used as scale.',
+              };
+            };
             const _tryFragmentedStride16 = () => {
               if (payloadLen < 32) return null;
-              // Accept payloads where the stride-16 record array fills all
-              // but a small trailing remainder (<=8 bytes). Verified on
-              // t_天策尖刺02.pss em#2 亮度 (payloadLen 260 = 16*16 + 4;
-              // the 4 trailing bytes are the prefix of the next field's
-              // name). Without this slack the decoder would reject
-              // perfectly clean keyframe arrays whose payloadLen overlaps
-              // into the next module by 1-7 bytes.
-              const trailing = payloadLen % 16;
-              if (trailing > 8) return null;
-              const count = Math.floor(payloadLen / 16);
-              const records = [];
-              let validRecords = 0;
-              let endMarkers = 0;
-              let allZeroRecords = 0;
-              for (let k = 0; k < count; k++) {
-                const p = payloadStart + k * 16;
-                const fa = buf.readFloatLE(p);
-                const fb = buf.readFloatLE(p + 4);
-                const fc = buf.readFloatLE(p + 8);
-                const fd = buf.readFloatLE(p + 12);
-                const allFinite = [fa, fb, fc, fd].every(Number.isFinite);
-                const allBounded = allFinite && [fa, fb, fc, fd].every((v) => Math.abs(v) < 1e6);
-                const allZero = fa === 0 && fb === 0 && fc === 0 && fd === 0;
-                const isEndMarker = allBounded && (
-                  (Math.abs(fa - 1.0) < 1e-3 && fb === 0 && fc === 0 && fd === 0)
-                  || (Math.abs(fc - 1.0) < 1e-3 && Math.abs(fd - 3.0) < 1e-3)
-                  // XMFLOAT4 keyframe family used in t_天策尖刺02.pss
-                  // em#2 亮度 / em#6 旋转: every 4th record carries a
-                  // d≈1.0 sentinel marking the end of a 4-key group, with
-                  // a,b,c holding bounded f32 values (e.g. (-13.876,
-                  // 100.190, -14.443, 1.0)). Same wrapper as the龙牙
-                  // (c=1,d=3) marker pattern but with the unit value
-                  // moved to channel d. Recognising it lets the
-                  // fragmented-curve decoder succeed without needing a
-                  // separate layout.
-                  || (Math.abs(fd - 1.0) < 1e-3)
-                );
-                if (allZero) allZeroRecords++;
-                if (isEndMarker) endMarkers++;
-                if (allBounded && !allZero) validRecords++;
-                records.push({
-                  index: k,
-                  a: allFinite ? Math.round(fa * 1000000) / 1000000 : null,
-                  b: allFinite ? Math.round(fb * 1000000) / 1000000 : null,
-                  c: allFinite ? Math.round(fc * 1000000) / 1000000 : null,
-                  d: allFinite ? Math.round(fd * 1000000) / 1000000 : null,
-                  valid: allBounded,
-                  zero: allZero,
-                  endMarker: isEndMarker,
-                });
+              let best = null;
+              for (const headerBytes of [0, 2, 10]) {
+                if (headerBytes >= payloadLen) continue;
+                const remain = payloadLen - headerBytes;
+                if (remain < 32 || remain % 16 > 8) continue;
+                const count = Math.floor(remain / 16);
+                const records = [];
+                let validRecords = 0;
+                let endMarkers = 0;
+                let allZeroRecords = 0;
+                for (let k = 0; k < count; k++) {
+                  const p = payloadStart + headerBytes + k * 16;
+                  const fa = buf.readFloatLE(p);
+                  const fb = buf.readFloatLE(p + 4);
+                  const fc = buf.readFloatLE(p + 8);
+                  const fd = buf.readFloatLE(p + 12);
+                  const allFinite = [fa, fb, fc, fd].every(Number.isFinite);
+                  const allBounded = allFinite && [fa, fb, fc, fd].every((v) => Math.abs(v) < 1e6);
+                  const allZero = fa === 0 && fb === 0 && fc === 0 && fd === 0;
+                  const isEndMarker = allBounded && (
+                    (Math.abs(fa - 1.0) < 1e-3 && fb === 0 && fc === 0 && fd === 0)
+                    || (Math.abs(fc - 1.0) < 1e-3 && Math.abs(fd - 3.0) < 1e-3)
+                    || (Math.abs(fd - 1.0) < 1e-3)
+                  );
+                  if (allZero) allZeroRecords++;
+                  if (isEndMarker) endMarkers++;
+                  if (allBounded && !allZero) validRecords++;
+                  records.push({
+                    index: k,
+                    a: allFinite ? Math.round(fa * 1000000) / 1000000 : null,
+                    b: allFinite ? Math.round(fb * 1000000) / 1000000 : null,
+                    c: allFinite ? Math.round(fc * 1000000) / 1000000 : null,
+                    d: allFinite ? Math.round(fd * 1000000) / 1000000 : null,
+                    valid: allBounded,
+                    zero: allZero,
+                    endMarker: isEndMarker,
+                  });
+                }
+                if (endMarkers < 1 || validRecords < count * 0.25) continue;
+                const candidate = { count, records, headerBytes, validRecords, endMarkers, allZeroRecords };
+                if (!best || candidate.validRecords > best.validRecords || (candidate.validRecords === best.validRecords && candidate.headerBytes < best.headerBytes)) best = candidate;
               }
-              if (endMarkers < 1) return null;
-              if (validRecords < count * 0.25) return null;
+              if (!best) return null;
               return {
-                count,
-                keys: records,
+                count: best.count,
+                keys: best.records,
                 stride: 16,
-                startOff: 0,
+                startOff: best.headerBytes,
                 layoutKind: 'legacy-fragmented-curve',
                 note: 'Stride-16 keyframe array with multiple sub-sections separated by 1.0 end-markers; some records contain uninitialized memory (legacy fwrite-leak from 32-bit editor) but valid (non-zero, finite, bounded) records carry real curve values. Verified on t_天策龙牙.pss em#18 扭曲强度.',
                 structuralProbe: {
-                  recordCount: count,
-                  validRecords,
-                  endMarkers,
-                  zeroRecords: allZeroRecords,
+                  headerBytes: best.headerBytes,
+                  recordCount: best.count,
+                  validRecords: best.validRecords,
+                  endMarkers: best.endMarkers,
+                  zeroRecords: best.allZeroRecords,
                 },
               };
             };
@@ -11770,6 +14834,12 @@ server = createServer(async (req, res) => {
             if (_asD) return _asD;
             const _asE = _tryParticleIndexTable();
             if (_asE) return _asE;
+            const _asConstantSentinel16 = _tryConstantSentinel16();
+            if (_asConstantSentinel16) return _asConstantSentinel16;
+            const _asTaggedScaleRecord24 = _tryTaggedScaleRecord24();
+            if (_asTaggedScaleRecord24) return _asTaggedScaleRecord24;
+            const _asVectorScaleRecord24 = _tryVectorScaleRecord24();
+            if (_asVectorScaleRecord24) return _asVectorScaleRecord24;
             const _asF = _tryFragmentedStride16();
             if (_asF) return _asF;
 
@@ -11823,7 +14893,7 @@ server = createServer(async (req, res) => {
                 keys: null,
                 stride: 0,
                 startOff: 0,
-                layoutKind: 'embedded-text-blob',
+                layoutKind: 'engine-rejected-text-blob',
                 effectiveValue: 'zero (no curve; payload is foreign text content, engine type-tag check fails)',
                 structuralProbe: {
                   payloadLen,
@@ -11837,6 +14907,36 @@ server = createServer(async (req, res) => {
             };
             const _asG = _tryEmbeddedTextBlob();
             if (_asG) return _asG;
+            const _tryForeignResourceTable = () => {
+              if (moduleName !== '缩放' || payloadLen < 64) return null;
+              const u32Counts = new Map();
+              for (let offset = 0; offset + 4 <= payloadLen; offset += 4) {
+                const value = payloadBytes.readUInt32LE(offset);
+                if (value !== 0) u32Counts.set(value, (u32Counts.get(value) || 0) + 1);
+              }
+              const repeatedU32 = [...u32Counts.values()].some((count) => count >= 3);
+              if (!(zeroByteCount >= payloadBytes.length * 0.45 && asciiRuns >= 2 && repeatedU32)) return null;
+              return {
+                count: 0,
+                keys: null,
+                stride: 0,
+                startOff: 0,
+                layoutKind: 'foreign-resource-table',
+                effectiveValue: 'no numeric scale curve (foreign resource/pointer table)',
+                structuralProbe: {
+                  payloadLen,
+                  zeroRatio: Math.round((zeroByteCount / payloadBytes.length) * 100) / 100,
+                  asciiRuns,
+                  repeatedU32: [...u32Counts.entries()]
+                    .filter(([, count]) => count >= 3)
+                    .slice(0, 8)
+                    .map(([value, count]) => ({ value: '0x' + value.toString(16).padStart(8, '0'), count })),
+                },
+                note: 'Scale module slot contains a zero-dense foreign resource/pointer table, not KG3D_KeyFrame scale data. The engine treats the scale channel as non-animated/default while other runtime size fields may still supply authored size.',
+              };
+            };
+            const _asForeignResourceTable = _tryForeignResourceTable();
+            if (_asForeignResourceTable) return _asForeignResourceTable;
             // Non-numeric-curve payload. The earlier hypothesis that this is
             // a "KG3D_ParticleExpression script-VM" payload was DISPROVEN by
             // RTTI walk of kg3denginedx11ex64.dll AND by symbol enumeration
@@ -11909,6 +15009,128 @@ server = createServer(async (req, res) => {
             // takes the error path and the velocity defaults to zero.
             const tagAt0 = (payloadStart + 4 <= buf.length) ? buf.readUInt32LE(payloadStart) : 0xFFFFFFFF;
             const tagInRange = tagAt0 >= 0 && tagAt0 <= 0x0B;
+            const buildEngineRejectedBinaryBlob = () => ({
+              count: 0,
+              keys: null,
+              stride: 0,
+              startOff: 0,
+              layoutKind: 'engine-rejected-binary-blob',
+              effectiveValue: 'zero (engine rejects invalid keyframe type tag)',
+              structuralProbe: {
+                payloadLen,
+                recordCount: probeRecords,
+                tagAt0: '0x' + tagAt0.toString(16).padStart(8, '0'),
+                tagInValidRange: tagInRange,
+                firstBytesHex: payloadBytes.subarray(0, Math.min(32, payloadBytes.length)).toString('hex').match(/../g)?.join(' ') || '',
+                asciiRuns,
+                pointerHits,
+                zeroRatio: Math.round((zeroByteCount / payloadBytes.length) * 100) / 100,
+                printableRatio: probeRecords > 0 ? Math.round(probePrintable / (probeRecords * 4) * 100) / 100 : null,
+                goodMarkerRatio: probeRecords > 0 ? Math.round(probeGoodMarkers / probeRecords * 100) / 100 : null,
+              },
+              note: 'Binary payload does not match any known numeric curve schema, and its 4-byte KG3D_ParticleDistribution type tag is outside the valid PARSYS_DISTRIBUTION_DATA_TYPE range [0..0xB]. The runtime engine factory rejects this tag via the same bounds check used for legacy fwrite/text blobs, so the channel uses its default zero value. This is classified as engine-rejected binary content rather than an undecoded curve.',
+            });
+            const tag0BodyCountAtPlus4 = (tagAt0 === 0 && payloadBytes.length >= 8)
+              ? payloadBytes.readUInt32LE(4)
+              : null;
+            const maxPossibleFloatBodyRecords = Math.max(0, Math.floor((payloadLen - 8) / 4));
+            const buildValidKeyframeZeroCountBody = () => {
+              const tailBytes = payloadBytes.subarray(8, Math.min(payloadBytes.length, 136));
+              let tailPrintable = 0;
+              let tailAlpha = 0;
+              let tailAscii = '';
+              for (const byte of tailBytes) {
+                const isPrintable = (byte >= 0x20 && byte < 0x7F) || byte === 0x09 || byte === 0x0A || byte === 0x0D;
+                const isAlpha = (byte >= 0x41 && byte <= 0x5A) || (byte >= 0x61 && byte <= 0x7A) || byte === 0x5F;
+                if (isPrintable) tailPrintable++;
+                if (isAlpha) tailAlpha++;
+                tailAscii += isPrintable ? String.fromCharCode(byte) : '.';
+              }
+              return {
+                count: 0,
+                keys: [],
+                stride: 0,
+                startOff: 8,
+                layoutKind: 'valid-keyframe-zero-count-body',
+                effectiveValue: 'engine default (valid KG3D_KeyFrame<float> body declares zero keyframes)',
+                structuralProbe: {
+                  payloadLen,
+                  recordCount: probeRecords,
+                  tagAt0: '0x' + tagAt0.toString(16).padStart(8, '0'),
+                  tagInValidRange: tagInRange,
+                  selectedKeyFrameType: 'KG3D_KeyFrame<float>',
+                  bodyStartOffset: 4,
+                  declaredCountOffset: 4,
+                  declaredCountAtPlus4: tag0BodyCountAtPlus4,
+                  declaredCountAtPlus4Hex: tag0BodyCountAtPlus4 == null ? null : '0x' + tag0BodyCountAtPlus4.toString(16).padStart(8, '0'),
+                  countFieldIsZero: tag0BodyCountAtPlus4 === 0,
+                  trailingBytesAfterCount: Math.max(0, payloadLen - 8),
+                  trailingPreviewAscii: tailAscii,
+                  trailingPrintableRatio: tailBytes.length > 0 ? Math.round((tailPrintable / tailBytes.length) * 100) / 100 : null,
+                  trailingAlphaRatio: tailBytes.length > 0 ? Math.round((tailAlpha / tailBytes.length) * 100) / 100 : null,
+                  firstBytesHex: payloadBytes.subarray(0, Math.min(32, payloadBytes.length)).toString('hex').match(/../g)?.join(' ') || '',
+                  uniqueVtableLo32: [...probeVtables].slice(0, 8),
+                  asciiTextAtPlus10: isAsciiHeavy ? probeText : null,
+                  asciiRuns,
+                  pointerHits,
+                  zeroRatio: Math.round((zeroByteCount / payloadBytes.length) * 100) / 100,
+                  printableRatio: probeRecords > 0 ? Math.round(probePrintable / (probeRecords * 4) * 100) / 100 : null,
+                  goodMarkerRatio: probeRecords > 0 ? Math.round(probeGoodMarkers / probeRecords * 100) / 100 : null,
+                },
+                note: 'Valid PARSYS_DISTRIBUTION_DATA_TYPE tag 0 selects KG3D_KeyFrame<float>. The selected body count at payload+4 is exactly zero, so the engine has no authored float keyframes to read and keeps the channel default. Any remaining bytes in this module payload are trailing foreign/module data, not undecoded keyframe records.',
+              };
+            };
+            const buildMalformedValidKeyframeBody = () => ({
+              count: 0,
+              keys: null,
+              stride: 0,
+              startOff: 0,
+              layoutKind: 'malformed-valid-keyframe-body',
+              effectiveValue: 'engine default (malformed KG3D_KeyFrame<float> body; no authored keyframes can be read)',
+              structuralProbe: {
+                payloadLen,
+                recordCount: probeRecords,
+                tagAt0: '0x' + tagAt0.toString(16).padStart(8, '0'),
+                tagInValidRange: tagInRange,
+                selectedKeyFrameType: 'KG3D_KeyFrame<float>',
+                bodyStartOffset: 4,
+                declaredCountOffset: 4,
+                declaredCountAtPlus4: tag0BodyCountAtPlus4,
+                declaredCountAtPlus4Hex: tag0BodyCountAtPlus4 == null ? null : '0x' + tag0BodyCountAtPlus4.toString(16).padStart(8, '0'),
+                maxPossibleFloatBodyRecords,
+                minBytesPerFloatRecord: 4,
+                countFieldExceedsPayload: tag0BodyCountAtPlus4 != null && tag0BodyCountAtPlus4 > maxPossibleFloatBodyRecords,
+                firstBytesHex: payloadBytes.subarray(0, Math.min(32, payloadBytes.length)).toString('hex').match(/../g)?.join(' ') || '',
+                uniqueVtableLo32: [...probeVtables].slice(0, 8),
+                asciiTextAtPlus10: isAsciiHeavy ? probeText : null,
+                asciiRuns,
+                pointerHits,
+                zeroRatio: Math.round((zeroByteCount / payloadBytes.length) * 100) / 100,
+                printableRatio: probeRecords > 0 ? Math.round(probePrintable / (probeRecords * 4) * 100) / 100 : null,
+                goodMarkerRatio: probeRecords > 0 ? Math.round(probeGoodMarkers / probeRecords * 100) / 100 : null,
+              },
+              note: 'Valid PARSYS_DISTRIBUTION_DATA_TYPE tag 0 selects KG3D_KeyFrame<float>, so this is not an invalid-tag rejection. The selected keyframe body is still impossible to read: the first body dword at payload+4 declares more float records than the payload can physically contain even with a one-f32 minimum per record. The runtime therefore has no authored keyframes to sample and the channel remains at its engine default.',
+            });
+            const looksLikeMalformedValidKeyframeBody = (
+              tagAt0 === 0
+              && tagInRange
+              && tag0BodyCountAtPlus4 != null
+              && tag0BodyCountAtPlus4 > 1024
+              && tag0BodyCountAtPlus4 > maxPossibleFloatBodyRecords
+              && payloadLen >= 32
+            );
+            const looksLikeValidKeyframeZeroCountBody = (
+              tagAt0 === 0
+              && tagInRange
+              && tag0BodyCountAtPlus4 === 0
+              && payloadLen >= 8
+            );
+            if (looksLikeValidKeyframeZeroCountBody) {
+              return buildValidKeyframeZeroCountBody();
+            }
+            if (looksLikeMalformedValidKeyframeBody) {
+              return buildMalformedValidKeyframeBody();
+            }
             // Recognize legacy raw-fwrite memory-leak signature: the same
             // 16B-stride wrapper as case A, with most records carrying a
             // 32-bit-shaped vtable_ptr at +0..+7 (high dword zero), but
@@ -11962,8 +15184,8 @@ server = createServer(async (req, res) => {
                   tagAt0: '0x' + tagAt0.toString(16).padStart(8, '0'),
                   tagInValidRange: tagInRange,
                 },
-                effectiveValue: 'zero (no velocity curve)',
-                note: 'Legacy 32-bit editor raw-fwrite of KG3D_ParticleDistribution wrapper. Same 16B-stride layout as case A (legacy-blob-vec3-curve), but the contained KG3D_KeyFrame value bytes at +10..+13 are non-numeric (leaked editor heap content / stale memory). The 4-byte type tag at +0 is ' + ('0x' + tagAt0.toString(16).padStart(8, '0')) + ' which is OUTSIDE the valid PARSYS_DISTRIBUTION_DATA_TYPE range [0..0xB], so the runtime engine\'s KG3D_ParticleDistribution::_CreateKeyFrame (RVA 0x03546E60) bounds check (cmp 0xB; ja default) takes the error path and the velocity defaults to zero in-game. This is engine-authoritative: no numeric data exists to decode.',
+                effectiveValue: 'zero (no numeric curve)',
+                note: 'Legacy 32-bit editor raw-fwrite of KG3D_ParticleDistribution wrapper. Same 16B-stride layout as case A (legacy-blob-vec3-curve), but the contained KG3D_KeyFrame value bytes at +10..+13 are non-numeric (leaked editor heap content / stale memory). The 4-byte type tag at +0 is ' + ('0x' + tagAt0.toString(16).padStart(8, '0')) + ' which is OUTSIDE the valid PARSYS_DISTRIBUTION_DATA_TYPE range [0..0xB], so the runtime engine\'s KG3D_ParticleDistribution::_CreateKeyFrame (RVA 0x03546E60) bounds check (cmp 0xB; ja default) takes the error path and the module channel defaults to zero in-game. This is engine-authoritative: no numeric data exists to decode.',
               };
             }
             // Fallback: still recognizable as some 16B-stride blob but does
@@ -11971,6 +15193,7 @@ server = createServer(async (req, res) => {
             // valid range and we still failed to decode). Keep the
             // diagnostic structuralProbe.
             if (asciiRuns >= 2 || pointerHits >= 3 || isAsciiHeavy) {
+              if (!tagInRange) return buildEngineRejectedBinaryBlob();
               return {
                 count: probeRecords,
                 keys: null,
@@ -12031,6 +15254,10 @@ server = createServer(async (req, res) => {
             };
             const asImplicit18 = tryImplicitVec4(18, 16);
             if (asImplicit18) return asImplicit18;
+
+            if (!tagInRange && payloadLen >= 32) {
+              return buildEngineRejectedBinaryBlob();
+            }
 
             return null;
           };
@@ -12120,14 +15347,14 @@ server = createServer(async (req, res) => {
               keys: !isComplex && !isLegacyBlob && !isLegacyLeak ? decoded.keys : null,
               values: isLegacyBlob ? decoded.values : null,
               decoded: !isComplex,
-              effectiveValue: isLegacyLeak ? decoded.effectiveValue : null,
+              effectiveValue: isLegacyLeak ? decoded.effectiveValue : (decoded.effectiveValue || null),
               layoutKind: decoded.layoutKind,
               layout: decoded.layoutKind === '3d-explicit-time'
                     ? `[count:u${decoded.startOff === 4 ? '32' : '16'}, {t:f32, x:f32, y:f32, z:f32}\u00d7${decoded.count}] (vec3 curve, explicit time)`
                     : decoded.layoutKind === 'legacy-blob-vec3-curve'
                       ? `[{8B legacy vtable_ptr, 2B zero, f32 value, 2B tail}\u00d7${decoded.count}] (legacy fwrite-blob; values decoded at +10/record)`
                       : decoded.layoutKind === 'legacy-fwrite-memory-leak'
-                        ? `[{16B record}\u00d7${decoded.count}] legacy 32-bit raw-fwrite memory leak (no numeric data; engine defaults velocity to zero)`
+                        ? `[{16B record}\u00d7${decoded.count}] legacy 32-bit raw-fwrite memory leak (no numeric data; engine defaults channel to zero)`
                       : decoded.layoutKind === 'unknown-blob'
                         ? 'opaque payload (pointer-shaped bytes; format not one of the known schemas)'
                         : decoded.layoutKind === '4d-implicit-time'
@@ -12136,14 +15363,28 @@ server = createServer(async (req, res) => {
                           ? `[${decoded.startOff}B header, {a:f32, b:f32, c:f32, d:f32}\u00d7${decoded.count}] (4D keyframe array, implicit time)`
                         : decoded.layoutKind === 'particle-index-table'
                           ? `[u32 hdr, u16\u00d7${decoded.count}] (particle index/state table; not a numeric curve, channel default = 0)`
+                        : decoded.layoutKind === 'constant-sentinel16'
+                          ? `[${decoded.startOff}B header, {f32, f32, u32 0xffffffff, f32}\u00d7${decoded.structuralProbe?.recordCount ?? '?'}${decoded.structuralProbe?.trailingBytes ? `, trailing ${decoded.structuralProbe.trailingBytes}B ${decoded.structuralProbe.trailingClass || 'overlap'} ignored` : ''}] (constant scale metadata; no animated keyframes)`
                         : decoded.layoutKind === 'legacy-fragmented-curve'
-                          ? `[{16B record}\u00d7${decoded.count}] (fragmented stride-16 curve with 1.0 end-markers; valid sub-sections + legacy fwrite-leak gaps)`
-                        : decoded.layoutKind === 'embedded-text-blob'
+                          ? `[${decoded.startOff}B header, {16B record}\u00d7${decoded.count}] (fragmented stride-16 curve with 1.0 end-markers; valid sub-sections + legacy fwrite-leak gaps)`
+                        : decoded.layoutKind === 'engine-rejected-text-blob'
                           ? `[${decoded.structuralProbe?.payloadLen}B foreign text content (HLSL/RCPY/config strings); not a curve, channel default = 0]`
+                        : decoded.layoutKind === 'engine-rejected-binary-blob'
+                          ? `[${decoded.structuralProbe?.payloadLen}B binary content with invalid keyframe type tag ${decoded.structuralProbe?.tagAt0 || '?'}; not a curve, channel default = 0]`
+                        : decoded.layoutKind === 'malformed-valid-keyframe-body'
+                          ? `[${decoded.structuralProbe?.payloadLen}B binary content with valid keyframe type tag ${decoded.structuralProbe?.tagAt0 || '?'} (${decoded.structuralProbe?.selectedKeyFrameType || 'KG3D_KeyFrame<?>'}), but impossible body count ${decoded.structuralProbe?.declaredCountAtPlus4Hex || '?'}; channel default]`
+                        : decoded.layoutKind === 'valid-keyframe-zero-count-body'
+                          ? `[${decoded.structuralProbe?.payloadLen}B payload with valid keyframe type tag ${decoded.structuralProbe?.tagAt0 || '?'} (${decoded.structuralProbe?.selectedKeyFrameType || 'KG3D_KeyFrame<?>'}) and zero body count; ${decoded.structuralProbe?.trailingBytesAfterCount ?? 0} trailing bytes are non-keyframe data; channel default]`
                         : decoded.layoutKind === 'scale-record24'
                           ? `[10B header, {f32 leaked, f32 scale, f32 secondaryScale, u32 0xffff1d30, f32 auxA, f32 auxB}x${decoded.count}] (24B scale records, implicit time; trailing ${decoded.structuralProbe?.trailingBytes ?? 0}B ignored)`
+                        : decoded.layoutKind === 'scale-record24-tagged'
+                          ? `[${decoded.startOff}B header, {tag 0x03 0x12 0x96, f32 scale, f32 aux, f32 marker}x${decoded.count}] (tagged 24B scale records; trailing ${decoded.structuralProbe?.trailingBytes ?? 0}B ignored)`
+                        : decoded.layoutKind === 'scale-vector24'
+                          ? `[${decoded.startOff}B header, {x:f32, y:f32, scale:f32, secondaryScale:f32, leaked:f32, z:f32}x${decoded.count}] (24B vector scale records; trailing ${decoded.structuralProbe?.trailingBytes ?? 0}B ignored)`
+                        : decoded.layoutKind === 'foreign-resource-table'
+                          ? `[${decoded.structuralProbe?.payloadLen}B foreign resource/pointer table; not a numeric scale curve]`
                         : decoded.layoutKind === 'no-animation'
-                          ? `[\u2264 8B payload; module declared with no keyframes \u2014 engine uses constant default value]`
+                          ? `[${decoded.structuralProbe?.payloadLen ?? '?'}B tiny payload; module declared with no keyframes, engine uses constant default value]`
                           : `[10B header, {f32 value, 8B zero}\u00d7${decoded.count}] (1D curve, time implicit)`,
               note: decoded.note || null,
               structuralProbe: decoded.structuralProbe || null,
@@ -12182,21 +15423,17 @@ server = createServer(async (req, res) => {
             offset: buildCurveEntryList('\u504F\u79FB'),
           };
           out.parsed.curveInfo = spriteCurveInfo;
-          // Resolve spawnLauncherTypeId → engine class via the RTTI-recovered
-          // map. Definitive: each KG3D_Launcher{Shape}::GetShape returns this
-          // byte as a constant in vtable slot 11 (verified by walking the
-          // RTTI complete-object-locator graph in kg3denginedx11ex64.dll;
-          // see tools/diag-rtti-launcher.py and EXPERIENCES.md).
-          const _shape = (meta?.spawnLauncherTypeId != null)
-            ? PSS_SPAWN_SHAPE_TYPE_MAP[meta.spawnLauncherTypeId]
-            : null;
-          if (_shape) {
-            out.parsed.spawnLauncherClass = _shape.className;
-            out.parsed.spawnLauncherLabel = _shape.label;
-            out.parsed.spawnLauncherHint = `${_shape.className} (${_shape.label} — ${_shape.geometry})`;
-          } else if (meta?.spawnLauncherTypeId != null) {
-            out.parsed.spawnLauncherClass = null;
-            out.parsed.spawnLauncherHint = `unknown spawnLauncherTypeId=${meta.spawnLauncherTypeId} (not in RTTI-recovered shape enum {0..4, 37, 39, 42, 48, 67})`;
+          // Resolve launcherTypeId → engine class via the RTTI-recovered
+          // map. Definitive: each KG3D_Launcher* vtable slot 11 returns this
+          // token. Shape classes are spawn volumes; non-shape classes such as
+          // KG3D_LauncherScale can appear in the same PSS trailer slot.
+          if (launcherTypeInfo) {
+            out.parsed.launcherClass = launcherTypeInfo.className;
+            out.parsed.launcherLabel = launcherTypeInfo.label;
+            out.parsed.launcherHint = launcherTypeInfo.hint;
+            out.parsed.spawnLauncherClass = launcherTypeInfo.className;
+            out.parsed.spawnLauncherLabel = launcherTypeInfo.label;
+            out.parsed.spawnLauncherHint = launcherTypeInfo.hint;
           }
           // A sprite that has only material-parameter modules (e.g. 消散贴图 /
           // 勾边宽度 / 消散密度 / 勾边颜色) and no time-based modules
@@ -12285,11 +15522,25 @@ server = createServer(async (req, res) => {
           out.authoritative = [
             'tracks (path scan; KG3D_PARSYS_TRACK_BLOCK::szTrackPath fixed 64B at +0)',
             'block size = exactly sizeof(KG3D_PARSYS_TRACK_BLOCK) = 236B (engine assert in _PARSYS_ReadParticleTrackBlock: dwLength == sizeof(KG3D_PARSYS_TRACK_BLOCK); verified by RTTI string scan of kg3denginedx11ex64.dll)',
+            'trackParams decoded from the fixed KG3D_PARSYS_TRACK_BLOCK layout: scaleXYZ +0x9C, misc words +0xA8..+0xBF, uniformScale +0xC0, radiusCandidate +0xC8, segmentCountCandidate +0xD0, alpha +0xD4.',
             'NO texture path/index in this block — the track is pure spline geometry. The trail material+texture lives in the type-2 KG3D_ParticleTrailLauncher block that references this track.',
           ];
           out.uncertain = meta?.trackParamsWarning
             ? [`trackParams not extracted: ${meta.trackParamsWarning.reason}`]
             : [];
+        } else if (entry.type === 4) {
+          out.parsed = {
+            blockSize: entry.size,
+            cameraShake: meta?.cameraShake || null,
+            cameraShakeWarning: meta?.cameraShakeWarning || null,
+          };
+          out.authoritative = [
+            'TOC type 4 corresponds to the KG3D particle camera-shake block reader observed in MovieEditor/KG3D symbols.',
+            'Header/sample layout decoded from the block: fDuration @+0x00, startDelaySeconds @+0x04, sampleRateFps @+0x08, nType @+0x28, sampleCount @+0x34, then vec3 f32 samples from +0x44.',
+            'KG3D_ParticleCameraShake::FrameMove proves startDelaySeconds: it compares m_pBaseData+0x04 against elapsed time before advancing the local shake/sample timer, while m_pBaseData+0x00 caps that local timer as duration.',
+            'The sample count, sample rate, and block length cross-check: blockSize == 0x44 + sampleCount * 3 * sizeof(f32).',
+          ];
+          out.uncertain = meta?.cameraShake?.uncertainty || [];
         }
 
         return out;
@@ -12322,6 +15573,7 @@ server = createServer(async (req, res) => {
       const spriteCount = BLOCKS.filter((b) => b.typeLabel === 'sprite').length;
       const meshCount = BLOCKS.filter((b) => b.typeLabel === 'mesh').length;
       const trackCount = BLOCKS.filter((b) => b.typeLabel === 'track').length;
+      const cameraShakeCount = BLOCKS.filter((b) => b.typeLabel === 'camera-shake').length;
       const spriteBlocks = BLOCKS.filter((b) => b.typeLabel === 'sprite');
       const spriteHasVelocity = spriteBlocks.some((b) => b.parsed?.hasVelocity);
       // spriteHasGravity / spriteHasEmissionRate removed 2026-04-26: 重力 and
@@ -12396,11 +15648,11 @@ server = createServer(async (req, res) => {
           }
           // legacy-blob-vec3-curve sprites are now decoded — no note needed.
         }
-        // Spawn launcher class is now fully recovered per-emitter via
-        // PSS_SPAWN_SHAPE_TYPE_MAP. No top-level note is needed; the per-
-        // emitter parsed.spawnLauncherClass / spawnLauncherHint carries
-        // the authoritative answer. (Previously surfaced as an open
-        // question; now resolved via RTTI walk of kg3denginedx11ex64.dll.)
+        // Launcher class is now recovered per-emitter via
+        // PSS_LAUNCHER_TYPE_MAP. No top-level note is needed; the per-
+        // emitter parsed.launcherClass / launcherHint carries the
+        // authoritative answer. (Previously surfaced as an open question;
+        // now resolved via RTTI walk of kg3denginedx11ex64.dll.)
         // Top-level note for sprites whose .jsondef is not in the shipped
         // archive. Verified on this install with a direct FN-hash probe
         // (tools/probe-cache-hash.mjs):
@@ -12469,7 +15721,7 @@ server = createServer(async (req, res) => {
         sourcePath,
         fileSize: buf.length,
         emitterCount,
-        counts: { global: BLOCKS.filter((b) => b.typeLabel === 'global').length, sprite: spriteCount, mesh: meshCount, track: trackCount },
+        counts: { global: BLOCKS.filter((b) => b.typeLabel === 'global').length, sprite: spriteCount, mesh: meshCount, track: trackCount, cameraShake: cameraShakeCount },
         globalTiming: analyzed?.globalTiming || null,
         socket: {
           suggested: socketHint,
@@ -12481,13 +15733,13 @@ server = createServer(async (req, res) => {
         known: {
           header: { magic: 'PAR\\0 @ 0x00', version: 'u16 LE @ 0x04', emitterCount: 'u32 LE @ 0x0C', toc: '12-byte records from 0x10 (type u32, offset u32, size u32)' },
           type0: { globalStartDelayMs: '+0 f32', globalPlayDurationMs: '+4 f32', globalDurationMs: '+8 f32', globalLoopEndMs: '+12 f32' },
-          type1: { materialPath: '+12+ (null-terminated GB18030)', layerFlags: '+272 4×u32 (values 0..4)', uvRows: '+320 u32', uvCols: '+324 u32', textures: 'scanned by "data/" prefix in block', colorCurve: 'scanned after last texture path; RGBA keyframes', maxParticles: 'fixed-trailer 5×u32=120 region at markerAbs+72', spawnLauncherTypeId: 'u32 at blockEnd-152; SHAPE enum from KG3D_Launcher{Shape}::GetShape: 0=Point 1=Rectangle 2=Cirque 3=Sphere 4=Cylinder 37=Polygon 39=Custom 42=DynamicTriangle 48=CurlNoise 67=MapDefine (RTTI-verified)', modules: 'GB18030 Chinese module names scanned from variable section +856..blockEnd-152 (e.g. 亮度=brightness, 速度=velocity, 颜色=color, 消散贴图=dissipation, 勾边宽度=outline width)' },
+          type1: { materialPath: '+12+ (null-terminated GB18030)', layerFlags: '+272 4×u32 (values 0..4)', uvRows: '+320 u32', uvCols: '+324 u32', textures: 'scanned by "data/" prefix in block', colorCurve: 'scanned after last texture path; RGBA keyframes', maxParticles: 'fixed-trailer 5×u32=120 region at markerAbs+72', launcherTypeId: 'u32 at blockEnd-152; KG3D_Launcher* vtable-slot-11 enum: 0=Point 1=Rectangle 2=Cirque 3=Sphere 4=Cylinder 7=Scale 37=Polygon 39=Custom 42=DynamicTriangle 48=CurlNoise 67=MapDefine (RTTI-verified)', spawnLauncherTypeId: 'legacy alias of launcherTypeId', modules: 'GB18030 Chinese module names scanned from variable section +856..blockEnd-152 (e.g. 亮度=brightness, 速度=velocity, 颜色=color, 消散贴图=dissipation, 勾边宽度=outline width)' },
           type2: { mesh: 'scanned by ".mesh" ext', ani: 'scanned by ".ani" ext' },
-          type3: { track: 'scanned by ".track" ext', trackParams: 'NOT EXTRACTED — APPROXIMATE field-index extractor removed (issue #7); each type-3 block carries trackParamsWarning explaining the absence' },
+          type3: { track: 'scanned by ".track" ext', trackParams: 'decoded from KG3D_PARSYS_TRACK_BLOCK fixed offsets: scaleXYZ +0x9C, misc +0xA8..+0xBF, uniformScale +0xC0, radiusCandidate +0xC8, segmentCountCandidate +0xD0, alpha +0xD4' },
         },
         resolved: [
           'Type-1 blend mode is authoritative when RenderState.BlendMode is read from a resolvable .jsondef material file. Only unavailable-or-unreadable .jsondef cases fall back to the name-keyword heuristic.',
-          'Type-1 maxParticles, uvRows, uvCols and spawnLauncherTypeId are parsed at confirmed fixed offsets. spawnLauncherTypeId is fully resolved to its KG3D_Launcher{Shape} class via RTTI-recovered enum (Point/Rectangle/Cirque/Sphere/Cylinder/Polygon/Custom/DynamicTriangle/CurlNoise/MapDefine).',
+          'Type-1 maxParticles, uvRows, uvCols and launcherTypeId/spawnLauncherTypeId are parsed at confirmed fixed offsets. launcherTypeId is fully resolved to its KG3D_Launcher* class via RTTI-recovered enum (Point/Rectangle/Cirque/Sphere/Cylinder/Scale/Polygon/Custom/DynamicTriangle/CurlNoise/MapDefine).',
           'Type-1 module PRESENCE is parsed from Chinese GB18030 strings in the variable section (+856..blockEnd-152). These are exposed per sprite emitter as the modules array plus derived flags hasVelocity/hasGravity/hasBrightness/hasColorCurve.',
           'Per-PSS effective start time is derived from each PSS global block (globalStartDelay), not from TANI binary timing fields.',
         ],
@@ -12567,6 +15819,22 @@ server = createServer(async (req, res) => {
         return;
       }
       sendJson(res, 200, getPssAnalyzeCached(sourcePath));
+    } catch (err) {
+      sendJson(res, 500, { error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  // API: PSS full detail — parsed renderer model plus raw binary structure.
+  // Used by the PSS page right-click "Show detail" modal.
+  if (method === 'GET' && urlPath === '/api/pss/detail') {
+    try {
+      const sourcePath = reqUrl.searchParams.get('sourcePath');
+      if (!sourcePath) {
+        sendJson(res, 400, { error: 'sourcePath is required' });
+        return;
+      }
+      sendJson(res, 200, buildPssDetailResponse(sourcePath));
     } catch (err) {
       sendJson(res, 500, { error: err?.message || String(err) });
     }
@@ -12671,6 +15939,29 @@ server = createServer(async (req, res) => {
       const status = /path required|invalid/i.test(message)
         ? 400
         : /not found|missing|only \.mesh/i.test(message)
+          ? 404
+          : 500;
+      sendJson(res, status, { error: message });
+    }
+    return;
+  }
+
+  // API: build GLB from a mesh path using local game cache + Python converter
+  if (method === 'POST' && urlPath === '/api/mesh/build-glb') {
+    try {
+      const body = await readBodyJson(req);
+      const meshPath = String(body?.path || '').trim();
+      if (!meshPath) {
+        sendJson(res, 400, { error: 'path required' });
+        return;
+      }
+      const result = buildMeshGlbFromPath(meshPath);
+      sendJson(res, 200, result);
+    } catch (err) {
+      const message = err?.message || String(err);
+      const status = /path required|invalid/i.test(message)
+        ? 400
+        : /not found|only \.mesh/i.test(message)
           ? 404
           : 500;
       sendJson(res, status, { error: message });

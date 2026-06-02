@@ -105,6 +105,7 @@
     border: 1px solid #263946; border-radius: 8px; background: #0d1720; padding: 10px; cursor: pointer;
   }
   .capture:hover { border-color: #557a91; background: #101f2a; }
+  .capture:focus-visible { border-color: #85c8ef; outline: none; box-shadow: 0 0 0 2px rgba(142, 201, 243, 0.22); }
   .capture.selected { border-color: #85c8ef; background: #12283a; }
   .capture-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: start; }
   .event-name { font-weight: 800; overflow-wrap: anywhere; }
@@ -126,6 +127,7 @@
   .play:hover { border-color: #86d99d; }
   .copy { min-width: 58px; border-color: #4a6273; background: #142532; color: #dfeffc; }
   .copy:hover { border-color: #8abfdd; }
+  .copy.active { border-color: #86d99d; background: #143522; color: #dfffe7; }
   .link-button {
     display: inline-flex; align-items: center; min-height: 24px; padding: 3px 8px; border: 1px solid #4a6273;
     border-radius: 6px; background: #142532; color: #dfeffc; text-decoration: none; font-size: 11px; font-weight: 800;
@@ -160,6 +162,9 @@
   .strict-frame-wrap { min-height: 360px; border: 1px solid #263b4b; border-radius: 7px; overflow: hidden; background: #03070a; }
   .strict-frame-wrap.blocked { min-height: auto; }
   .strict-frame { display: block; width: 100%; height: 520px; border: 0; background: #03070a; }
+  .pss-inline-player .strict-frame-wrap { min-height: 460px; }
+  .pss-frame { height: 620px; }
+  .pss-player-buttons { max-height: 92px; overflow: auto; }
   .strict-list { display: grid; gap: 5px; }
   .strict-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 7px; padding: 6px 8px; border: 1px solid #263b4b; border-radius: 6px; background: #08111a; font-size: 12px; }
   .strict-row.ok { border-color: #315f40; background: rgba(125, 224, 154, 0.08); }
@@ -167,11 +172,51 @@
   .strict-row.block { border-color: #73414a; background: rgba(240, 126, 126, 0.09); }
   .strict-row .strict-label { color: var(--muted); font-weight: 800; text-transform: uppercase; font-size: 10px; }
   .strict-row .strict-text { color: #e7eef3; overflow-wrap: anywhere; }
+  .client-flow { display: grid; gap: 8px; padding: 10px; border: 1px solid #294154; border-radius: 8px; background: #0a141d; }
+  .client-flow-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; }
+  .client-flow-title { font-weight: 900; color: #f5fbff; overflow-wrap: anywhere; }
+  .client-flow-sub { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .client-flow-list { display: grid; gap: 8px; }
+  .client-flow-card { display: grid; gap: 7px; padding: 8px; border: 1px solid #263b4b; border-radius: 7px; background: #08111a; }
+  .client-flow-card.partial { border-color: #6b5d32; background: rgba(232, 195, 106, 0.08); }
+  .client-flow-card.strong { border-color: #315f40; background: rgba(125, 224, 154, 0.08); }
+  .client-flow-card.path-only { border-color: #73414a; background: rgba(240, 126, 126, 0.08); }
+  .client-flow-stage { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 7px; padding: 6px 8px; border: 1px solid #223541; border-radius: 6px; background: rgba(6, 12, 18, 0.65); }
+  .client-flow-stage.ok { border-color: #315f40; }
+  .client-flow-stage.missing { border-color: #73414a; }
+  .client-flow-stage .stage-status { color: var(--muted); font-weight: 800; text-transform: uppercase; font-size: 10px; }
+  .client-flow-row { margin-top: 6px; border: 1px solid #223541; border-radius: 6px; background: #061018; }
+  .client-flow-row summary { cursor: pointer; padding: 6px 8px; font-size: 12px; overflow-wrap: anywhere; }
+  .client-flow-row-body { display: grid; gap: 6px; padding: 8px; border-top: 1px solid #223541; }
+  .pss-proof { display: grid; gap: 8px; padding: 10px; border: 1px solid #294154; border-radius: 8px; background: #0a141d; }
+  .pss-proof-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; }
+  .pss-proof-title { font-weight: 900; color: #f5fbff; overflow-wrap: anywhere; }
+  .pss-proof-sub { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .pss-proof-card { display: grid; gap: 8px; padding: 9px; border: 1px solid #263b4b; border-radius: 7px; background: #08111a; }
+  .pss-proof-card.ok { border-color: #315f40; background: rgba(125, 224, 154, 0.08); }
+  .pss-proof-card.blocked { border-color: #73414a; background: rgba(240, 126, 126, 0.08); }
+  .pss-proof-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+  .pss-proof-gate { min-height: 76px; padding: 7px; border: 1px solid #263b4b; border-radius: 6px; background: rgba(6, 12, 18, 0.72); }
+  .pss-proof-gate-top { display: flex; justify-content: space-between; gap: 6px; align-items: start; }
+  .pss-proof-gate-label { color: #f2f7fb; font-weight: 800; font-size: 12px; }
+  .pss-proof-gate-detail { margin-top: 5px; color: var(--muted); font: 11px Consolas, monospace; overflow-wrap: anywhere; }
+  .proof-badge { display: inline-flex; align-items: center; min-height: 19px; padding: 1px 7px; border-radius: 999px; border: 1px solid #38586e; color: var(--muted); font-size: 10px; white-space: nowrap; }
+  .proof-badge.proved { color: var(--green); border-color: #427a55; background: var(--green-bg); }
+  .proof-badge.missing { color: var(--red); border-color: #754047; background: var(--red-bg); }
+  .proof-badge.nearby, .proof-badge.adjacent { color: var(--amber); border-color: #796536; background: var(--amber-bg); }
+  .pss-texture-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 7px; }
+  .pss-texture-tile { min-height: 146px; border: 1px solid #263b4b; border-radius: 7px; background: #071018; overflow: hidden; display: grid; grid-template-rows: 74px auto; }
+  .pss-texture-preview { display: grid; place-items: center; background: #04090e; border-bottom: 1px solid #263b4b; }
+  .pss-texture-preview img { max-width: 100%; max-height: 74px; object-fit: contain; }
+  .pss-texture-body { display: grid; gap: 5px; padding: 6px; }
+  .pss-texture-name { color: #e7eef3; font: 11px Consolas, monospace; overflow-wrap: anywhere; }
+  .pss-proof-rows { max-height: 300px; overflow: auto; display: grid; gap: 6px; }
   @media (max-width: 1100px) {
     .main { grid-template-columns: 1fr; overflow: auto; }
     .app { overflow: auto; }
     .panel { min-height: 320px; }
     .strict-frame { height: 420px; }
+    .pss-proof-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
 </style>
 </head>
@@ -197,7 +242,7 @@
       </div>
       <div class="panel-body">
         <div class="actions" style="margin-bottom:10px;">
-          <button id="start-btn" class="btn" type="button">Start Bridge</button>
+          <button id="start-btn" class="btn" type="button">Start PSS Trace</button>
           <button id="stop-btn" class="btn secondary" type="button">Stop</button>
           <button id="pause-btn" class="btn secondary" type="button">Pause Capture</button>
           <button id="clear-btn" class="btn danger" type="button">Clear</button>
@@ -210,14 +255,14 @@
 
     <section class="panel">
       <div class="panel-head">
-        <h2 id="capture-title">Live Captures</h2>
+        <h2 id="capture-title">Animation Capture</h2>
         <div class="tabs" role="tablist" aria-label="Capture type">
-          <button id="sound-tab" class="tab-btn active" type="button" role="tab" aria-selected="true">Sound</button>
-          <button id="animation-tab" class="tab-btn" type="button" role="tab" aria-selected="false">Animation</button>
+          <button id="sound-tab" class="tab-btn" type="button" role="tab" aria-selected="false">Sound</button>
+          <button id="animation-tab" class="tab-btn active" type="button" role="tab" aria-selected="true">Animation</button>
         </div>
         <div class="actions">
           <span id="capture-count" class="tag">0</span>
-          <button id="toggle-filter-btn" class="btn secondary compact" type="button">Show hidden</button>
+          <button id="toggle-filter-btn" class="btn secondary compact hidden" type="button">Show hidden</button>
           <button id="clear-captures-btn" class="btn danger compact" type="button">Clear</button>
         </div>
       </div>
@@ -229,7 +274,7 @@
         <div id="story" class="story"></div>
         <div id="captures" class="capture-list"></div>
       </div>
-      <div id="audio-shell" class="audio-shell">
+      <div id="audio-shell" class="audio-shell hidden">
         <audio id="player" controls preload="none"></audio>
       </div>
     </section>
@@ -240,7 +285,7 @@
         <span id="detail-kind" class="tag">none</span>
       </div>
       <div class="panel-body">
-        <div id="detail"><div class="empty">Select a capture to inspect the event, WEM files, and call stack.</div></div>
+        <div id="detail"><div class="empty">Select a skill group to inspect its TANI/PSS trace and strict proof.</div></div>
         <div class="split">
           <div>
             <div class="mini-title">Bridge stdout</div>
@@ -265,11 +310,17 @@ const state = {
   busy: false,
   polling: false,
   showAllCaptures: false,
-  activeTab: 'sound',
+  activeTab: 'animation',
   animationResolveCache: new Map(),
   animationExtractCache: new Map(),
   animationPlayerCache: new Map(),
   animationPlayerLoading: new Set(),
+  clientFlowCache: { status: 'idle', data: null, error: '', loadedAt: 0 },
+  clientFlowLoading: false,
+  strictPssProofCache: new Map(),
+  strictPssProofLoading: new Set(),
+  strictPssProofVersion: 0,
+  selectedPssPlayerPath: '',
   renderedAnimationSkillSignature: '',
 };
 const copyTimers = new WeakMap();
@@ -328,7 +379,7 @@ function renderCast(status) {
   const pieces = [];
   if (status.clientProcesses?.length) pieces.push(`${status.clientProcesses[0].name} pid ${status.clientProcesses[0].pid}`);
   if (status.bridge?.running) pieces.push(`bridge pid ${status.bridge.pid}`);
-  const hookText = status.capture?.hooksReady ? 'hooks armed' : 'hooks pending';
+  const hookText = !status.bridge?.running ? 'bridge stopped' : status.bridge?.attachStuck ? 'attach stuck' : status.capture?.hooksReady ? (state.activeTab === 'animation' ? 'pss trace hooks armed' : 'hooks armed') : 'hooks pending';
   pieces.push(hookText);
   if (status.capture?.paused) pieces.push('capture paused');
   el('cast-sub').textContent = pieces.join(' | ');
@@ -533,6 +584,60 @@ function assetPath(asset) {
   return String(asset?.logicalPath || asset?.path || '').trim();
 }
 
+function pathName(path) {
+  return String(path || '').replace(/\\/g, '/').split('/').filter(Boolean).pop() || String(path || '');
+}
+
+function pathStem(path) {
+  return pathName(path).replace(/\.[^.]+$/, '').toLowerCase();
+}
+
+function proofBadge(status) {
+  return `<span class="proof-badge ${esc(status)}">${esc(status || 'unknown')}</span>`;
+}
+
+function proofRowPath(row) {
+  return row?.decodedPath || row?.path || row?.rawPath || row?.pssPath || '';
+}
+
+function collectProofPathRows(rows = []) {
+  const byPath = new Map();
+  const byStem = new Map();
+  for (const row of rows) {
+    const normalized = normPath(proofRowPath(row));
+    if (!normalized) continue;
+    if (!byPath.has(normalized)) byPath.set(normalized, []);
+    byPath.get(normalized).push(row);
+    const stem = pathStem(normalized);
+    if (!stem) continue;
+    if (!byStem.has(stem)) byStem.set(stem, []);
+    byStem.get(stem).push(row);
+  }
+  return { byPath, byStem };
+}
+
+function strictPssKey(path) {
+  return normPath(path) || String(path || '').trim();
+}
+
+function strictPssPathsForSkill(skill) {
+  const out = [];
+  const seen = new Set();
+  const add = (value) => {
+    const raw = String(value || '').trim();
+    const key = strictPssKey(raw);
+    if (!key || !/\.pss$/i.test(key) || seen.has(key)) return;
+    seen.add(key);
+    out.push(raw);
+  };
+  for (const asset of skill?.pss || []) add(assetPath(asset));
+  for (const row of skill?.pipeline || []) add(row.path);
+  for (const stage of skill?.clientPipeline?.stages || []) {
+    for (const path of stage?.evidence?.paths || []) add(path);
+  }
+  return out;
+}
+
 function selectPrimaryTani(skill) {
   const roots = (skill?.tani || []).filter((asset) => /\.tani$/i.test(assetPath(asset)));
   return roots.find((asset) => asset.status === 'cache-hit') || roots[0] || null;
@@ -567,7 +672,41 @@ function buildStrictPlayerUrl(taniPath, bodyType, skillId) {
     monitorSkillId: skillId || '',
   });
   if (bodyType) params.set('bodyType', bodyType);
-  return `actor-animation-player.html?${params.toString()}`;
+  return `client-monitor-animation-player.html?${params.toString()}`;
+}
+
+function buildPssOnlyPlayerUrl(pssPath) {
+  const params = new URLSearchParams({
+    embed: 'client-monitor',
+    pss: pssPath || '',
+  });
+  return `pss.html?${params.toString()}`;
+}
+
+function renderPssOnlyInlinePlayer(skill) {
+  const paths = strictPssPathsForSkill(skill);
+  if (!paths.length) return '';
+  const selectedKey = strictPssKey(state.selectedPssPlayerPath);
+  const selectedPath = paths.find((path) => strictPssKey(path) === selectedKey) || paths[0];
+  const selectedUrl = buildPssOnlyPlayerUrl(selectedPath);
+  const buttons = paths.slice(0, 24).map((path) => {
+    const active = strictPssKey(path) === strictPssKey(selectedPath);
+    return `<button class="copy play-pss-inline ${active ? 'active' : ''}" type="button" data-pss-path="${esc(path)}">${esc(pathName(path).replace(/\.pss$/i, '') || path)}</button>`;
+  }).join('');
+  return `
+    <div class="mini-title">PSS player</div>
+    <div class="strict-player pss-inline-player">
+      <div class="strict-player-top">
+        <div>
+          <div class="strict-player-title">${esc(pathName(selectedPath) || selectedPath)}</div>
+          <div class="strict-player-sub">${esc(selectedPath)}</div>
+        </div>
+        <a class="link-button" href="${esc(selectedUrl)}" target="_blank" rel="noopener">Open PSS</a>
+      </div>
+      <div class="actions pss-player-buttons">${buttons}</div>
+      <div class="strict-frame-wrap"><iframe id="pss-only-player-frame" class="strict-frame pss-frame" title="PSS player" src="${esc(selectedUrl)}"></iframe></div>
+    </div>
+  `;
 }
 
 function summarizeRuntimeReport(report) {
@@ -598,7 +737,7 @@ function renderStrictAnimationPlayer(skill) {
   const statusText = cache.status === 'checking'
     ? 'checking'
     : cache.status === 'ready'
-      ? 'strict ready'
+      ? 'new player ready'
       : cache.status === 'blocked'
         ? 'blocked'
         : cache.status === 'error'
@@ -606,10 +745,10 @@ function renderStrictAnimationPlayer(skill) {
           : 'idle';
   const bodyType = cache.bodyType || inferBodyTypeFromPath(assetPath(primaryTani));
   const frame = cache.iframeSrc && cache.status === 'ready'
-    ? `<div class="strict-frame-wrap"><iframe id="strict-animation-player-frame" class="strict-frame" title="Strict animation player" src="${esc(cache.iframeSrc)}"></iframe></div>`
-    : `<div class="strict-frame-wrap blocked"><div class="empty" style="padding:12px;">${esc(cache.status === 'checking' ? 'Checking render chain...' : primaryTani ? 'Strict player waits for a clean TANI/PSS chain.' : 'No TANI root captured for this skill.')}</div></div>`;
+    ? `<div class="strict-frame-wrap"><iframe id="strict-animation-player-frame" class="strict-frame" title="New animation player" src="${esc(cache.iframeSrc)}"></iframe></div>`
+    : `<div class="strict-frame-wrap blocked"><div class="empty" style="padding:12px;">${esc(cache.status === 'checking' ? 'Checking render chain...' : primaryTani ? 'New player waits for a clean TANI/PSS chain.' : 'No TANI root captured for this skill.')}</div></div>`;
   return `
-    <div class="mini-title">Strict player</div>
+    <div class="mini-title">New animation player</div>
     <div class="strict-player" data-strict-skill-id="${esc(skill?.id || '')}">
       <div class="strict-player-top">
         <div>
@@ -619,7 +758,7 @@ function renderStrictAnimationPlayer(skill) {
         <span class="tag ${statusTone} strict-status-tag">${esc(statusText)}</span>
       </div>
       <div class="actions">
-        <button class="btn compact load-strict-player" type="button" data-skill-id="${esc(skill?.id || '')}">${cache.status === 'ready' ? 'Reload Strict Player' : 'Load Strict Player'}</button>
+        <button class="btn compact load-strict-player" type="button" data-skill-id="${esc(skill?.id || '')}">${cache.status === 'ready' ? 'Reload New Player' : 'Load New Player'}</button>
         ${primaryTani ? `<a class="link-button" href="${esc(buildStrictPlayerUrl(assetPath(primaryTani), bodyType, skill?.id || ''))}" target="_blank" rel="noopener">Open Page</a>` : ''}
       </div>
       ${frame}
@@ -786,7 +925,395 @@ async function loadStrictAnimationPlayer(skillId, refresh = false) {
 
 function scheduleStrictAnimationPlayer(skill) {
   if (!skill?.id || state.animationPlayerCache.has(skill.id) || state.animationPlayerLoading.has(skill.id)) return;
-  window.setTimeout(() => loadStrictAnimationPlayer(skill.id, false), 0);
+  loadStrictAnimationPlayer(skill.id, false);
+}
+
+function renderPssPipelineRows(rows = []) {
+  if (!rows.length) return '<div class="empty" style="padding:8px;">No runtime PSS read trace captured for this skill yet.</div>';
+  return rows.map((row) => {
+    const methods = (row.methods || []).map((method) => `${method.count}x ${method.name}`).join('\n');
+    const refs = [
+      ...(row.handles || []).map((value) => `handle ${value}`),
+      ...(row.objects || []).map((value) => `object ${value}`),
+    ].join('\n');
+    const stacks = [
+      ...(row.firstReadStack || []).slice(0, 5),
+      ...(row.firstMethodStack || []).slice(0, 5),
+    ].filter(Boolean).join('\n');
+    return `
+      <div class="cdn-match">
+        <div class="kv">
+          <div class="k">PSS</div><div class="v">${esc(row.path || '')}</div>
+          <div class="k">Opened</div><div class="v">${esc((row.opens || 0) + (row.objectOpens || 0))} (${esc((row.openApis || []).join(', '))})</div>
+          <div class="k">Reads</div><div class="v">${esc(row.reads || 0)} / ${esc(row.bytesRead || 0)} bytes (${esc((row.readApis || []).join(', '))})</div>
+          <div class="k">Methods</div><div class="v">${esc(row.methodCalls || 0)}${methods ? `\n${esc(methods)}` : ''}</div>
+          <div class="k">Targets</div><div class="v">${esc(refs)}</div>
+          ${stacks ? `<div class="k">Stack</div><div class="v">${esc(stacks)}</div>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderClientPipelineProof(proof) {
+  if (!proof?.stages?.length) return '<div class="empty" style="padding:8px;">No client pipeline proof calculated for this skill yet.</div>';
+  const rows = proof.stages.map((stage) => {
+    const cls = stage.status === 'ok' ? 'ok' : stage.status === 'fail' ? 'block' : 'warn';
+    const evidence = stage.evidence || {};
+    const evidenceLines = [];
+    if (Array.isArray(evidence.paths) && evidence.paths.length) evidenceLines.push(evidence.paths.join('\n'));
+    if (Array.isArray(evidence.sockets) && evidence.sockets.length) evidenceLines.push(`sockets: ${evidence.sockets.join(', ')}`);
+    if (Array.isArray(evidence.transforms) && evidence.transforms.length) {
+      evidenceLines.push(evidence.transforms.map((item) => {
+        if (item.kind === 'matrix4x4') return `matrix ${item.offset || ''}: ${(item.values || []).slice(0, 4).join(', ')} ...`;
+        return `${item.kind || 'transform'}: ${item.values || ''}`;
+      }).join('\n'));
+    }
+    if (Array.isArray(evidence.labels) && evidence.labels.length) evidenceLines.push(`calls: ${evidence.labels.join(', ')}`);
+    if (Array.isArray(evidence.exports) && evidence.exports.length) evidenceLines.push(`exports: ${evidence.exports.join(', ')}`);
+    if (Array.isArray(evidence.events) && evidence.events.length) evidenceLines.push(`events: ${evidence.events.join(', ')}`);
+    return `
+      <div class="strict-row ${cls}">
+        <div class="strict-label">${esc(stage.status || '')}</div>
+        <div class="strict-text"><b>${esc(stage.label || '')}</b><br>${esc(stage.detail || '')}${evidenceLines.length ? `<pre style="margin-top:6px;">${esc(evidenceLines.join('\n'))}</pre>` : ''}</div>
+      </div>
+    `;
+  }).join('');
+  return `
+    <div class="strict-list">
+      <div class="story-verdict">${esc(proof.verdict || '')}</div>
+      ${rows}
+    </div>
+  `;
+}
+
+function compactJson(value) {
+  if (value == null || value === '' || (Array.isArray(value) && !value.length)) return '';
+  if (typeof value === 'object' && !Array.isArray(value) && !Object.keys(value).length) return '';
+  return JSON.stringify(value, null, 2);
+}
+
+function clientFlowSkillKeys(skill) {
+  const paths = new Set();
+  const names = new Set();
+  const addPath = (value) => {
+    const normalized = normPath(value);
+    if (!normalized || !/\.pss$/i.test(normalized)) return;
+    paths.add(normalized);
+    names.add(pathName(normalized));
+  };
+  for (const asset of skill?.pss || []) addPath(assetPath(asset));
+  for (const row of skill?.pipeline || []) addPath(row.path);
+  for (const stage of skill?.clientPipeline?.stages || []) {
+    for (const path of stage?.evidence?.paths || []) addPath(path);
+  }
+  return { paths, names };
+}
+
+function clientFlowMatchesSkill(flow, keys) {
+  const flowPath = normPath(flow?.path || '');
+  if (!flowPath) return false;
+  return keys.paths.has(flowPath) || keys.names.has(pathName(flowPath));
+}
+
+function renderClientFlowRow(row) {
+  const label = [shortTime(row.time), row.type, row.label || row.exportName || row.api || row.method || row.rva || row.result].filter(Boolean).join(' | ');
+  const details = [
+    ['Path', row.path || row.pssPath],
+    ['API', row.api],
+    ['Result', row.result],
+    ['Trace', row.traceId],
+    ['Handle', row.handle],
+    ['Object', row.object],
+    ['Module', row.module?.name || row.module?.path],
+    ['RVA', [row.rva, row.address].filter(Boolean).join(' / ')],
+    ['Bytes', row.bytesRead != null ? `${row.bytesRead} read, ${row.requested ?? ''} requested` : ''],
+    ['Header', row.headerHex],
+  ].filter((entry) => entry[1]).map(([key, value]) => `<div class="k">${esc(key)}</div><div class="v">${esc(value)}</div>`).join('');
+  const blocks = [
+    ['Args', row.rawArgs || row.argsRaw],
+    ['Strings', row.stringCandidates],
+    ['Registers', row.callRegisters],
+    ['Stack', row.stack],
+  ].map(([labelText, value]) => {
+    const text = compactJson(value);
+    return text ? `<div class="mini-title" style="margin-top:0;">${esc(labelText)}</div><pre>${esc(text)}</pre>` : '';
+  }).join('');
+  return `
+    <details class="client-flow-row">
+      <summary>${esc(label || row.type || 'client row')}</summary>
+      <div class="client-flow-row-body">
+        ${details ? `<div class="kv">${details}</div>` : ''}
+        ${blocks}
+      </div>
+    </details>
+  `;
+}
+
+function renderClientFlowStage(stage) {
+  const rows = (stage.rows || []).slice(0, 8).map(renderClientFlowRow).join('');
+  return `
+    <div class="client-flow-stage ${esc(stage.status || '')}">
+      <div class="stage-status">${esc(stage.status || '')}</div>
+      <div>
+        <b>${esc(stage.label || '')}</b><br>
+        ${esc(stage.detail || '')}
+        ${rows}
+      </div>
+    </div>
+  `;
+}
+
+function renderClientFlowCard(flow) {
+  return `
+    <div class="client-flow-card ${esc(flow.confidence || '')}">
+      <div class="client-flow-top">
+        <div>
+          <div class="client-flow-title">${esc(flow.path || '')}</div>
+          <div class="client-flow-sub">${esc(flow.verdict || '')}</div>
+        </div>
+        <span class="tag ${flow.confidence === 'strong' ? 'green' : 'amber'}">${esc(flow.confidence || '')}</span>
+      </div>
+      <div class="strict-list">${(flow.stages || []).map(renderClientFlowStage).join('')}</div>
+    </div>
+  `;
+}
+
+function renderClientFlowForSkill(skill) {
+  const cache = state.clientFlowCache;
+  if (cache.status === 'loading' || cache.status === 'idle') {
+    return `
+      <div class="client-flow">
+        <div class="client-flow-top">
+          <div><div class="client-flow-title">Loading captured client flow</div><div class="client-flow-sub">Reading PSS open/read/object/particle rows from the monitor log.</div></div>
+          <button class="copy refresh-client-flow" type="button">Refresh</button>
+        </div>
+      </div>
+    `;
+  }
+  if (cache.status === 'error') {
+    return `<div class="client-flow"><div class="client-flow-title">Client flow failed</div><div class="client-flow-sub">${esc(cache.error || '')}</div><button class="copy refresh-client-flow" type="button">Retry</button></div>`;
+  }
+  const data = cache.data || {};
+  const keys = clientFlowSkillKeys(skill);
+  const allFlows = data.flows || [];
+  const matched = allFlows.filter((flow) => clientFlowMatchesSkill(flow, keys));
+  const header = `Tracer saw ${data.counts?.flows || 0} PSS flow(s): ${data.counts?.partial || 0} partial, ${data.counts?.strong || 0} strong, ${data.counts?.pathOnly || 0} path-only.`;
+  if (!keys.paths.size) {
+    const unattached = allFlows.slice(0, 12).map(renderClientFlowCard).join('');
+    return `
+      <div class="client-flow">
+        <div class="client-flow-top">
+          <div><div class="client-flow-title">Captured PSS flow is not attached to this ability yet</div><div class="client-flow-sub">${esc(header)} The selected group has no TANI/PSS list, so these file flows are shown as unattached evidence.</div></div>
+          <button class="copy refresh-client-flow" type="button">Refresh</button>
+        </div>
+        ${unattached ? `<div class="client-flow-list">${unattached}</div>` : ''}
+      </div>
+    `;
+  }
+  if (!matched.length) {
+    const unattached = allFlows.slice(0, 8).map(renderClientFlowCard).join('');
+    return `
+      <div class="client-flow">
+        <div class="client-flow-top">
+          <div><div class="client-flow-title">No matching client flow for this ability PSS list</div><div class="client-flow-sub">${esc(header)} The selected item lists ${keys.paths.size} PSS path(s), but no captured client row matched those exact paths/names.</div></div>
+          <button class="copy refresh-client-flow" type="button">Refresh</button>
+        </div>
+        ${unattached ? `<div class="client-flow-list">${unattached}</div>` : ''}
+      </div>
+    `;
+  }
+  return `
+    <div class="client-flow">
+      <div class="client-flow-top">
+        <div><div class="client-flow-title">Matched client flow for this ability</div><div class="client-flow-sub">${esc(data.verdict || header)}</div></div>
+        <button class="copy refresh-client-flow" type="button">Refresh</button>
+      </div>
+      <div class="client-flow-list">${matched.map(renderClientFlowCard).join('')}</div>
+    </div>
+  `;
+}
+
+async function loadClientFlow(refresh = false) {
+  if (state.clientFlowLoading) return;
+  if (!refresh && state.clientFlowCache.status === 'loaded') return;
+  state.clientFlowLoading = true;
+  state.clientFlowCache = { ...state.clientFlowCache, status: 'loading', error: '' };
+  renderAnimationSkillDetail(selectedSkillById(state.selectedAnimationSkillId), true);
+  try {
+    const data = await api('/api/client-monitor/client-flow', { timeoutMs: 30000 });
+    state.clientFlowCache = { status: 'loaded', data, error: '', loadedAt: Date.now() };
+  } catch (error) {
+    state.clientFlowCache = { status: 'error', data: null, error: error.message, loadedAt: Date.now() };
+  } finally {
+    state.clientFlowLoading = false;
+    renderAnimationSkillDetail(selectedSkillById(state.selectedAnimationSkillId), true);
+  }
+}
+
+function scheduleClientFlowLoad() {
+  if (state.clientFlowCache.status !== 'idle') return;
+  loadClientFlow(false);
+}
+
+function renderStrictPssTextureEvidence(proof, analyze) {
+  if (!analyze?.ok) return '<div class="empty" style="padding:8px;">No parsed texture evidence for this PSS.</div>';
+  const rowIndex = collectProofPathRows(proof?.rows || []);
+  const textures = analyze.textures || [];
+  if (!textures.length) return '<div class="empty" style="padding:8px;">No texture references parsed.</div>';
+  return `<div class="pss-texture-grid">${textures.map((texture) => {
+    const normalized = normPath(texture.texturePath || texture.originalPath || '');
+    const exactRows = rowIndex.byPath.get(normalized) || [];
+    const stemRows = exactRows.length ? [] : (rowIndex.byStem.get(pathStem(normalized)) || []);
+    const status = exactRows.length ? 'proved' : (stemRows.length ? 'nearby' : 'missing');
+    const clientDetail = exactRows.length
+      ? `client row ${exactRows[0].lineNumber || ''}`
+      : (stemRows.length ? `name-only row ${stemRows[0].lineNumber || ''}` : 'no exact client row');
+    const img = texture.rawUrl ? `<img alt="" src="${esc(texture.rawUrl)}" loading="lazy">` : '<div class="empty" style="padding:6px;">no bytes</div>';
+    return `<div class="pss-texture-tile">
+      <div class="pss-texture-preview">${img}</div>
+      <div class="pss-texture-body">
+        <div>${proofBadge(status)}</div>
+        <div class="pss-texture-name">${esc(pathName(texture.texturePath || texture.originalPath || ''))}</div>
+        <div class="detail">${esc(texture.source || 'missing')} | ${esc(clientDetail)}</div>
+      </div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function renderStrictPssProofCard(path, cache) {
+  if (!cache || cache.status === 'loading') {
+    return `<div class="pss-proof-card"><div class="pss-proof-title">${esc(pathName(path) || path)}</div><div class="pss-proof-sub">Loading display proof and parsed PSS data...</div></div>`;
+  }
+  if (cache.status === 'error') {
+    return `<div class="pss-proof-card blocked"><div class="pss-proof-title">${esc(pathName(path) || path)}</div><div class="pss-proof-sub">${esc(cache.error || 'PSS proof load failed')}</div></div>`;
+  }
+  const proof = cache.proof || {};
+  const analyze = cache.analyze || {};
+  const focus = proof.focus || null;
+  const counts = proof.counts || {};
+  const hasRenderHandoff = Number(counts.displayProofMatchedRows || 0) > 0 || Number(counts.representRows || 0) > 0;
+  const gates = [
+    { label: 'PSS path', ok: !!focus?.path, detail: focus?.path || path || 'not captured' },
+    { label: 'KG3D pointer', ok: Number(counts.kg3dPointerRows || 0) > 0, detail: focus?.pointer || 'missing' },
+    { label: 'Runtime object', ok: Number(counts.objectOpenRows || 0) > 0, detail: focus?.object || 'missing' },
+    { label: 'Object methods', ok: Number(counts.methodRows || 0) > 0, detail: `${counts.methodRows || 0} row(s)` },
+    { label: 'Render handoff', ok: hasRenderHandoff, detail: hasRenderHandoff ? 'captured' : 'not captured' },
+  ];
+  const emitterCount = (analyze.emitters || []).length;
+  const spriteCount = (analyze.emitters || []).filter((item) => item.type === 'sprite').length;
+  const meshCount = (analyze.emitters || []).filter((item) => item.type === 'mesh').length;
+  const trackCount = (analyze.emitters || []).filter((item) => item.type === 'track').length;
+  const relatedRows = proof.rows || [];
+  const playerPath = focus?.path || path || '';
+  const playerUrl = buildPssOnlyPlayerUrl(playerPath);
+  const rowDetails = relatedRows.length
+    ? `<details><summary>${esc(relatedRows.length)} captured row(s)</summary><div class="pss-proof-rows">${relatedRows.slice(0, 80).map(renderClientFlowRow).join('')}</div></details>`
+    : '<div class="empty" style="padding:8px;">No related client rows matched this PSS yet.</div>';
+  return `
+    <div class="pss-proof-card ${hasRenderHandoff ? 'ok' : 'blocked'}">
+      <div class="pss-proof-top">
+        <div>
+          <div class="pss-proof-title">${esc(pathName(focus?.path || path) || path)}</div>
+          <div class="pss-proof-sub">${esc(proof.verdict || 'No display proof verdict yet.')}</div>
+        </div>
+        ${proofBadge(hasRenderHandoff ? 'proved' : 'missing')}
+      </div>
+      <div class="strict-list">
+        <div class="strict-row ${hasRenderHandoff ? 'ok' : 'block'}"><div class="strict-label">Result</div><div class="strict-text">${esc(hasRenderHandoff ? 'Full render chain captured.' : 'Full effect playback blocked. No guessed particle motion is drawn.')}</div></div>
+      </div>
+      <div class="actions">
+        <button class="copy play-pss-inline" type="button" data-pss-path="${esc(playerPath)}">Play Here</button>
+        <a class="link-button" href="${esc(playerUrl)}" target="_blank" rel="noopener">Open PSS</a>
+      </div>
+      <div class="pss-proof-grid">${gates.map((gate) => `<div class="pss-proof-gate">
+        <div class="pss-proof-gate-top"><div class="pss-proof-gate-label">${esc(gate.label)}</div>${proofBadge(gate.ok ? 'proved' : 'missing')}</div>
+        <div class="pss-proof-gate-detail">${esc(gate.detail)}</div>
+      </div>`).join('')}</div>
+      <div class="kv">
+        <div class="k">Opened</div><div class="v">${esc(focus?.path || path || '')}</div>
+        <div class="k">Parsed</div><div class="v">${esc(analyze?.ok ? `${analyze.fileSize || 0} bytes, version ${analyze.version || '?'}` : (analyze?.error || 'not parsed'))}</div>
+        <div class="k">Emitters</div><div class="v">${esc(analyze?.ok ? `${emitterCount} total, ${spriteCount} sprite, ${meshCount} mesh, ${trackCount} track` : '')}</div>
+        <div class="k">Textures</div><div class="v">${esc(analyze?.ok ? `${analyze.cachedTextures || 0}/${analyze.totalTextures || 0} resolved real texture byte(s)` : '')}</div>
+      </div>
+      <div class="mini-title" style="margin-top:0;">Texture evidence</div>
+      ${renderStrictPssTextureEvidence(proof, analyze)}
+      <div class="mini-title" style="margin-top:0;">Captured rows</div>
+      ${rowDetails}
+    </div>
+  `;
+}
+
+function renderStrictPssTraceForSkill(skill) {
+  const paths = strictPssPathsForSkill(skill);
+  if (!paths.length) return '<div class="pss-proof"><div class="empty" style="padding:8px;">No PSS file is attached to this selected skill yet.</div></div>';
+  return `
+    <div class="pss-proof">
+      <div class="pss-proof-top">
+        <div><div class="pss-proof-title">PSS trace on this page</div><div class="pss-proof-sub">This panel refreshes from captured client logs and parsed PSS assets without guessed playback.</div></div>
+        <button class="copy refresh-strict-pss" type="button">Refresh</button>
+      </div>
+      ${paths.map((path) => renderStrictPssProofCard(path, state.strictPssProofCache.get(strictPssKey(path)))).join('')}
+    </div>
+  `;
+}
+
+async function fetchStrictPssProof(path) {
+  const query = String(path || '').trim();
+  let proof = await api(`/api/client-monitor/display-proof?q=${encodeURIComponent(query)}`, { timeoutMs: 30000 });
+  if (!proof.focus && pathName(query) && pathName(query) !== query) {
+    proof = await api(`/api/client-monitor/display-proof?q=${encodeURIComponent(pathName(query))}`, { timeoutMs: 30000 });
+  }
+  const analyzePath = proof.focus?.path || query;
+  let analyze = null;
+  if (analyzePath) {
+    try {
+      analyze = await api(`/api/pss/analyze?sourcePath=${encodeURIComponent(analyzePath)}`, { timeoutMs: 30000 });
+    } catch (error) {
+      analyze = { ok: false, error: error.message };
+    }
+  }
+  return { status: 'loaded', path: query, proof, analyze, loadedAt: Date.now() };
+}
+
+function loadStrictPssProofForSkill(skill, refresh = false) {
+  const paths = strictPssPathsForSkill(skill);
+  if (!paths.length) return;
+  let slots = Math.max(0, 2 - state.strictPssProofLoading.size);
+  if (slots <= 0) return;
+  let started = false;
+  for (const path of paths) {
+    if (slots <= 0) break;
+    const key = strictPssKey(path);
+    if (!key || state.strictPssProofLoading.has(key)) continue;
+    const cached = state.strictPssProofCache.get(key);
+    if (!refresh && cached?.status === 'loaded') continue;
+    started = true;
+    slots -= 1;
+    state.strictPssProofLoading.add(key);
+    state.strictPssProofCache.set(key, { status: 'loading', path });
+    fetchStrictPssProof(path)
+      .then((result) => state.strictPssProofCache.set(key, result))
+      .catch((error) => state.strictPssProofCache.set(key, { status: 'error', path, error: error.message || String(error) }))
+      .finally(() => {
+        state.strictPssProofLoading.delete(key);
+        state.strictPssProofVersion += 1;
+        const selected = selectedSkillById(state.selectedAnimationSkillId);
+        if (selected) {
+          loadStrictPssProofForSkill(selected, false);
+          renderAnimationSkillDetail(selected, true);
+        }
+      });
+  }
+  if (started) {
+    state.strictPssProofVersion += 1;
+    renderAnimationSkillDetail(skill, true);
+  }
+}
+
+function scheduleStrictPssProofLoad(skill) {
+  if (!skill?.id) return;
+  loadStrictPssProofForSkill(skill, false);
 }
 
 function renderAnimationSkillDetail(skill, force = false) {
@@ -801,18 +1328,30 @@ function renderAnimationSkillDetail(skill, force = false) {
   const signature = JSON.stringify([
     skill.id,
     skill.counts,
+    skill.clientPipeline?.okCount || 0,
+    skill.clientPipeline?.missing?.join(',') || '',
     cache.status,
     cache.iframeSrc || '',
     cache.runtimeReport?.status || '',
     cache.runtimeReport?.blockers?.length || 0,
     cache.readiness?.blockers?.length || 0,
     cache.readiness?.warnings?.length || 0,
+    state.strictPssProofVersion,
+    state.selectedPssPlayerPath,
+    state.clientFlowCache.status,
+    state.clientFlowCache.loadedAt,
+    state.clientFlowCache.error,
   ]);
   if (!force && state.renderedAnimationSkillSignature === signature && el('strict-animation-player-frame')) return;
   state.renderedAnimationSkillSignature = signature;
   const events = (skill.events || []).join('\n');
   const taniRows = (skill.tani || []).length ? skill.tani.map(renderAnimationAssetRow).join('') : '<div class="empty" style="padding:8px;">No TANI root captured in this group.</div>';
   const pssRows = (skill.pss || []).length ? skill.pss.map(renderAnimationAssetRow).join('') : '<div class="empty" style="padding:8px;">No PSS files attached to this group yet.</div>';
+  const clientPipelineProof = renderClientPipelineProof(skill.clientPipeline);
+  const clientFlow = renderClientFlowForSkill(skill);
+  const pipelineRows = renderPssPipelineRows(skill.pipeline || []);
+  const strictPssTrace = renderStrictPssTraceForSkill(skill);
+  const pssPlayer = renderPssOnlyInlinePlayer(skill);
   const actionRows = (skill.actions || []).length ? skill.actions.map(renderAnimationAssetRow).join('') : '';
   const legacyRows = (skill.legacyEffects || []).length ? skill.legacyEffects.map(renderAnimationAssetRow).join('') : '';
   const strictPlayer = renderStrictAnimationPlayer(skill);
@@ -823,9 +1362,19 @@ function renderAnimationSkillDetail(skill, force = false) {
       <div class="k">Events</div><div class="v">${esc(events)}</div>
       <div class="k">TANI</div><div class="v">${esc(skill.counts?.tani || 0)}</div>
       <div class="k">PSS</div><div class="v">${esc(skill.counts?.pss || 0)}</div>
+      <div class="k">Pipeline</div><div class="v">${esc(skill.counts?.clientPipelineOk || 0)} / ${esc(skill.counts?.clientPipelineTotal || 0)} proof, ${esc(skill.counts?.pipeline || 0)} PSS trace</div>
       <div class="k">Actions</div><div class="v">${esc(skill.counts?.actions || 0)}</div>
       <div class="k">Other</div><div class="v">${esc(skill.counts?.dependencies || 0)}</div>
     </div>
+    <div class="mini-title">Client pipeline proof</div>
+    ${clientPipelineProof}
+    <div class="mini-title">Client flow</div>
+    ${clientFlow}
+    <div class="mini-title">PSS runtime trace</div>
+    ${pipelineRows}
+    ${pssPlayer}
+    <div class="mini-title">Strict PSS trace</div>
+    ${strictPssTrace}
     ${strictPlayer}
     <div class="mini-title">TANI roots</div>
     ${taniRows}
@@ -834,11 +1383,19 @@ function renderAnimationSkillDetail(skill, force = false) {
     ${actionRows ? `<div class="mini-title">Player actions</div>${actionRows}` : ''}
     ${legacyRows ? `<div class="mini-title">Legacy effects</div>${legacyRows}` : ''}
   `;
+  scheduleClientFlowLoad();
+  scheduleStrictPssProofLoad(skill);
   scheduleStrictAnimationPlayer(skill);
 }
 
 function renderAnimationCaptures(status) {
   const animation = status.capture?.animation || {};
+  if (animation.deferred) {
+    el('capture-count').textContent = 'loading';
+    el('captures').innerHTML = '<div class="empty">Loading animation capture details...</div>';
+    renderAnimationSkillDetail(null);
+    return;
+  }
   const skills = animation.skills || [];
   const assets = animation.assets || [];
   const pssCount = skills.reduce((sum, skill) => sum + Number(skill.counts?.pss || 0), 0);
@@ -852,16 +1409,16 @@ function renderAnimationCaptures(status) {
   const selected = getSelectedAnimationSkill(status);
   el('captures').innerHTML = skills.map((skill) => {
     const active = skill.id === state.selectedAnimationSkillId;
-    const meta = `${shortTime(skill.startTs)} | ${skill.counts?.tani || 0} TANI | ${skill.counts?.pss || 0} PSS | ${skill.counts?.actions || 0} action`;
+    const meta = `${shortTime(skill.startTs)} | ${skill.counts?.tani || 0} TANI | ${skill.counts?.pss || 0} PSS | ${skill.counts?.pipeline || 0} trace | ${skill.counts?.actions || 0} action`;
     const eventPreview = (skill.events || []).slice(0, 2).join(' | ');
     return `
-      <div class="capture ${active ? 'selected' : ''}" data-skill-id="${esc(skill.id)}">
+      <div class="capture ${active ? 'selected' : ''}" data-skill-id="${esc(skill.id)}" role="button" tabindex="0">
         <div class="capture-top">
           <div>
             <div class="event-name">${esc(skill.title || 'Skill cast')}</div>
             <div class="event-meta">${esc(meta)}</div>
           </div>
-          <span class="tag green">Skill</span>
+          <span class="tag green">Open detail</span>
         </div>
         ${eventPreview ? `<div class="asset-path">${esc(eventPreview)}</div>` : ''}
       </div>
@@ -1126,7 +1683,9 @@ function renderStatus(status) {
     renderCaptures(status);
   }
   renderBridge(status);
-  el('start-btn').disabled = state.busy || status.bridge?.running;
+  const attachDisabled = status.attachEnabled === false;
+  el('start-btn').textContent = attachDisabled ? (animationMode ? 'PSS Trace Disabled' : 'Bridge Disabled') : (animationMode ? 'Start PSS Trace' : 'Start Bridge');
+  el('start-btn').disabled = state.busy || status.bridge?.running || attachDisabled;
   el('stop-btn').disabled = state.busy || !status.bridge?.running || !status.bridge?.managed;
   el('pause-btn').disabled = state.busy || !status.bridge?.running;
   el('clear-btn').disabled = state.busy;
@@ -1134,17 +1693,32 @@ function renderStatus(status) {
   el('toggle-filter-btn').disabled = state.busy;
 }
 
+function currentMonitorView() {
+  return state.activeTab === 'animation' ? 'animation' : 'sound';
+}
+
+function monitorUrl(path) {
+  const url = new URL(path, window.location.origin);
+  const view = currentMonitorView();
+  url.searchParams.set('view', view);
+  if (view === 'animation') url.searchParams.set('kg3dDisplayProofHooks', '1');
+  return `${url.pathname}${url.search}`;
+}
+
 async function poll() {
   if (state.polling) return;
   state.polling = true;
   try {
-    const status = await api('/api/client-monitor/status');
+    const status = await api(monitorUrl('/api/client-monitor/status'), { timeoutMs: 45000 });
     renderStatus(status);
   } catch (error) {
-    el('poll-state').textContent = 'offline';
+    const hasLiveStatus = !!state.status?.ok;
+    el('poll-state').textContent = hasLiveStatus ? 'stale' : 'offline';
     el('poll-state').className = 'tag amber';
-    el('cast-main').textContent = 'SERVER OFFLINE';
-    el('cast-sub').textContent = error.message;
+    if (!hasLiveStatus) {
+      el('cast-main').textContent = 'SERVER OFFLINE';
+      el('cast-sub').textContent = error.message;
+    }
   } finally {
     state.polling = false;
   }
@@ -1154,8 +1728,8 @@ async function runAction(path) {
   if (state.busy) return;
   state.busy = true;
   try {
-    const result = await api(path, { method: 'POST' });
-    renderStatus(result.status || await api('/api/client-monitor/status'));
+    const result = await api(monitorUrl(path), { method: 'POST' });
+    renderStatus(result.status || await api(monitorUrl('/api/client-monitor/status')));
   } catch (error) {
     await poll();
     el('cast-main').textContent = 'ACTION FAILED';
@@ -1168,6 +1742,7 @@ async function runAction(path) {
 function setActiveTab(tab) {
   state.activeTab = tab === 'animation' ? 'animation' : 'sound';
   renderStatus(state.status || { capture: {} });
+  poll();
 }
 
 async function resolveAnimationAsset(path) {
@@ -1208,17 +1783,32 @@ async function extractAnimationAsset(button) {
   }
 }
 
+async function startBridgeFromUi() {
+  if (state.status?.attachRequiresConfirmation) {
+    const ok = window.confirm('Start live Frida capture now? This attaches to the running JX3 client and can crash an unstable client process.');
+    if (!ok) return;
+    await runAction('/api/client-monitor/start?confirmAttach=1');
+    return;
+  }
+  await runAction('/api/client-monitor/start');
+}
+
 el('sound-tab').addEventListener('click', () => setActiveTab('sound'));
 el('animation-tab').addEventListener('click', () => setActiveTab('animation'));
-el('start-btn').addEventListener('click', () => runAction('/api/client-monitor/start'));
+el('start-btn').addEventListener('click', startBridgeFromUi);
 el('stop-btn').addEventListener('click', () => runAction('/api/client-monitor/stop'));
 el('pause-btn').addEventListener('click', () => runAction(state.status?.capture?.paused ? '/api/client-monitor/resume' : '/api/client-monitor/pause'));
 async function clearCaptures() {
   state.selectedTs = null;
   state.selectedAnimationPath = null;
   state.selectedAnimationSkillId = null;
+  state.selectedPssPlayerPath = '';
   state.animationResolveCache.clear();
   state.animationExtractCache.clear();
+  state.clientFlowCache = { status: 'idle', data: null, error: '', loadedAt: 0 };
+  state.strictPssProofCache.clear();
+  state.strictPssProofLoading.clear();
+  state.strictPssProofVersion += 1;
   const player = el('player');
   player.removeAttribute('src');
   player.load();
@@ -1242,6 +1832,7 @@ el('captures').addEventListener('click', (event) => {
     }
     const skillRow = event.target.closest('[data-skill-id]');
     if (!skillRow) return;
+    if (state.selectedAnimationSkillId !== skillRow.dataset.skillId) state.selectedPssPlayerPath = '';
     state.selectedAnimationSkillId = skillRow.dataset.skillId;
     state.renderedAnimationSkillSignature = '';
     renderAnimationCaptures(state.status || {});
@@ -1267,7 +1858,38 @@ el('captures').addEventListener('click', (event) => {
   renderCaptures(state.status || {});
 });
 
+el('captures').addEventListener('keydown', (event) => {
+  if (state.activeTab !== 'animation') return;
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  const skillRow = event.target.closest('[data-skill-id]');
+  if (!skillRow) return;
+  event.preventDefault();
+  state.selectedAnimationSkillId = skillRow.dataset.skillId;
+  state.renderedAnimationSkillSignature = '';
+  renderAnimationCaptures(state.status || {});
+});
+
 el('detail').addEventListener('click', (event) => {
+  const refreshStrictPssButton = event.target.closest('.refresh-strict-pss');
+  if (refreshStrictPssButton) {
+    event.stopPropagation();
+    loadStrictPssProofForSkill(selectedSkillById(state.selectedAnimationSkillId), true);
+    return;
+  }
+  const refreshClientFlowButton = event.target.closest('.refresh-client-flow');
+  if (refreshClientFlowButton) {
+    event.stopPropagation();
+    loadClientFlow(true);
+    return;
+  }
+  const playPssButton = event.target.closest('.play-pss-inline');
+  if (playPssButton) {
+    event.stopPropagation();
+    state.selectedPssPlayerPath = playPssButton.dataset.pssPath || '';
+    state.renderedAnimationSkillSignature = '';
+    renderAnimationSkillDetail(selectedSkillById(state.selectedAnimationSkillId), true);
+    return;
+  }
   const resolveButton = event.target.closest('.resolve-animation');
   if (resolveButton) {
     event.stopPropagation();
@@ -1301,7 +1923,7 @@ el('detail').addEventListener('click', (event) => {
 window.addEventListener('message', (event) => {
   if (event.origin !== window.location.origin) return;
   const payload = event.data || {};
-  if (payload.source !== 'jx3-actor-animation-player' || payload.type !== 'strict-render-report') return;
+  if (payload.source !== 'jx3-client-monitor-animation-player' || payload.type !== 'strict-render-report') return;
   const report = payload.report || {};
   const skillId = report.monitorSkillId || payload.monitorSkillId || state.selectedAnimationSkillId;
   if (!skillId) return;
@@ -1314,7 +1936,7 @@ window.addEventListener('message', (event) => {
 });
 
 poll();
-setInterval(poll, 1200);
+setInterval(poll, 3000);
 </script>
 </body>
 </html>

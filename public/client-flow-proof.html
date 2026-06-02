@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Client Flow Proof</title>
+  <link rel="stylesheet" href="/shared-topbar.css">
+  <style>
+    :root { color-scheme: dark; --bg: #0b0f14; --panel: #121820; --line: #27313c; --text: #e7edf5; --muted: #94a3b3; --ok: #7dd3a8; --warn: #f5c66b; --bad: #ff8d8d; --blue: #8db7ff; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; }
+    .app { height: 100vh; display: grid; grid-template-rows: auto auto minmax(0, 1fr); }
+    header { border-bottom: 1px solid var(--line); padding: 10px 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: #0f151c; }
+    h1 { margin: 0; font-size: 15px; font-weight: 650; }
+    .search { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+    input { width: min(420px, 46vw); background: #0a1118; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; }
+    button { background: #1c2835; color: var(--text); border: 1px solid #344456; border-radius: 6px; padding: 7px 11px; cursor: pointer; }
+    button:hover { background: #263547; }
+    .summary { border-bottom: 1px solid var(--line); padding: 10px 14px; display: grid; gap: 8px; background: #0d131a; }
+    .verdict { font-size: 14px; }
+    .meta { color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; }
+    .main { min-height: 0; display: grid; grid-template-columns: minmax(300px, 0.85fr) minmax(420px, 1.4fr); }
+    .left, .right { min-height: 0; overflow: auto; padding: 12px; }
+    .left { border-right: 1px solid var(--line); }
+    .section { margin-bottom: 14px; }
+    .title { color: #c8d5e4; font-size: 12px; text-transform: uppercase; letter-spacing: 0; margin-bottom: 6px; }
+    .card { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); padding: 9px; margin-bottom: 8px; }
+    .row { display: grid; grid-template-columns: 86px minmax(0, 1fr); gap: 6px; padding: 3px 0; }
+    .key { color: var(--muted); }
+    .value { overflow-wrap: anywhere; }
+    .badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 2px 8px; font-size: 12px; border: 1px solid var(--line); color: var(--muted); }
+    .proved { color: var(--ok); border-color: #3a7b58; }
+    .missing { color: var(--bad); border-color: #8a4141; }
+    .nearby, .adjacent { color: var(--warn); border-color: #866a2e; }
+    .edge { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: start; }
+    .stage-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+    .detail { color: var(--muted); margin-top: 4px; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th, td { border-bottom: 1px solid var(--line); padding: 6px; text-align: left; vertical-align: top; }
+    th { position: sticky; top: 0; background: #101720; z-index: 1; color: #c8d5e4; }
+    td { color: #dce6f2; }
+    .time { width: 118px; color: var(--muted); }
+    .type { width: 168px; color: var(--blue); }
+    .line { width: 76px; color: var(--muted); }
+    .mono { font-family: Consolas, Menlo, monospace; font-size: 12px; overflow-wrap: anywhere; white-space: pre-wrap; }
+    .empty { color: var(--muted); padding: 10px; }
+    .build-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+    .gate { border: 1px solid var(--line); border-radius: 6px; padding: 8px; background: #101720; min-height: 74px; }
+    .gate .gate-label { color: #dce6f2; margin-bottom: 6px; }
+    .gate .gate-detail { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+    .texture-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(126px, 1fr)); gap: 8px; }
+    .texture-tile { border: 1px solid var(--line); border-radius: 6px; background: #0f151c; overflow: hidden; min-height: 170px; display: grid; grid-template-rows: 86px auto; }
+    .texture-preview { background: #080d12; display: grid; place-items: center; border-bottom: 1px solid var(--line); }
+    .texture-preview img { max-width: 100%; max-height: 86px; object-fit: contain; image-rendering: auto; }
+    .texture-body { padding: 7px; display: grid; gap: 5px; }
+    .texture-name { font-size: 12px; overflow-wrap: anywhere; }
+    .small-table th, .small-table td { font-size: 12px; }
+    .blocker { border-color: #8a4141; background: #1d1113; }
+    .ok-panel { border-color: #3a7b58; background: #0f1d17; }
+    @media (max-width: 900px) { .main { grid-template-columns: 1fr; } .left { border-right: 0; border-bottom: 1px solid var(--line); } input { width: 52vw; } }
+    @media (max-width: 1100px) { .build-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  </style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Client Flow Proof</h1>
+    <div class="search">
+      <input id="query" value="buff01" aria-label="Search captured flow">
+      <button id="load" type="button">Load</button>
+    </div>
+  </header>
+  <div id="summary" class="summary"><div class="empty">Loading captured proof...</div></div>
+  <main class="main">
+    <section class="left">
+      <div class="section"><div class="title">Focus</div><div id="focus"></div></div>
+      <div class="section"><div class="title">Edges</div><div id="edges"></div></div>
+      <div class="section"><div class="title">Stages</div><div id="stages"></div></div>
+    </section>
+    <section class="right">
+      <div class="section"><div class="title">Strict PSS Build</div><div id="strict-build"></div></div>
+      <div class="section"><div class="title">Captured Rows</div><div id="rows"></div></div>
+    </section>
+  </main>
+</div>
+<script src="/shared-topbar.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (value) => String(value ?? '').replace(/[&<>\"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+const shortTime = (value) => value ? String(value).replace(/^.*T/, '').replace('Z', '') : '';
+function badge(status) { return `<span class="badge ${esc(status)}">${esc(status || 'unknown')}</span>`; }
+function kv(label, value) { return `<div class="row"><div class="key">${esc(label)}</div><div class="value mono">${esc(value || '')}</div></div>`; }
+function normPath(value) { return String(value || '').replace(/\\/g, '/').replace(/^\/+/, '').toLowerCase(); }
+function fileName(value) { return String(value || '').replace(/\\/g, '/').split('/').pop() || ''; }
+function stem(value) { return fileName(value).replace(/\.[^.]+$/, '').toLowerCase(); }
+function collectClientPathRows(rows) {
+  const byPath = new Map();
+  const byStem = new Map();
+  for (const row of rows || []) {
+    const path = rowPath(row);
+    const normalized = normPath(path);
+    if (!normalized) continue;
+    if (!byPath.has(normalized)) byPath.set(normalized, []);
+    byPath.get(normalized).push(row);
+    const pathStem = stem(normalized);
+    if (pathStem) {
+      if (!byStem.has(pathStem)) byStem.set(pathStem, []);
+      byStem.get(pathStem).push(row);
+    }
+  }
+  return { byPath, byStem };
+}
+function renderSummary(data) {
+  $('summary').innerHTML = `
+    <div class="verdict">${esc(data.verdict || '')}</div>
+    <div class="meta">
+      <span>query: ${esc(data.query || '')}</span>
+      <span>rows: ${esc(data.counts?.rows ?? 0)}</span>
+      <span>pss candidates: ${esc(data.counts?.pssCandidates ?? 0)}</span>
+      <span>missing: ${esc((data.missing || []).join(', ') || 'none')}</span>
+    </div>`;
+}
+function renderFocus(focus) {
+  if (!focus) { $('focus').innerHTML = '<div class="empty">No focus row.</div>'; return; }
+  $('focus').innerHTML = `<div class="card">
+    ${kv('path', focus.path)}
+    ${kv('pointer', focus.pointer)}
+    ${kv('object', focus.object)}
+    ${kv('trace', (focus.traceIds || []).join(', '))}
+    ${kv('time', focus.time)}
+    ${kv('line', `${focus.logName || ''}:${focus.lineNumber || ''}`)}
+    ${kv('decoded', `${focus.pathDecodedFrom || ''} ${focus.pathEncoding || ''}`.trim())}
+  </div>`;
+}
+function renderEdges(edges) {
+  $('edges').innerHTML = (edges || []).map((edge) => `<div class="card edge">
+    <div><div>${esc(edge.from)} -> ${esc(edge.to)}</div><div class="detail">${esc(edge.reason)}</div></div>
+    ${badge(edge.status)}
+  </div>`).join('') || '<div class="empty">No edges.</div>';
+}
+function renderStages(stages) {
+  $('stages').innerHTML = (stages || []).map((stage) => `<div class="card">
+    <div class="stage-head"><div>${esc(stage.label)}</div>${badge(stage.status)}</div>
+    <div class="detail">${esc(stage.detail)}</div>
+    <div class="detail">rows: ${esc((stage.rows || []).length)}</div>
+  </div>`).join('') || '<div class="empty">No stages.</div>';
+}
+function rowPath(row) { return row.decodedPath || row.path || row.rawPath || ''; }
+function renderRows(rows) {
+  if (!rows?.length) { $('rows').innerHTML = '<div class="empty">No related rows.</div>'; return; }
+  $('rows').innerHTML = `<table><thead><tr><th class="time">Time</th><th class="type">Type</th><th>Evidence</th><th class="line">Line</th></tr></thead><tbody>${rows.map((row) => {
+    const evidence = [
+      row.label || row.api || '',
+      row.traceId ? `trace=${row.traceId}` : '',
+      row.object ? `object=${row.object}` : '',
+      row.result ? `result=${row.result}` : '',
+      row.rva ? `rva=${row.rva}` : '',
+      row.slot != null ? `slot=${row.slot}` : '',
+      rowPath(row),
+      Array.isArray(row.argsRaw) && row.argsRaw.length ? `args=${row.argsRaw.join(' ')}` : '',
+      Array.isArray(row.rawArgs) && row.rawArgs.length ? `raw=${row.rawArgs.join(' ')}` : '',
+    ].filter(Boolean).join('\n');
+    return `<tr><td class="time mono">${esc(shortTime(row.time))}</td><td class="type mono">${esc(row.type)}</td><td class="mono">${esc(evidence)}</td><td class="line mono">${esc(row.lineNumber)}</td></tr>`;
+  }).join('')}</tbody></table>`;
+}
+function renderStrictBuildLoading() {
+  $('strict-build').innerHTML = '<div class="empty">Loading strict PSS build...</div>';
+}
+function renderStrictBuild(data, analyze) {
+  const focus = data.focus || null;
+  const counts = data.counts || {};
+  const hasDisplayProof = Number(counts.displayProofMatchedRows || 0) > 0 || Number(counts.representRows || 0) > 0;
+  const gates = [
+    { label: 'PSS path opened', ok: !!focus?.path, detail: focus?.path || 'missing' },
+    { label: 'KG3D path pointer', ok: Number(counts.kg3dPointerRows || 0) > 0, detail: focus?.pointer || 'missing' },
+    { label: 'Runtime object', ok: Number(counts.objectOpenRows || 0) > 0, detail: focus?.object || 'missing' },
+    { label: 'Object methods', ok: Number(counts.methodRows || 0) > 0, detail: `${counts.methodRows || 0} row(s)` },
+    { label: 'Render handoff', ok: hasDisplayProof, detail: hasDisplayProof ? 'captured' : 'not captured' },
+  ];
+  if (!focus?.path) {
+    $('strict-build').innerHTML = '<div class="empty">No client-opened PSS focus row.</div>';
+    return;
+  }
+  if (!analyze?.ok) {
+    $('strict-build').innerHTML = `<div class="card blocker">${kv('PSS', focus.path)}${kv('analyze', analyze?.error || 'failed')}</div>`;
+    return;
+  }
+  const rowIndex = collectClientPathRows(data.rows || []);
+  const textures = analyze.textures || [];
+  const textureTiles = textures.map((texture) => {
+    const normalized = normPath(texture.texturePath || texture.originalPath || '');
+    const exactRows = rowIndex.byPath.get(normalized) || [];
+    const stemRows = exactRows.length ? [] : (rowIndex.byStem.get(stem(normalized)) || []);
+    const status = exactRows.length ? 'proved' : (stemRows.length ? 'nearby' : 'missing');
+    const clientDetail = exactRows.length
+      ? `line ${exactRows[0].lineNumber || ''}`
+      : (stemRows.length ? `name-only line ${stemRows[0].lineNumber || ''}` : 'no exact client row');
+    const img = texture.rawUrl ? `<img alt="" src="${esc(texture.rawUrl)}" loading="lazy">` : '<div class="empty">no bytes</div>';
+    return `<div class="texture-tile">
+      <div class="texture-preview">${img}</div>
+      <div class="texture-body">
+        <div>${badge(status)}</div>
+        <div class="texture-name mono">${esc(fileName(texture.texturePath))}</div>
+        <div class="detail">${esc(texture.source || 'missing')} | ${esc(clientDetail)}</div>
+      </div>
+    </div>`;
+  }).join('') || '<div class="empty">No texture references parsed.</div>';
+  const emitters = (analyze.emitters || []).map((emitter) => `<tr>
+    <td class="mono">${esc(emitter.index)}</td>
+    <td>${esc(emitter.type || '')}</td>
+    <td class="mono">${esc(emitter.materialName || emitter.textureSource || '')}</td>
+    <td class="mono">${esc([...(emitter.texturePaths || []), ...(emitter.meshes || [])].map(fileName).join('\n'))}</td>
+  </tr>`).join('');
+  const panelClass = hasDisplayProof ? 'ok-panel' : 'blocker';
+  $('strict-build').innerHTML = `
+    <div class="card ${panelClass}">
+      ${kv('strict result', hasDisplayProof ? 'full render chain captured' : 'full effect playback blocked')}
+      ${kv('reason', hasDisplayProof ? 'render/represent edge is present' : 'no client row proves object -> render handoff; no guessed particle motion is drawn')}
+    </div>
+    <div class="build-grid">${gates.map((gate) => `<div class="gate">
+      <div class="stage-head"><div class="gate-label">${esc(gate.label)}</div>${badge(gate.ok ? 'proved' : 'missing')}</div>
+      <div class="gate-detail mono">${esc(gate.detail)}</div>
+    </div>`).join('')}</div>
+    <div class="card">
+      ${kv('client-opened file', focus.path)}
+      ${kv('parsed bytes', `${analyze.fileSize || 0} bytes, version ${analyze.version || '?'}`)}
+      ${kv('emitters', `${(analyze.emitters || []).length} total, ${(analyze.emitters || []).filter((item) => item.type === 'sprite').length} sprite, ${(analyze.emitters || []).filter((item) => item.type === 'mesh').length} mesh, ${(analyze.emitters || []).filter((item) => item.type === 'track').length} track`)}
+      ${kv('textures', `${analyze.cachedTextures || 0}/${analyze.totalTextures || 0} resolved real texture byte(s)`)}
+    </div>
+    <div class="section"><div class="title">Texture Evidence</div><div class="texture-grid">${textureTiles}</div></div>
+    <div class="section"><div class="title">Parsed Emitters</div><table class="small-table"><thead><tr><th class="line">Index</th><th class="type">Type</th><th>Material</th><th>Assets</th></tr></thead><tbody>${emitters || '<tr><td colspan="4" class="empty">No emitters parsed.</td></tr>'}</tbody></table></div>`;
+}
+async function loadProof() {
+  const q = $('query').value.trim() || 'buff01';
+  $('summary').innerHTML = '<div class="empty">Loading captured proof...</div>';
+  renderStrictBuildLoading();
+  const res = await fetch(`/api/client-monitor/display-proof?q=${encodeURIComponent(q)}`, { cache: 'no-store' });
+  const data = await res.json();
+  renderSummary(data); renderFocus(data.focus); renderEdges(data.edges); renderStages(data.stages); renderRows(data.rows);
+  if (data.focus?.path) {
+    const analyzeRes = await fetch(`/api/pss/analyze?sourcePath=${encodeURIComponent(data.focus.path)}`, { cache: 'no-store' });
+    const analyze = await analyzeRes.json();
+    renderStrictBuild(data, analyze);
+  } else {
+    renderStrictBuild(data, null);
+  }
+}
+$('load').addEventListener('click', loadProof);
+$('query').addEventListener('keydown', (event) => { if (event.key === 'Enter') loadProof(); });
+loadProof().catch((error) => { $('summary').innerHTML = `<div class="empty">${esc(error.message || error)}</div>`; });
+</script>
+</body>
+</html>

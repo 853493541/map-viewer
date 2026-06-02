@@ -5,6 +5,7 @@ import {
   createWriteStream,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   renameSync,
   statSync,
@@ -178,10 +179,18 @@ function decodeMakePackages(buffer) {
   return outputLength[0] === output.length ? output : output.subarray(0, outputLength[0]);
 }
 
+const LOCAL_MAKEPACKAGES_PATH = join(REPO_ROOT, 'cache-extraction', 'online-cdn', 'MakePackages.bin');
+
 async function loadPackageList(timeoutMs) {
-  const fetched = await requestBuffer(MAKEPACKAGES_URL, { maxBytes: 8 * 1024 * 1024, timeoutMs });
-  if (fetched.statusCode !== 200) throw new Error(`MakePackages.bin HTTP ${fetched.statusCode}`);
-  const decoded = decodeMakePackages(fetched.buffer);
+  let buffer;
+  if (existsSync(LOCAL_MAKEPACKAGES_PATH)) {
+    buffer = readFileSync(LOCAL_MAKEPACKAGES_PATH);
+  } else {
+    const fetched = await requestBuffer(MAKEPACKAGES_URL, { maxBytes: 8 * 1024 * 1024, timeoutMs });
+    if (fetched.statusCode !== 200) throw new Error(`MakePackages.bin HTTP ${fetched.statusCode}`);
+    buffer = fetched.buffer;
+  }
+  const decoded = decodeMakePackages(buffer);
   if (decoded.length % 12 !== 0) throw new Error(`decoded MakePackages size ${decoded.length} is not divisible by 12`);
   const items = [];
   for (let offset = 0; offset + 12 <= decoded.length; offset += 12) {
@@ -198,7 +207,7 @@ async function loadPackageList(timeoutMs) {
       size,
     });
   }
-  return { fetchedBytes: fetched.buffer.length, decodedBytes: decoded.length, items };
+  return { fetchedBytes: buffer.length, decodedBytes: decoded.length, items };
 }
 
 function decodePathBytes(bytes) {
@@ -299,7 +308,33 @@ async function resolvePackageUrl(item, dirCache, timeoutMs) {
   if (cached && Number.isInteger(cached.dir)) {
     return { ...cached, url: `${CDN_ROOT}${cached.relativePath}` };
   }
+  const makeResult = (dir, relativePath, derived) => ({
+    dir, relativePath, statusCode: 200, contentLength: item.size, sizeMatches: true,
+    ...(derived ? { derived: true } : {}),
+  });
   const derivedDir = derivePackageDir(item.packageName);
+  if (Number.isInteger(derivedDir)) {
+    const localPath = join(DOWNLOAD_DIR, `${derivedDir}_${item.packageName}.hpkg`);
+    if (existsSync(localPath)) {
+      const result = makeResult(derivedDir, `${derivedDir}/${item.packageName}.hpkg`, true);
+      dirCache[cacheKey] = result;
+      writeFileSync(DIR_CACHE_PATH, JSON.stringify(dirCache, null, 2));
+      return { ...result, url: `${CDN_ROOT}${result.relativePath}` };
+    }
+  }
+  try {
+    const files = existsSync(DOWNLOAD_DIR) ? readdirSync(DOWNLOAD_DIR) : [];
+    const match = files.find((f) => f.endsWith(`_${item.packageName}.hpkg`));
+    if (match) {
+      const dir = Number(match.split('_')[0]);
+      if (Number.isInteger(dir)) {
+        const result = makeResult(dir, `${dir}/${item.packageName}.hpkg`, true);
+        dirCache[cacheKey] = result;
+        writeFileSync(DIR_CACHE_PATH, JSON.stringify(dirCache, null, 2));
+        return { ...result, url: `${CDN_ROOT}${result.relativePath}` };
+      }
+    }
+  } catch { /* fall through to CDN probe */ }
   if (Number.isInteger(derivedDir)) {
     const relativePath = `${derivedDir}/${item.packageName}.hpkg`;
     const url = `${CDN_ROOT}${relativePath}`;
@@ -405,6 +440,10 @@ async function processPackage(item, args, dirCache, stats, options = {}) {
   if (args.download) {
     downloadResult = await downloadFile(resolved.url, localPath, item.size, Math.max(args.timeoutMs, 120_000));
     hpkg = readFileSync(localPath);
+    fullDownloaded = true;
+  } else if (existsSync(localPath)) {
+    const fullBuffer = readFileSync(localPath);
+    hpkg = fullBuffer.subarray(0, 64 + fullBuffer.readUInt32LE(0x28));
     fullDownloaded = true;
   } else {
     hpkg = await fetchHpkgIndexOnly(resolved, args.timeoutMs);

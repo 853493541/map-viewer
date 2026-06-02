@@ -38,8 +38,8 @@ function renderInventoryTable(inv) {
   lines.push('');
   // ── Sprite table ─────────────────────────────────────────────────────
   lines.push('## SPRITES');
-  const sHead = ['idx', 'edIdx', 'vis', 'startMs', 'durMs', 'box(x,y,z)', 'parts', 'alive', 'layers', 'tex0', 'col0', 'blend0', 'opac0', 'flags'];
-  const sW = [4, 5, 3, 7, 6, 26, 5, 5, 6, 28, 17, 8, 5, 28];
+  const sHead = ['idx', 'edIdx', 'vis', 'mode', 'startMs', 'durMs', 'lifeMs', 'box(x,y,z)', 'parts', 'alive', 'layers', 'tex0', 'inst', 'blend0', 'opac', 'flags'];
+  const sW = [4, 5, 3, 16, 7, 6, 6, 26, 5, 5, 6, 28, 9, 8, 11, 28];
   lines.push(fmtRow(sHead, sW));
   lines.push('-'.repeat(sW.reduce((a, b) => a + b + 3, 0)));
   for (const s of inv.sprites) {
@@ -49,16 +49,18 @@ function renderInventoryTable(inv) {
       s.runtimeIndex,
       s.emitterDataIndex,
       s.visible ? 'Y' : 'n',
+      s.renderMode || '-',
       s.startTimeMs,
       s.effectDurationMs,
+      s.particleLifetimeMs,
       Array.isArray(s.worldBoxSize) ? s.worldBoxSize.join(',') : '-',
       s.particleCount,
       s.aliveParticles,
       s.layerCount,
       l0.texture ? (l0.texture.bound ? `${l0.texture.srcShort}(${l0.texture.w}x${l0.texture.h})` : 'NO-TEX') : '-',
-      Array.isArray(l0.materialColor) ? l0.materialColor.map((v) => v.toFixed(2)).join(',') : '-',
+      `${s.usesInstanceColor ? 'C' : '-'}${s.usesInstanceOpacity ? 'A' : '-'}`,
       l0.blending,
-      l0.materialOpacity != null ? Number(l0.materialOpacity).toFixed(2) : '-',
+      Array.isArray(s.instanceOpacityRange) ? s.instanceOpacityRange.map((v) => Number(v).toFixed(2)).join('-') : '-',
       flags,
     ], sW));
   }
@@ -66,12 +68,14 @@ function renderInventoryTable(inv) {
   // ── Per-sprite layer detail ──────────────────────────────────────────
   lines.push('## SPRITE LAYER DETAIL');
   for (const s of inv.sprites) {
-    lines.push(`sprite#${s.runtimeIndex} (edIdx=${s.emitterDataIndex}) layers=${s.layerCount} atlas=${s.atlas.cells} (${s.atlas.rows}x${s.atlas.cols}) authored: lifetime=${s.authoredLifetime} maxParticles=${s.authoredMaxParticles} sizeCurve=${JSON.stringify(s.authoredSizeCurve)} alphaCurve=${JSON.stringify(s.authoredAlphaCurve)}`);
+    lines.push(`sprite#${s.runtimeIndex} (edIdx=${s.emitterDataIndex}) layers=${s.layerCount} atlas=${s.atlas.cells} (${s.atlas.rows}x${s.atlas.cols}) authored: lifetime=${s.authoredLifetime} maxParticles=${s.authoredMaxParticles} sizeCurve=${JSON.stringify(s.authoredSizeCurve)} alphaCurve=${JSON.stringify(s.authoredAlphaCurve)} timing=${JSON.stringify(s.timing)}`);
     for (let li = 0; li < s.layers.length; li++) {
       const l = s.layers[li];
       lines.push(`  layer ${li}: tex=${l.texture.bound ? `${l.texture.srcShort} ${l.texture.w}x${l.texture.h} cs=${l.texture.colorSpace}` : 'NONE'}` +
         ` color=[${(l.materialColor || []).map((v) => v.toFixed(2)).join(',')}]` +
         ` opacity=${l.materialOpacity}` +
+        ` instanceColor=${l.instanceColor}` +
+        ` instanceAlpha=${l.instanceAlpha}` +
         ` blend=${l.blending}` +
         ` transparent=${l.materialTransparent}` +
         ` depthWrite=${l.depthWrite}` +
@@ -100,12 +104,41 @@ function renderInventoryTable(inv) {
       sample,
     ], mW));
   }
+  lines.push('');
+  // ── Track table ──────────────────────────────────────────────────────
+  lines.push('## TRACKS');
+  const tHead = ['idx', 'role', 'edIdx', 'srcTrack', 'vis', 'startMs', 'durMs', 'box(x,y,z)', 'nodes', 'verts', 'tex', 'class', 'scaleXYZ', 'radius', 'alpha'];
+  const tW = [4, 14, 5, 8, 3, 7, 6, 26, 5, 5, 30, 18, 18, 8, 7];
+  lines.push(fmtRow(tHead, tW));
+  lines.push('-'.repeat(tW.reduce((a, b) => a + b + 3, 0)));
+  for (const t of inv.tracks || []) {
+    const scaleXYZ = Array.isArray(t.trackRenderConfig?.scaleXYZ)
+      ? t.trackRenderConfig.scaleXYZ.map((v) => Number(v).toFixed(2)).join(',')
+      : '-';
+    lines.push(fmtRow([
+      t.runtimeIndex,
+      t.trackRole,
+      t.emitterDataIndex,
+      t.sourceTrackEmitterIndex,
+      t.visible ? 'Y' : 'n',
+      t.startTimeMs,
+      t.effectDurationMs,
+      Array.isArray(t.worldBoxSize) ? t.worldBoxSize.join(',') : '-',
+      t.geometryNodeCount,
+      t.geometryVertexCount,
+      t.selectedTexture || '-',
+      t.launcherClass || '-',
+      scaleXYZ,
+      t.trackRenderConfig?.radiusCandidate ?? '-',
+      t.trackRenderConfig?.alpha ?? '-',
+    ], tW));
+  }
   return lines.join('\n');
 }
 
 function summariseFlags(inv) {
   const tally = {};
-  for (const e of [...inv.sprites, ...inv.meshes]) {
+  for (const e of [...inv.sprites, ...inv.meshes, ...(inv.tracks || [])]) {
     for (const [k, v] of Object.entries(e.flags || {})) {
       if (v) tally[k] = (tally[k] || 0) + 1;
     }
@@ -119,22 +152,17 @@ test.describe('pss.html per-emitter inventory diagnostic', () => {
       await page.setViewportSize({ width: 1600, height: 900 });
       await page.goto(`/pss.html?pss=${encodeURIComponent(sourcePath)}`, { waitUntil: 'domcontentloaded' });
 
-      // Wait for "scene ready" — the loader emits this after addPssEffect,
-      // startRenderLoop, and autoFitCameraToEffect have all run. The
-      // ?pss param triggers an extra load on top of the auto-click, so
-      // we wait for the LAST scene-ready row (the one matching our path).
       const fname = sourcePath.split('/').pop();
-      await expect(
-        page.locator('#pss-log-panel .pss-log-row', { hasText: /scene ready/ }).last()
-      ).toBeVisible({ timeout: 30_000 });
-      // Also wait until __pssRuntimeSnapshot reports our path. The
-      // auto-click + ?pss collision means the first snapshot might be
-      // for the auto-clicked first item, not for our target.
       await page.waitForFunction((expectedPath) => {
         const snap = window.__pssRuntimeSnapshot && window.__pssRuntimeSnapshot();
+        const debug = window.__pssDebug && window.__pssDebug();
         if (!snap) return false;
         const all = [...snap.sprites, ...snap.meshes, ...snap.tracks];
-        return all.length > 0 && all.every((e) => e.sourcePath === expectedPath);
+        const totalDebug = debug ? debug.counts.sprite + debug.counts.mesh + debug.counts.track : 0;
+        return all.length > 0
+          && all.every((e) => e.sourcePath === expectedPath)
+          && totalDebug > 0
+          && debug.isRendering === true;
       }, sourcePath, { timeout: 30_000 });
 
       // Drive the timeline to t=2500ms — past the global startDelay so
@@ -166,10 +194,28 @@ test.describe('pss.html per-emitter inventory diagnostic', () => {
       await testInfo.attach(`pss-inventory-${fnameSafe}.json`, { body: Buffer.from(JSON.stringify(inv, null, 2), 'utf8'), contentType: 'application/json' });
 
       // Hard invariants — catastrophic regressions only.
-      expect(inv.counts.sprite + inv.counts.mesh, 'no emitters at all').toBeGreaterThan(0);
-      const allEmitters = [...inv.sprites, ...inv.meshes];
+      expect(inv.counts.sprite + inv.counts.mesh + inv.counts.track, 'no emitters at all').toBeGreaterThan(0);
+      const allEmitters = [...inv.sprites, ...inv.meshes, ...(inv.tracks || [])];
       expect(allEmitters.some((e) => e.visible),
         'no emitter visible at t=2500ms — timeline-gating may have broken').toBe(true);
+      for (const s of inv.sprites) {
+        expect(s.instanced, `sprite#${s.runtimeIndex} should use instanced billboard rendering`).toBe(true);
+        expect(s.usesInstanceColor, `sprite#${s.runtimeIndex} should use per-instance color`).toBe(true);
+        expect(s.usesInstanceOpacity, `sprite#${s.runtimeIndex} should use per-instance opacity`).toBe(true);
+        expect(Array.isArray(s.instanceOpacityRange), `sprite#${s.runtimeIndex} missing instance opacity range`).toBe(true);
+        expect(Array.isArray(s.layerInstanceCounts), `sprite#${s.runtimeIndex} missing layer instance counts`).toBe(true);
+        for (const count of s.layerInstanceCounts) {
+          expect(count, `sprite#${s.runtimeIndex} layer instance count should match alive particles`).toBe(s.aliveParticles);
+        }
+      }
+      for (const t of inv.tracks || []) {
+        expect(t.usesDecodedTrack, `track#${t.runtimeIndex} should use decoded track nodes`).toBe(true);
+        expect(t.usesTrackParams, `track#${t.runtimeIndex} should use parsed track params`).toBe(true);
+        expect(Number.isFinite(t.geometryNodeCount) && t.geometryNodeCount >= 2,
+          `track#${t.runtimeIndex} missing geometry nodes`).toBe(true);
+        expect(Number.isFinite(t.geometryVertexCount) && t.geometryVertexCount >= t.geometryNodeCount * 2,
+          `track#${t.runtimeIndex} missing geometry vertices`).toBe(true);
+      }
 
       // Soft hint: surface the white-walls diagnostic without failing the
       // test. The user can read the table to act on these.

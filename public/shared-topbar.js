@@ -21,6 +21,7 @@
       label: 'Animation',
       pages: [
         ['/actor-animation-player.html', 'Animation Player'],
+        ['/client-monitor-animation-player.html', 'Monitor Player'],
         ['/pss.html', 'PSS'],
       ],
     },

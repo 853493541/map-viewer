@@ -64,6 +64,12 @@ class MapEditor {
 
   // ─── Resource Manager ─────────────────────────────
   async init() {
+    const params = new URLSearchParams(window.location.search);
+    const directMap = params.get('map') || params.get('data');
+    if (directMap && /^[A-Za-z0-9_\-/]+$/.test(directMap) && !directMap.includes('..')) {
+      await this.loadMap(directMap, directMap === 'map-data');
+      return;
+    }
     this.loadCustomMapList();
     this.populateManager();
   }
@@ -106,6 +112,18 @@ class MapEditor {
     `;
     card.addEventListener('click', () => this.loadMap('map-data', true));
     grid.appendChild(card);
+
+    // Bailong map card
+    const bailongCard = document.createElement('div');
+    bailongCard.className = 'map-card';
+    bailongCard.innerHTML = `
+      <div class="map-thumb"><img src="map-data-bailong/minimap.png" onerror="this.style.display='none';this.parentElement.textContent='🗺️'"></div>
+      <div class="map-name">白龙绝境</div>
+      <div class="map-meta">8×8 regions</div>
+      <span class="map-badge original">ORIGINAL</span>
+    `;
+    bailongCard.addEventListener('click', () => this.loadMap('map-data-bailong', true));
+    grid.appendChild(bailongCard);
 
     // Custom maps section
     const customSection = document.getElementById('custom-maps-section');
@@ -491,34 +509,33 @@ class MapEditor {
     const innerFrac = 4 / 8; // 4×4 out of 8×8
     const borderFrac = (1 - innerFrac) / 2; // 0.25 on each side
 
-    // Try to load minimap.png (from game's RegionInfo/RLSplit.bmp, the real in-game minimap)
-    const regionImg = new Image();
-    regionImg.onload = () => {
+    const drawInnerImage = (image) => {
       mmCanvas.width = mmSize;
       mmCanvas.height = mmSize;
       ctx.fillStyle = '#333';
       ctx.fillRect(0, 0, mmSize, mmSize);
       const innerPx = Math.round(mmSize * innerFrac);
       const borderPx = Math.round(mmSize * borderFrac);
-      ctx.drawImage(regionImg, borderPx, borderPx, innerPx, innerPx);
+      ctx.drawImage(image, borderPx, borderPx, innerPx, innerPx);
       this._mmReady = true;
     };
-    regionImg.onerror = () => {
-      // Fallback to regioninfo.png then heightmap
-      const fallback = new Image();
-      fallback.onload = () => {
-        mmCanvas.width = mmSize; mmCanvas.height = mmSize;
-        ctx.fillStyle = '#333';
-        ctx.fillRect(0, 0, mmSize, mmSize);
-        const innerPx = Math.round(mmSize * innerFrac);
-        const borderPx = Math.round(mmSize * borderFrac);
-        ctx.drawImage(fallback, borderPx, borderPx, innerPx, innerPx);
-        this._mmReady = true;
-      };
-      fallback.onerror = () => this._buildHeightmapMinimap(mmCanvas, ctx);
-      fallback.src = `${this.currentMapPath}/regioninfo.png`;
+
+    const loadOptionalImage = async (url) => {
+      return await new Promise((resolve) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => resolve(null);
+        image.src = url;
+      });
     };
-    regionImg.src = `${this.currentMapPath}/minimap.png`;
+
+    (async () => {
+      const environmentItems = this.resourceInventory?.categories?.environment?.items || {};
+      const image = (environmentItems.minimap ? await loadOptionalImage(`${this.currentMapPath}/minimap.png`) : null)
+        || (environmentItems.regioninfo ? await loadOptionalImage(`${this.currentMapPath}/regioninfo.png`) : null);
+      if (image) drawInnerImage(image);
+      else this._buildHeightmapMinimap(mmCanvas, ctx);
+    })();
 
     // Click to teleport — uses FULL map bounds, so clicking gray area teleports to outer regions
     const container = document.getElementById('minimap-container');
@@ -558,38 +575,41 @@ class MapEditor {
     }
   }
 
-  _drawMinimapMode(canvas) {
+  async _drawMinimapMode(canvas) {
     const ctx = canvas.getContext('2d');
     const sz = this._mmSize;
     const innerFrac = this._mmInnerFrac;
     const borderFrac = this._mmBorderFrac;
     if (this._mmMode === 'height') {
       this._buildHeightmapMinimap(canvas, ctx);
-    } else if (this._mmMode === 'editor') {
-      // Editor minimap (RLSplit.bmp) also covers the inner 4×4 playable area
-      const img = new Image();
-      img.onload = () => {
-        canvas.width = sz; canvas.height = sz;
-        ctx.fillStyle = '#333';
-        ctx.fillRect(0, 0, sz, sz);
-        const innerPx = Math.round(sz * innerFrac);
-        const borderPx = Math.round(sz * borderFrac);
-        ctx.drawImage(img, borderPx, borderPx, innerPx, innerPx);
-      };
-      img.src = `${this.currentMapPath}/editor-minimap.png`;
-    } else {
-      // Region mode: image in center, gray border for outer regions
-      const img = new Image();
-      img.onload = () => {
-        canvas.width = sz; canvas.height = sz;
-        ctx.fillStyle = '#333';
-        ctx.fillRect(0, 0, sz, sz);
-        const innerPx = Math.round(sz * innerFrac);
-        const borderPx = Math.round(sz * borderFrac);
-        ctx.drawImage(img, borderPx, borderPx, innerPx, innerPx);
-      };
-      img.src = `${this.currentMapPath}/minimap.png`;
+      return;
     }
+
+    const fileName = this._mmMode === 'editor' ? 'editor-minimap.png' : 'minimap.png';
+    const imageUrl = `${this.currentMapPath}/${fileName}`;
+    const environmentItems = this.resourceInventory?.categories?.environment?.items || {};
+    if (!environmentItems.minimap) {
+      this._buildHeightmapMinimap(canvas, ctx);
+      return;
+    }
+
+    await new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        canvas.width = sz; canvas.height = sz;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(0, 0, sz, sz);
+        const innerPx = Math.round(sz * innerFrac);
+        const borderPx = Math.round(sz * borderFrac);
+        ctx.drawImage(img, borderPx, borderPx, innerPx, innerPx);
+        resolve();
+      };
+      img.onerror = () => {
+        this._buildHeightmapMinimap(canvas, ctx);
+        resolve();
+      };
+      img.src = imageUrl;
+    });
   }
 
   _buildHeightmapMinimap(canvas, ctx) {
@@ -1025,6 +1045,11 @@ class MapEditor {
       <button class="region-btn" id="region-apply">✂ Apply Region Filter</button>
       <button class="region-btn danger" id="region-clear">↩ Show Full Map</button>
       <button class="region-btn" id="region-export" style="margin-top:8px">💾 Export Custom Map JSON</button>
+      <div style="border-top:1px solid #3a3a3a;margin-top:10px;padding-top:8px" id="exported-areas-section">
+        <div style="color:#dca;font-weight:bold;margin-bottom:6px">Exported Map Areas</div>
+        <div style="color:#888;font-size:10px;margin-bottom:6px">One-click select exported map regions at matching size.</div>
+        <div id="exported-areas-list" style="color:#888;font-size:11px">Loading...</div>
+      </div>
     `;
     el.appendChild(form);
 
@@ -1032,6 +1057,9 @@ class MapEditor {
     statsEl.className = 'region-stats';
     statsEl.textContent = 'No region filter active';
     el.appendChild(statsEl);
+
+    // Preset exported area buttons — fetch dynamically
+    this._loadExportedAreas(statsEl);
 
     // Apply region filter
     document.getElementById('region-apply').addEventListener('click', () => {
@@ -1096,6 +1124,110 @@ class MapEditor {
       minZ: parseFloat(document.getElementById('region-min-z').value) || -100000,
       maxZ: parseFloat(document.getElementById('region-max-z').value) || 0,
     };
+  }
+
+  _applyPresetRegion(r, statsEl) {
+    document.getElementById('region-min-x').value = r.minX;
+    document.getElementById('region-max-x').value = r.maxX;
+    document.getElementById('region-min-z').value = r.minZ;
+    document.getElementById('region-max-z').value = r.maxZ;
+
+    // Sync R dialog fields if present
+    const rdMinX = document.getElementById('rd-min-x');
+    const rdMaxX = document.getElementById('rd-max-x');
+    const rdMinZ = document.getElementById('rd-min-z');
+    const rdMaxZ = document.getElementById('rd-max-z');
+    if (rdMinX) rdMinX.value = r.minX;
+    if (rdMaxX) rdMaxX.value = r.maxX;
+    if (rdMinZ) rdMinZ.value = r.minZ;
+    if (rdMaxZ) rdMaxZ.value = r.maxZ;
+
+    this._regionCorners = [
+      { x: r.minX, z: r.minZ },
+      { x: r.maxX, z: r.minZ },
+      { x: r.maxX, z: r.maxZ },
+      { x: r.minX, z: r.maxZ },
+    ];
+
+    this.entitySystem.regionFilter = r;
+    if (this.terrainSystem) this.terrainSystem.setRegionClip(r);
+
+    const count = this._countEntitiesInRegion(r);
+    const spanX = r.maxX - r.minX;
+    const spanZ = r.maxZ - r.minZ;
+    if (statsEl) {
+      statsEl.innerHTML = `<strong>Region filter active:</strong> ${count} entities visible<br>
+        X: ${r.minX.toFixed(0)} → ${r.maxX.toFixed(0)} | Z: ${r.minZ.toFixed(0)} → ${r.maxZ.toFixed(0)}<br>
+        Size: ${(spanX / 1000).toFixed(1)}k × ${(spanZ / 1000).toFixed(1)}k`;
+    }
+
+    this._update3DRegionBox(r);
+
+    // Sync region action bar if present
+    const rabInfo = document.getElementById('rab-info');
+    if (rabInfo) rabInfo.textContent = `${(spanX / 1000).toFixed(1)}k × ${(spanZ / 1000).toFixed(1)}k — drag white corners to resize`;
+  }
+
+  async _loadExportedAreas(statsEl) {
+    const listEl = document.getElementById('exported-areas-list');
+    if (!listEl) return;
+    listEl.innerHTML = 'Loading...';
+
+    try {
+      const res = await fetch('/api/full-exports');
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json();
+      const exports = Array.isArray(data?.exports) ? data.exports : [];
+      const withRegion = exports.filter((e) => e.region && Number.isFinite(e.region.minX));
+
+      if (withRegion.length === 0) {
+        listEl.innerHTML = '<span style="color:#888">No exported map regions found.</span>';
+        return;
+      }
+
+      listEl.innerHTML = '';
+      for (const exp of withRegion) {
+        const r = exp.region;
+        const spanX = r.maxX - r.minX;
+        const spanZ = r.maxZ - r.minZ;
+        const sizeLabel = `${(spanX / 1000).toFixed(1)}k × ${(spanZ / 1000).toFixed(1)}k`;
+        const dateStr = exp.createdAt ? new Date(exp.createdAt).toLocaleDateString() : '';
+
+        const btn = document.createElement('button');
+        btn.className = 'region-btn exported-area-btn';
+        btn.style.cssText = 'display:block;width:100%;margin-bottom:4px;text-align:left';
+        btn.innerHTML = `📐 ${this._escapeHtml(exp.name)} — ${sizeLabel} <span style="color:#888;font-size:10px">${dateStr}</span>`;
+        btn.title = `X: ${r.minX} → ${r.maxX} | Z: ${r.minZ} → ${r.maxZ}`;
+
+        btn.addEventListener('click', () => {
+          const region = {
+            minX: Number(r.minX),
+            maxX: Number(r.maxX),
+            minZ: Number(r.minZ),
+            maxZ: Number(r.maxZ),
+          };
+          // Include corners if available from manifest
+          if (exp.regionCorners && Array.isArray(exp.regionCorners) && exp.regionCorners.length === 4) {
+            const corners = exp.regionCorners.map(c => ({ x: Number(c.x), z: Number(c.z) }));
+            if (corners.every(c => Number.isFinite(c.x) && Number.isFinite(c.z))) {
+              this._regionCorners = corners;
+            }
+          }
+          this._applyPresetRegion(region, statsEl);
+          this.showToast(`${exp.name} region applied (match exported size)`);
+        });
+
+        listEl.appendChild(btn);
+      }
+    } catch (err) {
+      listEl.innerHTML = `<span style="color:#f66">Failed: ${this._escapeHtml(err.message || String(err))}</span>`;
+    }
+  }
+
+  _escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
   }
 
   _countEntitiesInRegion(r) {
@@ -3332,6 +3464,7 @@ class MapEditor {
 }
 
 const editor = new MapEditor();
+window.editor = editor;
 editor.init().catch(err => {
   console.error('Init failed:', err);
 });

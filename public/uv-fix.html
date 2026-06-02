@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>UV Fix — Before vs After</title>
+<link rel="icon" href="data:,">
+<style>
+  * { box-sizing: border-box; }
+  :root { --header-h: 44px; }
+  body { margin: 0; background: #555; color: #eee; font-family: monospace; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
+  #header { height: var(--header-h); display: flex; align-items: center; gap: 12px; padding: 0 12px; background: #0a0a0c; border-bottom: 1px solid #444; z-index: 100; flex-shrink: 0; }
+  #header h1 { font-size: 13px; margin: 0; color: #d9e3ef; }
+  #header a { color: #8ea2ba; font-size: 11px; text-decoration: none; }
+  #header span { color: #666; font-size: 10px; }
+  #main { display: flex; flex: 1; overflow: hidden; }
+  #sidebar { width: 260px; min-width: 260px; background: #111; overflow-y: auto; font-size: 11px; flex-shrink: 0; }
+  .mesh-item { padding: 3px 8px; cursor: pointer; border-bottom: 1px solid #222; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mesh-item:hover { background: #333; }
+  .mesh-item.active { background: #0078d4; color: #fff; }
+  #sidebar input { width: calc(100% - 8px); margin: 4px; background: #222; color: #eee; border: 1px solid #444; padding: 3px 6px; font-family: monospace; font-size: 11px; }
+  #sidebar label { display: block; padding: 2px 8px; font-size: 10px; color: #aaa; cursor: pointer; }
+  .stat { padding: 4px 8px; font-size: 10px; color: #888; border-top: 1px solid #222; }
+  #preview { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 2px; background: #444; }
+  .cell { position: relative; background: #6a6a7a; overflow: hidden; }
+  .cell canvas { width: 100%; height: 100%; display: block; }
+  .cell .label { position: absolute; bottom: 0; left: 0; right: 0; padding: 4px 8px; background: rgba(0,0,0,0.8); font-size: 10px; text-align: center; }
+  .cell .info { position: absolute; top: 4px; left: 4px; font-size: 9px; color: #aaa; }
+  .cell.old .label { color: #e44; }
+  .cell.new .label { color: #4e4; }
+</style>
+</head>
+<body>
+<div id="header">
+  <h1>UV Fix — Before vs After</h1>
+  <a href="editor.html">Editor</a>
+  <a href="mesh-inspector.html">Mesh Inspector</a>
+  <a href="mesh-saver.html">Mesh Saver</a>
+  <span>84 meshes | Old=wrong UVs | New=fixed UV3 offset</span>
+</div>
+<div id="main">
+<div id="sidebar">
+  <input id="filter" type="text" placeholder="Filter meshes...">
+  <label><input type="checkbox" id="showTex" checked> Textures</label>
+  <div class="stat"><span id="count">0</span> visible</div>
+  <div id="meshList"></div>
+</div>
+<div id="preview">
+  <div class="cell old" id="cell-old"><canvas></canvas><div class="label">OLD</div><div class="info" id="info-old"></div></div>
+  <div class="cell new" id="cell-new">
+    <canvas></canvas>
+    <div class="label">NEW</div>
+    <div class="info" id="info-new"></div>
+    <div style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.8);padding:6px 8px;border-radius:4px;font-size:10px;z-index:10;">
+      <b style="color:#8ea2ba;">UV formula:</b><br>
+      <label style="cursor:pointer;color:#f44;font-weight:bold;"><input type="radio" name="uvFormula" value="invnorm" checked> INVNORM (raw+1)/(2*s) ← TILE ONCE</label><br>
+      <label style="cursor:pointer;"><input type="radio" name="uvFormula" value="mul"> MUL raw*s width=15</label><br>
+      <label style="cursor:pointer;"><input type="radio" name="uvFormula" value="add"> ADD raw+s</label><br>
+      <label style="cursor:pointer;"><input type="radio" name="uvFormula" value="center"> CTR s+raw*s/2</label><br>
+      <label style="cursor:pointer;"><input type="radio" name="uvFormula" value="half"> HALF (raw+1)/2*s</label><br>
+      <label style="cursor:pointer;"><input type="radio" name="uvFormula" value="unorm"> UNRM u16/65535*s</label><br>
+      <label style="cursor:pointer;"><input type="radio" name="uvFormula" value="proj"> PROJ (u*s)/(w*w_s)</label><br>
+      <label style="cursor:pointer;"><input type="radio" name="uvFormula" value="wdiv"> WDIV u*s*2/w_s</label><br>
+      <label style="cursor:pointer;"><input type="radio" name="uvFormula" value="divws"> DIVWS s/ws</label><br>
+      <label style="cursor:pointer;"><input type="radio" name="uvFormula" value="shift"> SHIFT (raw+1)*s/ws</label><br>
+      <label style="cursor:pointer;"><input type="radio" name="uvFormula" value="shift2"> SHFT2 (raw+1)*s/ws/2</label><br>
+      <label style="cursor:pointer;"><input type="radio" name="uvFormula" value="mul2"> MUL2 raw*s/2</label><br>
+      <label style="cursor:pointer;"><input type="radio" name="uvFormula" value="noflip"> NOFLIP v as-is</label>
+    </div>
+</div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "./lib/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from './lib/GLTFLoader.js';
+
+var GLB_BASES = { old: 'uv-fix-glbs/old', mul: 'uv-fix-glbs/fixed', add: 'uv-fix-glbs/add', center: 'uv-fix-glbs/center', half: 'uv-fix-glbs/half', unorm: 'uv-fix-glbs/unorm', proj: 'uv-fix-glbs/proj', wdiv: 'uv-fix-glbs/wdiv', divws: 'uv-fix-glbs/divws', shift: 'uv-fix-glbs/shift', shift2: 'uv-fix-glbs/shift2', mul2: 'uv-fix-glbs/mul2', noflip: 'uv-fix-glbs/noflip', invnorm: 'uv-fix-glbs/invnorm' };
+var TEX_DIR = 'map-data/textures';
+
+var glbList = ['jz_xb玉门关建筑002_005sw_hd.glb','cq_ca地台001_002_hd.glb','jz_mj中型民居001_002_hd.glb','jz_mj中型民居001_003_hd.glb','jz_mj中型民居001_006_hd.glb','jz_军营帐篷001_002_hd.glb','pj_mvp围墙001_002_hd.glb','pj_mvp围墙001_004_hd.glb','q_吊桥005_004_hd.glb','q_石头桥002_001_hd.glb','st_mj中层石头001_001_hd.glb','st_mj光明顶001_002_hd.glb','st_mj光明顶001_003_hd.glb','st_mj光明顶001_006_hd.glb','st_mj石拱004_hd.glb','wj_cy加雪动物遗骨001_002_hd.glb','wj_cy加雪火堆001_003_hd.glb','wj_erg书001_hd.glb','wj_erg笔架002_hd.glb','wj_erg笔筒001_hd.glb','wj_erg筷子001_hd.glb','wj_erg箱子001_hd.glb','wj_hqm悬挂布001_hd.glb','wj_mvpl蓝色布帘001_003_hd.glb','wj_mvpl蓝色布帘001_004_hd.glb','wj_mvp圆灯笼001_001_hd.glb','wj_mvp石墙装饰001_002_hd.glb','wj_mvp石墙装饰001_003_hd.glb','wj_tc加沙步兵雕像001_002_hd.glb','wj_zb箱子001_hd.glb','wj_中级挂饰003_003_hd.glb','wj_中级挂饰004_002_hd.glb','wj_书001_001_hd.glb','wj_书001_002_hd.glb','wj_动物遗骨001_002_hd.glb','wj_卷毯001_001_hd.glb','wj_地毯002_hd.glb','wj_坛子002_001_hd.glb','wj_坛子002_004_hd.glb','wj_坛子002_005_hd.glb','wj_小瓶子001_hd.glb','wj_小药瓶_001_hd.glb','wj_小药瓶_002_hd.glb','wj_工地物件001_007_hd.glb','wj_挂毯001_001_hd.glb','wj_挂毯001_002_hd.glb','wj_木堆001_hd.glb','wj_木头架子_017_001_hd.glb','wj_木栏杆002_002_hd.glb','wj_木桌002_hd.glb','wj_木桌005_001_hd.glb','wj_木箱004_001_hd.glb','wj_杂货架_01_hd.glb','wj_桌子002_001_hd.glb','wj_桌子002_002_hd.glb','wj_横向缆车线001_hd.glb','wj_水缸005_001_hd.glb','wj_烹饪灶台001_001_hd.glb','wj_物什箱013_hd.glb','wj_物什箱014_002_hd.glb','wj_物什箱014_hd.glb','wj_破木箱003_001_hd.glb','wj_破木箱003_002_hd.glb','wj_破草席001_001_hd.glb','wj_破草席001_002_hd.glb','wj_破草席001_003_hd.glb','wj_破车001_001_hd.glb','wj_草垛001_002_hd.glb','wj_货包包001_001_hd.glb','wj_货包包001_002_hd.glb','wj_陶罐008_hd.glb','wj_餐具001_001_hd.glb','wj_饭桌001_hd.glb','wj_龙门大缸001_hd.glb','wj_龙门木箱001_hd.glb','xwj_cj木梯001_hd.glb','xwj_农家物件007_002_hd.glb','xwj_木栏杆005_hd.glb','xwj_破坛子001_001_hd.glb','xwj_破坛子001_002_hd.glb','xwj_破石马001_002_hd.glb','xwj_破石鼎003_001_hd.glb','xwj_破草垛001_002_hd.glb','xwj_被子001_hd.glb'];
+
+var currentIdx = -1;
+var loader = new GLTFLoader();
+var showTex = document.getElementById('showTex');
+var filter = document.getElementById('filter');
+var countEl = document.getElementById('count');
+var listDiv = document.getElementById('meshList');
+
+var tm = null;
+try { var r = await fetch('map-data/texture-map.json'); tm = await r.json(); } catch(e) {}
+
+function createCell(id) {
+    var cell = document.getElementById(id);
+    var cvs = cell.querySelector('canvas');
+    var info = cell.querySelector('.info');
+    var rend = new THREE.WebGLRenderer({canvas:cvs,antialias:true});
+    rend.setClearColor(0x6a6a7a); rend.toneMapping=THREE.ACESFilmicToneMapping; rend.toneMappingExposure=1.35; rend.outputColorSpace=THREE.SRGBColorSpace;
+    var s = new THREE.Scene();
+    s.add(new THREE.AmbientLight(0xffffff,0.72));
+    var k=new THREE.DirectionalLight(0xfff2d1,2.2);k.position.set(160,260,140);s.add(k);
+    var f=new THREE.DirectionalLight(0xc5dcff,1.0);f.position.set(-140,180,-120);s.add(f);
+    s.add(new THREE.HemisphereLight(0x9ac6ff,0x6c7856,1.05));
+    var cam=new THREE.PerspectiveCamera(50,1,0.1,100000);
+    var oT=0.3,oP=0.8,oR=300,tgt=new THREE.Vector3();
+    var drag=false,dx=0,dy=0;
+    function upd(){cam.position.set(tgt.x+oR*Math.sin(oP)*Math.cos(oT),tgt.y+oR*Math.cos(oP),tgt.z+oR*Math.sin(oP)*Math.sin(oT));cam.lookAt(tgt);}
+    cvs.addEventListener('mousedown',function(e){drag=true;dx=e.clientX;dy=e.clientY;});
+    cvs.addEventListener('mouseup',function(){drag=false;});
+    cvs.addEventListener('mouseleave',function(){drag=false;});
+    cvs.addEventListener('mousemove',function(e){if(!drag)return;oT+=(e.clientX-dx)*0.01;oP=Math.max(0.1,Math.min(Math.PI-0.1,oP-(e.clientY-dy)*0.01));dx=e.clientX;dy=e.clientY;upd();});
+    cvs.addEventListener('wheel',function(e){e.preventDefault();oR*=e.deltaY>0?1.15:0.87;oR=Math.max(1,Math.min(50000,oR));upd();},{passive:false});
+    return{cell,cvs,r:rend,s,sc:s,cam,info,mesh:null,setOrbit:function(t,p,r2,t2){oT=t;oP=p;oR=r2;tgt.copy(t2);upd();},sync:function(o){oT=o.oT;oP=o.oP;oR=o.oR;tgt.copy(o.tgt);upd();},getO:function(){return{oT,oP,oR,tgt:tgt.clone()};}};
+}
+
+var oldCell = createCell('cell-old');
+var newCell = createCell('cell-new');
+
+var texLoader = new THREE.TextureLoader();
+var texCache = new Map();
+function loadTex(fn,isAlbedo){
+    var k=fn; if(!texCache.has(k)){var t=texLoader.load(TEX_DIR+'/'+encodeURIComponent(fn)+'?v=3');t.colorSpace=isAlbedo?THREE.SRGBColorSpace:THREE.LinearSRGBColorSpace;t.flipY=false;t.wrapS=THREE.RepeatWrapping;t.wrapT=THREE.RepeatWrapping;texCache.set(k,t);}return texCache.get(k);
+}
+function loadMRE(fn){
+    var k=fn+'_mre'; if(!texCache.has(k)){var t=texLoader.load(TEX_DIR+'/'+encodeURIComponent(fn)+'?v=3',function(tt){var c=document.createElement('canvas');var img=tt.image;c.width=img.width;c.height=img.height;var ctx=c.getContext('2d');ctx.drawImage(img,0,0);var d=ctx.getImageData(0,0,c.width,c.height);var px=d.data;for(var i=0;i<px.length;i+=4){var r2=px[i];px[i]=px[i+2];px[i+2]=r2;}ctx.putImageData(d,0,0);tt.image=c;tt.needsUpdate=true;});t.colorSpace=THREE.LinearSRGBColorSpace;t.flipY=false;t.wrapS=THREE.RepeatWrapping;t.wrapT=THREE.RepeatWrapping;texCache.set(k,t);}return texCache.get(k);
+}
+
+function loadInto(cell,base,label,resetCam){
+    var glb = glbList[currentIdx]; if(!glb)return;
+    var oldOrbit = cell.getO();
+    if(cell.mesh){cell.s.remove(cell.mesh);cell.mesh=null;}
+    cell.info.textContent='...';
+    loader.load(base+'/'+encodeURIComponent(glb),function(gltf){
+        var g=gltf.scene;var tv=0,tf=0;var st=showTex.checked;
+        g.traverse(function(c){
+            if(!c.isMesh)return;
+            var geo=c.geometry;tv+=geo.getAttribute('position').count;tf+=geo.index?geo.index.count/3:geo.getAttribute('position').count/3;
+            if(st&&tm){var te=tm[glb];if(te&&te.albedo){c.material=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.78,metalness:0.18,map:loadTex(te.albedo,true),side:THREE.DoubleSide});if(te.mre){var mre=loadMRE(te.mre);c.material.roughnessMap=mre;c.material.metalnessMap=mre;}if(te.normal)c.material.normalMap=loadTex(te.normal,false);}else{c.material=new THREE.MeshPhongMaterial({color:0xccbbaa,shininess:8,side:THREE.DoubleSide});}}else{c.material=new THREE.MeshPhongMaterial({color:0xccbbaa,shininess:8,side:THREE.DoubleSide});}
+        });
+        cell.s.add(g);cell.mesh=g;
+        if(resetCam||!oldOrbit){var box=new THREE.Box3().setFromObject(g);var ctr=new THREE.Vector3(),sz=new THREE.Vector3();box.getCenter(ctr);box.getSize(sz);cell.setOrbit(0.3,0.8,Math.max(sz.x,sz.y,sz.z)*1.5,ctr);}
+        else{cell.setOrbit(oldOrbit.oT,oldOrbit.oP,oldOrbit.oR,oldOrbit.tgt);}
+        cell.info.textContent='V:'+tv+' F:'+Math.round(tf)+' '+label;
+    },undefined,function(){cell.info.textContent='FAIL';});
+}
+
+function select(idx,resetCam){
+    currentIdx = idx;
+    texCache.clear();
+    var formula = document.querySelector('input[name=uvFormula]:checked').value;
+    loadInto(oldCell, GLB_BASES['old'], 'OLD', resetCam);
+    loadInto(newCell, GLB_BASES[formula], formula.toUpperCase(), resetCam);
+    var items = listDiv.querySelectorAll('.mesh-item');
+    for(var i=0;i<items.length;i++) items[i].classList.toggle('active', parseInt(items[i].dataset.idx) === idx);
+}
+
+function renderList(){
+    var f = filter.value.toLowerCase();
+    var visible = [];
+    for(var i=0;i<glbList.length;i++){if(!f||glbList[i].toLowerCase().includes(f))visible.push(i);}
+    listDiv.innerHTML = '';
+    for(var vi=0;vi<visible.length;vi++){
+        var i = visible[vi];
+        var div = document.createElement('div');
+        div.className = 'mesh-item';
+        div.dataset.idx = i;
+        div.textContent = glbList[i].replace('.glb','');
+        if(i===currentIdx) div.classList.add('active');
+        div.addEventListener('click',function(){select(parseInt(this.dataset.idx),true);});
+        listDiv.appendChild(div);
+    }
+    countEl.textContent = visible.length + ' / ' + glbList.length;
+    if (visible.length > 0 && currentIdx < 0) select(visible[0],true);
+}
+
+filter.addEventListener('input',renderList);
+showTex.addEventListener('change',function(){if(currentIdx>=0)select(currentIdx,false);});
+var radios = document.querySelectorAll('input[name=uvFormula]');
+for(var ri=0;ri<radios.length;ri++) radios[ri].addEventListener('change',function(){if(currentIdx>=0)select(currentIdx,false);});
+
+function animate(){
+    requestAnimationFrame(animate);
+    [oldCell,newCell].forEach(function(cell){
+        if(!cell.mesh)return;
+        var rect=cell.cvs.getBoundingClientRect();
+        var w=Math.floor(rect.width*devicePixelRatio),h=Math.floor(rect.height*devicePixelRatio);
+        if(w<1||h<1)return;
+        if(cell.cvs.width!==w||cell.cvs.height!==h){cell.r.setSize(w,h,false);cell.cvs.style.width=rect.width+'px';cell.cvs.style.height=rect.height+'px';cell.cam.aspect=w/h;cell.cam.updateProjectionMatrix();}
+        cell.r.render(cell.s,cell.cam);
+    });
+}
+animate();
+renderList();
+</script>
+</body>
+</html>

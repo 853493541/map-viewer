@@ -29,7 +29,7 @@ try {
 }
 
 function parseArgs(argv) {
-  const cfg = { processNames: [], pid: null, spawn: null, agent: resolve('tools/frida-cdn-agent.js'), logPath: resolve('log/frida-cdn.jsonl') };
+  const cfg = { processNames: [], pid: null, spawn: null, agent: resolve('tools/frida-cdn-agent.js'), logPath: resolve('log/frida-cdn.jsonl'), attachTimeoutMs: Number(process.env.FRIDA_ATTACH_TIMEOUT_MS || 30000), agentMode: process.env.JX3_CLIENT_MONITOR_AGENT_MODE || '', agentConfig: {} };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--process') cfg.processNames = [argv[++i]];
@@ -38,11 +38,33 @@ function parseArgs(argv) {
     else if (a === '--spawn') cfg.spawn = argv[++i];
     else if (a === '--agent') cfg.agent = resolve(argv[++i]);
     else if (a === '--log') cfg.logPath = resolve(argv[++i]);
+    else if (a === '--attach-timeout-ms') cfg.attachTimeoutMs = Number(argv[++i]);
+    else if (a === '--agent-mode') cfg.agentMode = String(argv[++i] || '');
+    else if (a === '--agent-config') cfg.agentConfig = JSON.parse(String(argv[++i] || '{}'));
   }
   if (!cfg.processNames.length && !cfg.pid && !cfg.spawn) {
     cfg.processNames = ['qrmbtrayservicex64.exe', 'qseasuneditorx64.exe'];
   }
   return cfg;
+}
+
+function buildAgentSource(source, cfg) {
+  const config = { ...(cfg.agentConfig || {}) };
+  if (cfg.agentMode) config.mode = cfg.agentMode;
+  if (!Object.keys(config).length) return source;
+  return `const __JX3_CLIENT_MONITOR_AGENT_CONFIG__ = ${JSON.stringify(config)};\n${source}`;
+}
+
+function withTimeout(promise, timeoutMs, label) {
+  const ms = Number(timeoutMs) || 0;
+  if (ms <= 0) return promise;
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
 }
 
 function fmtTs() { return new Date().toISOString().slice(11, 23); }
@@ -92,8 +114,8 @@ async function main() {
   const dumpDir = resolve(join(dirname(cfg.logPath), 'bundle-dumps', `${sanitizeFileName(targetName)}-${pid}`));
   mkdirSync(dumpDir, { recursive: true });
 
-  const session = await device.attach(pid);
-  const source = readFileSync(cfg.agent, 'utf8');
+  const session = await withTimeout(device.attach(pid), cfg.attachTimeoutMs, `Frida attach to pid ${pid}`);
+  const source = buildAgentSource(readFileSync(cfg.agent, 'utf8'), cfg);
   const script = await session.createScript(source);
   const pendingCmds = new Map(); // id -> {resolve, reject}
   let nextCmdId = 1;

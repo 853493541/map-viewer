@@ -10,7 +10,7 @@
     "prestart": "npm run setup:runtime-libs",
     "postinstall": "npm run setup:runtime-libs",
     "dev": "node server.js",
-    "local": "node server.js",
+    "local": "node tools/start-local.mjs",
     "start": "node server.js",
     "wwise:index": "node tools/index-wwise-soundbanks-v3.mjs",
     "wwise:event-folders": "node tools/export-wwise-event-folders.mjs",

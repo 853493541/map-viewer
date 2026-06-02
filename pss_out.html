@@ -327,15 +327,9 @@
       z-index: 30; display: flex; flex-direction: column; backdrop-filter: blur(8px);
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.34);
     }
-    .trace-summary {
-      display: flex; align-items: center; justify-content: space-between; gap: 8px;
-      color: var(--panel-muted); padding: 4px 4px 8px; font-size: 10px;
-      border-bottom: 1px solid rgba(130, 170, 220, 0.12); margin-bottom: 6px;
-    }
-    .trace-counts { font-family: "Cascadia Code", "Consolas", monospace; color: var(--panel-text); }
     .trace-row {
-      display: grid; grid-template-columns: 34px 46px 1fr;
-      gap: 7px; padding: 6px 4px; line-height: 1.45;
+      display: grid; grid-template-columns: 56px 52px 1fr;
+      gap: 8px; padding: 2px 4px; line-height: 1.45;
       border-bottom: 1px dotted rgba(130, 170, 220, 0.12);
       font-family: "Cascadia Code", "Consolas", monospace; font-size: 10px;
     }
@@ -347,9 +341,6 @@
     .trace-row .trace-detail { color: var(--panel-text); word-break: break-word; }
     .trace-row .trace-detail .trace-step {
       color: var(--panel-accent); margin-right: 6px; font-weight: 700;
-    }
-    .trace-row .trace-proof {
-      display: block; margin-top: 2px; color: var(--panel-muted); font-size: 9px;
     }
     .trace-row.lvl-info .trace-lvl { color: var(--panel-muted); background: rgba(60, 80, 110, 0.25); }
     .trace-row.lvl-ok   .trace-lvl { color: var(--panel-good); background: rgba(60, 130, 75, 0.25); }
@@ -434,81 +425,8 @@
     .dbg-fold.ok { border-left-color: rgba(95, 223, 112, 0.4); }
     .dbg-fold.warn { border-left-color: rgba(255, 179, 71, 0.6); }
     .dbg-fold.warn > summary { color: var(--panel-warn); }
-
-    @media (max-width: 1180px) {
-      html, body {
-        height: auto; min-height: 100%; overflow: auto;
-      }
-      #global-header {
-        position: sticky; height: auto; min-height: var(--global-header-height);
-      }
-      #sidebar {
-        position: relative; top: auto; left: auto; bottom: auto;
-        width: auto; max-height: 260px; margin: 10px 10px 8px;
-        border-radius: 12px;
-      }
-      #right-area {
-        position: relative; top: auto; left: auto; right: auto; bottom: auto;
-        width: auto; min-height: 560px; margin: 8px 10px 44px;
-      }
-      #viewport-panel {
-        flex: 0 0 clamp(320px, 56vh, 640px); min-height: 320px;
-      }
-      #trace-panel {
-        position: relative; top: auto; right: auto; bottom: auto;
-        width: auto; height: 160px; flex: 0 0 160px;
-        border-radius: 12px;
-      }
-      #info-panel {
-        height: 170px; max-height: 220px;
-      }
-    }
-
-    @media (max-width: 720px) {
-      #global-header {
-        padding: 8px 10px; gap: 6px;
-      }
-      .gh-links {
-        gap: 6px;
-      }
-      .gh-link {
-        padding: 4px 8px;
-      }
-      #sidebar {
-        max-height: 230px; margin: 8px;
-      }
-      #right-area {
-        min-height: 520px; margin: 8px 8px 40px;
-      }
-      #viewport-panel {
-        flex-basis: clamp(320px, 58vh, 520px);
-      }
-      #viewport-toolbar {
-        flex-wrap: wrap; align-content: flex-start;
-      }
-      #viewport-toolbar .vp-label {
-        flex: 1 1 100%; max-width: 100%;
-      }
-      #viewport-toolbar .spacer {
-        display: none;
-      }
-      #timeline-bar {
-        flex-wrap: wrap;
-      }
-      .tl-track-wrap {
-        flex: 1 1 100%; order: 2;
-      }
-      .tl-time {
-        min-width: 76px;
-      }
-      #trace-panel {
-        height: 140px; flex-basis: 140px;
-      }
-      .status-bar {
-        overflow-x: auto; padding: 0 8px; gap: 10px;
-      }
-    }
   </style>
+  <link rel="stylesheet" href="/shared-topbar.css">
 </head>
 <body data-page-mode="pss-only">
 
@@ -605,16 +523,17 @@
     </div>
     <!-- Issues panel removed (no JS references); Load Trace covers issues. -->
   </div>
-  <!-- PSS step trace panel: ALWAYS-VISIBLE right sidebar. Bad is default;
-       Good shows the successful read/render steps for the same load. -->
+  <!-- Load Trace panel: ALWAYS-VISIBLE right sidebar (sibling of #right-area).
+       Two tabs (Errors default, All Steps); copy button. No close button —
+       it's a permanent fixture. -->
   <div id="trace-panel">
     <div class="dbg-header">
-      <span class="dbg-title">PSS Step Trace</span>
+      <span class="dbg-title">Load Trace</span>
       <button class="dbg-copy" id="btn-trace-copy">Copy</button>
     </div>
     <div class="dbg-tabs">
-      <button class="dbg-tab active" data-trace-tab="bad" type="button">Bad</button>
-      <button class="dbg-tab" data-trace-tab="good" type="button">Good</button>
+      <button class="dbg-tab active" data-trace-tab="errors" type="button">Errors</button>
+      <button class="dbg-tab" data-trace-tab="all" type="button">All Steps</button>
     </div>
     <div class="dbg-body" id="trace-body"></div>
   </div>
@@ -645,5 +564,6 @@
 }
 </script>
 <script type="module" src="js/actor-animation-player.js?v=20260428m"></script>
+  <script src="/shared-topbar.js" defer></script>
 </body>
 </html>

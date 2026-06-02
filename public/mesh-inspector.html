@@ -796,21 +796,9 @@ function loadMeshIntoCell(cellIdx, glbFile) {
       if (subTex && subTex.albedo) {
         const opts = {
           color: 0xffffff, roughness: 0.78, metalness: 0.18,
+          side: THREE.DoubleSide,
           map: loadTexCached(subTex.albedo, false),
         };
-        // BlendMode 0 = Masked (alpha test), 1 = Opaque, 2 = Transparent
-        const bm = subTex.blendMode !== undefined ? subTex.blendMode : 1;
-        if (bm === 0) {
-          opts.alphaTest = (subTex.alphaRef || 128) / 255;
-          opts.transparent = false;
-          opts.side = THREE.FrontSide;
-        } else if (bm === 2) {
-          opts.transparent = true;
-          opts.depthWrite = true;
-          opts.side = THREE.DoubleSide;
-        } else {
-          opts.side = THREE.DoubleSide;
-        }
         if (subTex.mre)    { opts.roughnessMap = opts.metalnessMap = loadMRECached(subTex.mre); }
         if (subTex.normal) { opts.normalMap = loadTexCached(subTex.normal, true); }
         child.material = new THREE.MeshStandardMaterial(opts);

@@ -5,6 +5,7 @@
  * Supports procedural terrain textures converted from DDS.
  */
 import * as THREE from 'three';
+import { DDSLoader } from './jx3-dds-loader.js';
 
 export class TerrainSystem {
   constructor(scene, config, dataPath = 'map-data') {
@@ -26,6 +27,7 @@ export class TerrainSystem {
     this.terrainTextureIndex = null;
     this.terrainTextures = new Map(); // regionKey -> THREE.Texture
     this.textureLoader = new THREE.TextureLoader();
+    this.ddsLoader = new DDSLoader();
   }
 
   async load(onProgress) {
@@ -154,13 +156,14 @@ export class TerrainSystem {
     if (texInfo?.color) {
       // Use pre-baked terrain texture
       const texPath = `${this.dataPath}/terrain-textures/${encodeURIComponent(texInfo.color)}`;
-      const texture = this.textureLoader.load(texPath);
+      const loader = /\.dds$/i.test(texInfo.color) ? this.ddsLoader : this.textureLoader;
+      const texture = loader.load(texPath);
       texture.wrapS = THREE.ClampToEdgeWrapping;
       texture.wrapT = THREE.ClampToEdgeWrapping;
       texture.minFilter = THREE.LinearMipmapLinearFilter;
       texture.magFilter = THREE.LinearFilter;
       texture.colorSpace = THREE.SRGBColorSpace;
-      texture.generateMipmaps = true;
+      texture.generateMipmaps = !texture.isCompressedTexture;
 
       const mat = new THREE.MeshStandardMaterial({
         map: texture,

@@ -12,8 +12,6 @@ This is the single internal instruction file for the repository.
 - For each major point, include Answer, What was done, and What to test when applicable.
 - Prefer structured tables over long paragraphs when reporting multiple findings, hypotheses, or fixes.
 - Keep final reports easy to scan and do not collapse distinct user questions into one blended explanation.
-- When reading EXPERIENCES.md or any dated historical notes, treat them as prior findings, not current truth. Verify relevant claims against the current on-disk code, docs, and runtime before relying on them.
-- If a historical note no longer matches the current repo state, follow the current verified behavior and call out the stale note explicitly instead of repeating it as fact.
 - Use the remaining sections in this file and the linked repository docs for product facts and domain-specific rules.
 
 ## 1. Current Product State

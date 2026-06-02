@@ -12,6 +12,8 @@
 import { test, expect } from '@playwright/test';
 import zlib from 'node:zlib';
 
+const TARGET_SOURCE_PATH = 'data/source/other/HD特效/技能/Pss/发招/T_天策龙牙.pss';
+
 // Tiny inline PNG decoder — extracts the raw RGBA pixel buffer from a
 // PNG screenshot Playwright returned. Avoids adding a dependency.
 function decodePngRGBA(buf) {
@@ -89,12 +91,28 @@ function decodePngRGBA(buf) {
 function summarisePixels({ width, height, rgba }) {
   const colors = new Set();
   let nonBg = 0;
+  let colorful = 0;
+  let bright = 0;
+  let maxChannel = 0;
+  let chromaSum = 0;
+  let satSum = 0;
   // Renderer.setClearColor(0x080c12) → R=8, G=12, B=18.
   const bgR = 0x08, bgG = 0x0c, bgB = 0x12;
   for (let i = 0; i < rgba.length; i += 4) {
     const r = rgba[i], g = rgba[i + 1], b = rgba[i + 2];
     colors.add((r << 16) | (g << 8) | b);
-    if (Math.abs(r - bgR) > 6 || Math.abs(g - bgG) > 6 || Math.abs(b - bgB) > 6) nonBg++;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const chroma = max - min;
+    const sat = max > 0 ? chroma / max : 0;
+    maxChannel = Math.max(maxChannel, max);
+    if (Math.abs(r - bgR) > 6 || Math.abs(g - bgG) > 6 || Math.abs(b - bgB) > 6) {
+      nonBg++;
+      chromaSum += chroma;
+      satSum += sat;
+    }
+    if (sat > 0.22 && max > 35) colorful++;
+    if (max > 150) bright++;
   }
   return {
     width, height,
@@ -102,7 +120,74 @@ function summarisePixels({ width, height, rgba }) {
     distinctColors: colors.size,
     nonBgPixels: nonBg,
     nonBgPct: +(100 * nonBg / (width * height)).toFixed(2),
+    colorfulPct: +(100 * colorful / (width * height)).toFixed(2),
+    brightPct: +(100 * bright / (width * height)).toFixed(2),
+    avgChromaNonBg: nonBg ? +(chromaSum / nonBg).toFixed(2) : 0,
+    avgSatNonBg: nonBg ? +(satSum / nonBg).toFixed(3) : 0,
+    maxChannel,
   };
+}
+
+async function summariseCanvasElement(page, sampleWidth = 400, sampleHeight = 240) {
+  return page.evaluate(({ sampleWidth, sampleHeight }) => {
+    const canvas = document.querySelector('#viewport-canvas');
+    if (!canvas) throw new Error('#viewport-canvas missing');
+    const sample = document.createElement('canvas');
+    sample.width = sampleWidth;
+    sample.height = sampleHeight;
+    const ctx = sample.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(canvas, 0, 0, sampleWidth, sampleHeight);
+    const rgba = ctx.getImageData(0, 0, sampleWidth, sampleHeight).data;
+    const colors = new Set();
+    let nonBg = 0;
+    let colorful = 0;
+    let bright = 0;
+    let maxChannel = 0;
+    let chromaSum = 0;
+    let satSum = 0;
+    let minX = sampleWidth;
+    let minY = sampleHeight;
+    let maxX = -1;
+    let maxY = -1;
+    const bgR = 0x08, bgG = 0x0c, bgB = 0x12;
+    for (let y = 0; y < sampleHeight; y++) {
+      for (let x = 0; x < sampleWidth; x++) {
+        const i = (y * sampleWidth + x) * 4;
+        const r = rgba[i], g = rgba[i + 1], b = rgba[i + 2];
+        colors.add((r << 16) | (g << 8) | b);
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const chroma = max - min;
+        const sat = max > 0 ? chroma / max : 0;
+        maxChannel = Math.max(maxChannel, max);
+        if (Math.abs(r - bgR) > 6 || Math.abs(g - bgG) > 6 || Math.abs(b - bgB) > 6) {
+          nonBg++;
+          chromaSum += chroma;
+          satSum += sat;
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x);
+          maxY = Math.max(maxY, y);
+        }
+        if (sat > 0.22 && max > 35) colorful++;
+        if (max > 150) bright++;
+      }
+    }
+    return {
+      width: sampleWidth,
+      height: sampleHeight,
+      pixels: sampleWidth * sampleHeight,
+      distinctColors: colors.size,
+      nonBgPixels: nonBg,
+      nonBgPct: +(100 * nonBg / (sampleWidth * sampleHeight)).toFixed(2),
+      colorfulPct: +(100 * colorful / (sampleWidth * sampleHeight)).toFixed(2),
+      brightPct: +(100 * bright / (sampleWidth * sampleHeight)).toFixed(2),
+      avgChromaNonBg: nonBg ? +(chromaSum / nonBg).toFixed(2) : 0,
+      avgSatNonBg: nonBg ? +(satSum / nonBg).toFixed(3) : 0,
+      maxChannel,
+      nonBgBounds: nonBg ? { minX, minY, maxX, maxY } : null,
+    };
+  }, { sampleWidth, sampleHeight });
 }
 
 test.describe('pss.html visual rendering', () => {
@@ -119,10 +204,14 @@ test.describe('pss.html visual rendering', () => {
 
     await page.goto('/pss.html', { waitUntil: 'domcontentloaded' });
 
-    // Wait for an auto-load to finish: the step log emits "scene ready".
-    await expect(
-      page.locator('#pss-log-panel .pss-log-row', { hasText: /scene ready/ }).first()
-    ).toBeVisible({ timeout: 30_000 });
+    await page.waitForFunction(() => {
+      const runtime = window.__pssRuntimeSnapshot && window.__pssRuntimeSnapshot();
+      const debug = window.__pssDebug && window.__pssDebug();
+      if (!runtime || !debug) return false;
+      const totalRuntime = runtime.counts.sprite + runtime.counts.mesh + runtime.counts.track;
+      const totalDebug = debug.counts.sprite + debug.counts.mesh + debug.counts.track;
+      return totalRuntime > 0 && totalDebug > 0 && debug.isRendering === true;
+    }, { timeout: 30_000 });
 
     // Give the render loop a few frames so the canvas has content.
     await page.waitForTimeout(500);
@@ -157,6 +246,213 @@ test.describe('pss.html visual rendering', () => {
       `canvas appears blank — only ${summary.distinctColors} distinct color(s)`).toBeGreaterThan(50);
     expect(summary.nonBgPct,
       `<1% of pixels differ from the clear color`).toBeGreaterThan(1);
+
+    expect(consoleErrors, consoleErrors.join('\n')).toEqual([]);
+  });
+
+  test('narrow layout keeps canvas visible and seek renders immediately', async ({ page }, testInfo) => {
+    const consoleErrors = [];
+    page.on('pageerror', (err) => consoleErrors.push(`pageerror: ${err.message}`));
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') consoleErrors.push(`console.error: ${msg.text()}`);
+    });
+
+    await page.setViewportSize({ width: 360, height: 700 });
+    await page.goto(`/pss.html?pss=${encodeURIComponent(TARGET_SOURCE_PATH)}&v=${Date.now()}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction((expectedPath) => {
+      const snap = window.__pssRuntimeSnapshot && window.__pssRuntimeSnapshot();
+      return snap?.renderModel?.sourcePath === expectedPath && snap.counts.sprite > 0 && snap.counts.track > 0;
+    }, TARGET_SOURCE_PATH, { timeout: 30_000 });
+
+    const seekResult = await page.evaluate(() => window.__pssTimelineSeek(2500));
+    expect(seekResult?.rendered, '__pssTimelineSeek should render before returning').toBe(true);
+
+    const runtime = await page.evaluate(() => {
+      const rect = document.querySelector('#viewport-canvas')?.getBoundingClientRect();
+      const snap = window.__pssRuntimeSnapshot();
+      const inv = window.__pssEmitterInventory();
+      return {
+        canvas: rect ? { width: rect.width, height: rect.height } : null,
+        visibleSprites: snap.sprites.filter((s) => s.visible).length,
+        visibleTracks: snap.tracks.filter((t) => t.visible).length,
+        aliveSprites: inv.sprites.reduce((count, sprite) => count + sprite.aliveParticles, 0),
+        timeline: snap.timeline,
+      };
+    });
+    console.log('[pss-narrow-runtime]', JSON.stringify(runtime, null, 2));
+    await testInfo.attach('pss-narrow-runtime.json', {
+      body: JSON.stringify(runtime, null, 2),
+      contentType: 'application/json',
+    });
+
+    expect(runtime.canvas?.width, 'narrow canvas collapsed horizontally').toBeGreaterThan(100);
+    expect(runtime.canvas?.height, 'narrow canvas collapsed vertically').toBeGreaterThan(250);
+    expect(runtime.visibleSprites, 'seek did not make sprites visible immediately').toBeGreaterThan(0);
+    expect(runtime.visibleTracks, 'seek did not make track ribbons visible immediately').toBeGreaterThan(0);
+    expect(runtime.aliveSprites, 'seek produced no alive sprite particles').toBeGreaterThan(0);
+    expect(runtime.timeline.timelineMs).toBe(2500);
+
+    const png = await page.locator('#viewport-canvas').screenshot();
+    await testInfo.attach('narrow-viewport-canvas.png', { body: png, contentType: 'image/png' });
+    const summary = summarisePixels(decodePngRGBA(png));
+    console.log('[narrow-pixel-summary]', JSON.stringify(summary));
+    await testInfo.attach('narrow-pixel-summary.json', {
+      body: JSON.stringify(summary, null, 2),
+      contentType: 'application/json',
+    });
+
+    expect(summary.distinctColors,
+      `narrow canvas appears blank — only ${summary.distinctColors} distinct color(s)`).toBeGreaterThan(50);
+    expect(summary.nonBgPct,
+      `<1% of narrow canvas pixels differ from the clear color`).toBeGreaterThan(1);
+
+    expect(consoleErrors, consoleErrors.join('\n')).toEqual([]);
+  });
+
+  test('target PSS has renderer coverage and visible color energy', async ({ page }, testInfo) => {
+    test.setTimeout(120_000);
+    const consoleErrors = [];
+    page.on('pageerror', (err) => consoleErrors.push(`pageerror: ${err.message}`));
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') consoleErrors.push(`console.error: ${msg.text()}`);
+    });
+
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await page.goto(`/pss.html?pss=${encodeURIComponent(TARGET_SOURCE_PATH)}&v=${Date.now()}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction((expectedPath) => {
+      const snap = window.__pssRuntimeSnapshot && window.__pssRuntimeSnapshot();
+      return snap?.renderModel?.sourcePath === expectedPath && snap.counts.sprite > 0 && snap.counts.track > 0;
+    }, TARGET_SOURCE_PATH, { timeout: 90_000 });
+
+    await page.evaluate(() => {
+      const gridButton = document.querySelector('#btn-grid');
+      if (gridButton?.classList.contains('active')) gridButton.click();
+    });
+    const seekResult = await page.evaluate(() => window.__pssTimelineSeek(2500));
+    expect(seekResult?.rendered, '__pssTimelineSeek should render before returning').toBe(true);
+    await page.waitForTimeout(250);
+
+    const runtime = await page.evaluate(() => {
+      const snap = window.__pssRuntimeSnapshot();
+      const inv = window.__pssEmitterInventory();
+      const collapsedSprites = inv.sprites
+        .filter((sprite) => sprite.visible && sprite.aliveParticles > 0)
+        .filter((sprite) => !Array.isArray(sprite.worldBoxSize) || Math.max(...sprite.worldBoxSize) < 0.5)
+        .map((sprite) => ({
+          emitterDataIndex: sprite.emitterDataIndex,
+          worldBoxSize: sprite.worldBoxSize,
+          authoredSizeCurve: sprite.authoredSizeCurve,
+          authoredSizeKeyframes: Array.isArray(sprite.authoredSizeKeyframes) ? sprite.authoredSizeKeyframes.length : 0,
+          spriteWorldScale: sprite.spriteWorldScale,
+          spriteWorldScaleSource: sprite.spriteWorldScaleSource,
+          lastScaleMultiplierRange: sprite.lastScaleMultiplierRange,
+        }));
+      return {
+        counts: snap.counts,
+        renderModel: snap.renderModel,
+        camera: window.__pssDebug?.()?.camera || null,
+        orbit: window.__pssDebug?.()?.orbit || null,
+        aliveSprites: inv.sprites.reduce((sum, sprite) => sum + sprite.aliveParticles, 0),
+        collapsedSprites,
+        spriteScaleSources: [...new Set(inv.sprites.map((sprite) => sprite.spriteWorldScaleSource).filter(Boolean))],
+        partialBadRows: [...document.querySelectorAll('#trace-body .trace-row')]
+          .filter((node) => node.innerText.includes('renderer-partial')).length,
+      };
+    });
+    console.log('[pss-target-runtime]', JSON.stringify(runtime, null, 2));
+    await testInfo.attach('pss-target-runtime.json', {
+      body: JSON.stringify(runtime, null, 2),
+      contentType: 'application/json',
+    });
+
+    expect(runtime.renderModel?.renderCounts?.skipped, 'parsed PSS emitters are still skipped').toBe(0);
+    expect(runtime.renderModel?.renderCounts?.proceduralSprite, 'procedural type-2 launchers did not instantiate').toBeGreaterThan(0);
+    expect(runtime.orbit?.dist ?? 9999, 'camera did not refit close enough after seek').toBeLessThan(140);
+    expect(runtime.aliveSprites, 'no live sprite particles at target frame').toBeGreaterThan(0);
+    expect(runtime.collapsedSprites, `visible sprites collapsed: ${JSON.stringify(runtime.collapsedSprites)}`).toEqual([]);
+    expect(runtime.spriteScaleSources, 'sprite scene-unit scale was not exposed').toContain('pss-billboard-scene-unit');
+    expect(runtime.partialBadRows, 'partial procedural rows should remain visible in Bad').toBeGreaterThan(0);
+
+    const png = await page.locator('#viewport-canvas').screenshot();
+    await testInfo.attach('target-viewport-canvas.png', { body: png, contentType: 'image/png' });
+    const summary = summarisePixels(decodePngRGBA(png));
+    const canvasOnlySummary = await summariseCanvasElement(page);
+    console.log('[target-pixel-summary]', JSON.stringify(summary));
+    console.log('[target-canvas-only-summary]', JSON.stringify(canvasOnlySummary));
+    await testInfo.attach('target-pixel-summary.json', {
+      body: JSON.stringify(summary, null, 2),
+      contentType: 'application/json',
+    });
+    await testInfo.attach('target-canvas-only-summary.json', {
+      body: JSON.stringify(canvasOnlySummary, null, 2),
+      contentType: 'application/json',
+    });
+
+    expect(canvasOnlySummary.nonBgPct, 'effect is barely visible against the clear color').toBeGreaterThan(2);
+    expect(canvasOnlySummary.colorfulPct, 'effect has too little saturated/colorful output').toBeGreaterThan(1.2);
+    expect(canvasOnlySummary.brightPct, 'effect has almost no bright pixels').toBeGreaterThan(0.03);
+    expect(canvasOnlySummary.avgChromaNonBg, 'non-background pixels are too gray').toBeGreaterThan(8);
+
+    expect(consoleErrors, consoleErrors.join('\n')).toEqual([]);
+  });
+
+  test('direct target URL opens paused on a visible preview frame', async ({ page }, testInfo) => {
+    test.setTimeout(120_000);
+    const consoleErrors = [];
+    page.on('pageerror', (err) => consoleErrors.push(`pageerror: ${err.message}`));
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') consoleErrors.push(`console.error: ${msg.text()}`);
+    });
+
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await page.goto(`/pss.html?pss=${encodeURIComponent(TARGET_SOURCE_PATH)}&v=${Date.now()}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction((expectedPath) => {
+      const snap = window.__pssRuntimeSnapshot && window.__pssRuntimeSnapshot();
+      return snap?.renderModel?.sourcePath === expectedPath
+        && snap.counts.sprite > 0
+        && snap.counts.track > 0
+        && snap.timeline?.playing === false
+        && snap.timeline?.timelineMs > 0;
+    }, TARGET_SOURCE_PATH, { timeout: 90_000 });
+    await page.waitForTimeout(250);
+
+    const runtime = await page.evaluate(() => {
+      const snap = window.__pssRuntimeSnapshot();
+      const inv = window.__pssEmitterInventory();
+      const debug = window.__pssDebug?.();
+      return {
+        statusText: document.querySelector('#status-renderer')?.textContent || '',
+        timeline: snap.timeline,
+        counts: snap.counts,
+        renderModel: snap.renderModel,
+        orbit: debug?.orbit || null,
+        aliveSprites: inv.sprites.reduce((sum, sprite) => sum + sprite.aliveParticles, 0),
+        badRows: [...document.querySelectorAll('#trace-body .trace-row')].length,
+        activeListPath: document.querySelector('#pss-list li.active')?.dataset.sourcePath || null,
+      };
+    });
+    const canvasOnlySummary = await summariseCanvasElement(page);
+    console.log('[direct-url-runtime]', JSON.stringify(runtime, null, 2));
+    console.log('[direct-url-canvas-only-summary]', JSON.stringify(canvasOnlySummary));
+    await testInfo.attach('direct-url-runtime.json', {
+      body: JSON.stringify(runtime, null, 2),
+      contentType: 'application/json',
+    });
+    await testInfo.attach('direct-url-canvas-only-summary.json', {
+      body: JSON.stringify(canvasOnlySummary, null, 2),
+      contentType: 'application/json',
+    });
+
+    expect(runtime.timeline.playing, 'direct URL should hold the preview frame instead of autoplaying past it').toBe(false);
+    expect(runtime.timeline.timelineMs, 'direct URL did not seek to the preview frame').toBeGreaterThan(1000);
+    expect(runtime.timeline.timelineMs, 'direct URL preview frame drifted past the useful frame').toBeLessThan(3000);
+    expect(runtime.renderModel?.renderCounts?.skipped, 'direct URL load still skipped parsed emitters').toBe(0);
+    expect(runtime.aliveSprites, 'direct URL preview has no alive sprite particles').toBeGreaterThan(0);
+    expect(runtime.badRows, 'direct URL did not populate Bad trace rows').toBeGreaterThan(0);
+    expect(runtime.activeListPath, 'direct URL did not activate the matching list item').toBe(TARGET_SOURCE_PATH);
+    expect(canvasOnlySummary.nonBgPct, 'direct URL preview is barely visible in the raw canvas').toBeGreaterThan(2);
+    expect(canvasOnlySummary.colorfulPct, 'direct URL preview has too little saturated/colorful raw canvas output').toBeGreaterThan(1.2);
+    expect(canvasOnlySummary.brightPct, 'direct URL preview has almost no bright raw canvas pixels').toBeGreaterThan(0.03);
 
     expect(consoleErrors, consoleErrors.join('\n')).toEqual([]);
   });

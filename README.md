@@ -9,6 +9,7 @@ This repository contains the current web tooling for inspecting, editing, and va
 - `public/export-reader.html` — Main export package validation page
 - `public/actor-viewer.html` — MovieEditor actor export viewer for skeleton and animation validation
 - `public/actor-animation-player.html` — Actor animation playback and validation page
+- `public/client-monitor-animation-player.html` — Client monitor animation playback page
 - `public/mesh-inspector.html` — Regional mesh approval and denial workflow
 - `public/pss.html` — PSS particle inspection page
 - `public/collision-test-mode.html` — Single-mesh sidecar collision walk test
@@ -16,7 +17,7 @@ This repository contains the current web tooling for inspecting, editing, and va
 - `public/ability-tani-sound.html` — Final TANI-SOUND review and export page
 - `public/wwise-soundbanks.html` — Wwise soundbank browser
 - `public/cdn-resource-browser.html` — CDN resource browser
-- `public/client-monitor.html` — Live client capture monitor
+- `public/client-monitor.html` — Live client capture monitor with integrated PSS client flow tracing
 
 ## Quick Start
 
@@ -48,6 +49,8 @@ node server.js
 ## Runtime Notes
 
 - `npm run local` auto-generates browser runtime libs into `public/lib` from `node_modules`.
+- `npm run local` also reclaims port `3015`: if another process is listening there, it prints the PID, kills it, and starts a fresh server on `3015`.
+- On Windows, `npm run local` starts non-elevated by default. Use `npm run local -- --elevate` or `JX3_LOCAL_ELEVATE=1` only when you explicitly need an elevated server.
 - `public/lib` is generated output and should remain untracked.
 - Large extracted assets such as `public/map-data/meshes`, `public/map-data/textures`, and `source-meshes` are not part of the lightweight runtime setup.
 - The UI shell can start without those large assets, but asset-driven pages need local map data or exported packages to do useful work.
@@ -86,6 +89,7 @@ Pages:
 - `/export-reader.html`
 - `/actor-viewer.html`
 - `/actor-animation-player.html`
+- `/client-monitor-animation-player.html`
 - `/mesh-inspector.html`
 - `/pss.html`
 - `/collision-test-mode.html`
@@ -115,6 +119,7 @@ jx3-web-map-viewer/
 │   ├── export-reader.html
 │   ├── actor-viewer.html
 │   ├── actor-animation-player.html
+│   ├── client-monitor-animation-player.html
 │   ├── mesh-inspector.html
 │   ├── pss.html
 │   ├── collision-test-mode.html
