@@ -341,8 +341,26 @@ def parse_mesh_file(filepath):
     norm_compressed = norm_bpv < 5.0 if off_normal else False
     norm_qtangent = norm_bpv >= 6.5 and norm_bpv < 9.0 if off_normal else False
 
-    # UV: compressed = ~6 bpv + 12B header; uncompressed = 12 bpv + 4B sentinel
+    # UV: compressed ≈ 6 bpv + 12B header; uncompressed = 12 bpv + 4B sentinel
+    # SPECIAL: 12 bpv can also be 6×SNorm16 (3 UV pairs), detect by checking if
+    # raw int16 values fall in [-1,1] range.
     uv1_compressed = uv1_bpv < 8.0 if off_uv1 else False
+    uv1_12bpv_snorm = False
+    if off_uv1 and not uv1_compressed and abs(uv1_bpv - 12.0) < 1.0 and vertex_count > 0:
+        # Sample first 32 vertices: if all int16 values are in [-32767,32767] and
+        # most are in a reasonable UV range, it's likely SNorm16 disguised as float32.
+        sample_count = min(32, vertex_count)
+        snorm_values = 0
+        total_values = sample_count * 6  # 6 shorts per vertex
+        for vi in range(sample_count):
+            o = off_uv1 + vi * 12
+            for si in range(6):
+                val = struct.unpack_from('<h', data, o + si * 2)[0]
+                if -32767 <= val <= 32767:
+                    snorm_values += 1
+        if snorm_values == total_values:
+            uv1_compressed = True
+            uv1_12bpv_snorm = True
 
     # Tangent: compressed = 4 bpv (UNorm8×4); uncompressed = 16 bpv (f32×4)
     tan_compressed = tan_bpv < 8.0 if off_tangent else False
@@ -485,27 +503,47 @@ def parse_mesh_file(filepath):
     # === UV1 ===
     if off_uv1:
         if uv1_compressed:
-            u_scale, v_scale, w_scale = struct.unpack_from('<3f', data, off_uv1)
-            uv_data_start = off_uv1 + 12
-            uv_list = []
-            # ADD mode: when scale values are near 1.0, they are actually UV
-            # offsets, not multiplicative scales. This is used for meshes that
-            # need to map to a small sub-region of the texture atlas.
-            # MULTIPLY mode: traditional scale factor for tiled textures.
-            is_add_mode = (abs(u_scale - 1.0) < 0.05 and abs(v_scale - 1.0) < 0.05)
-            for vi in range(vertex_count):
-                o = uv_data_start + vi * 6
-                u_raw, v_raw, w_raw = struct.unpack_from('<3h', data, o)
-                if is_add_mode:
-                    uv_list.append((
-                        (u_raw / 32767.0) + u_scale,
-                        (v_raw / 32767.0) + v_scale,
-                    ))
-                else:
-                    uv_list.append((
-                        (u_raw / 32767.0) * u_scale,
-                        (v_raw / 32767.0) * v_scale,
-                    ))
+            if uv1_12bpv_snorm:
+                # 12 bytes/vertex = 6×SNorm16 (3 UV pairs). No scale header.
+                # Use the first UV pair (u1,v1) at offset 0,2 of each vertex.
+                uv_list = []
+                for vi in range(vertex_count):
+                    o = off_uv1 + vi * 12
+                    u_raw = struct.unpack_from('<h', data, o)[0]
+                    v_raw = struct.unpack_from('<h', data, o + 2)[0]
+                    uv_list.append((u_raw / 32767.0, v_raw / 32767.0))
+                uvs = uv_list
+            else:
+                u_scale, v_scale, w_scale = struct.unpack_from('<3f', data, off_uv1)
+                uv_data_start = off_uv1 + 12
+                uv_list = []
+                # ADD mode: when scale values are near 1.0, they are actually UV
+                # offsets, not multiplicative scales.
+                is_add_mode = (abs(u_scale - 1.0) < 0.05 and abs(v_scale - 1.0) < 0.05)
+                # W_SCALE divisor: when w_scale != 0, it divides the inflated scale
+                # values used by compressed meshes to match uncompressed equivalents.
+                # The constant 4.364 is used across all compressed building meshes.
+                has_w_div = (abs(w_scale) > 0.001)
+                for vi in range(vertex_count):
+                    o = uv_data_start + vi * 6
+                    u_raw, v_raw, w_raw = struct.unpack_from('<3h', data, o)
+                    u_norm = u_raw / 32767.0
+                    v_norm = v_raw / 32767.0
+                    if has_w_div:
+                        uv_list.append((
+                            u_norm * u_scale / w_scale,
+                            v_norm * v_scale / w_scale,
+                        ))
+                    elif is_add_mode:
+                        uv_list.append((
+                            u_norm + u_scale,
+                            v_norm + v_scale,
+                        ))
+                    else:
+                        uv_list.append((
+                            u_norm * u_scale,
+                            v_norm * v_scale,
+                        ))
             uvs = uv_list
         else:
             uv_list = []
