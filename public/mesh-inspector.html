@@ -65,6 +65,10 @@
   #sidebar { width: 250px; min-width: 250px; height: calc(100vh - var(--global-header-height)); background: rgba(0,0,0,0.7); padding: 10px; display: flex; flex-direction: column; z-index: 10; }
   #sidebar h3 { margin: 0 0 8px; }
 
+  /* Map selector */
+  #map-select { width: 100%; padding: 4px 6px; margin-bottom: 8px; background: #333; color: #eee; border: 1px solid #555; border-radius: 4px; font-family: monospace; font-size: 12px; cursor: pointer; }
+  #map-select:hover { border-color: #58a6ff; }
+
   /* Tab bar */
   #tab-bar { display: flex; gap: 3px; margin-bottom: 6px; }
   .tab-btn { flex: 1; padding: 5px 2px; font-size: 11px; cursor: pointer; background: #333; border: 1px solid #555; color: #aaa; border-radius: 3px; font-family: monospace; }
@@ -150,6 +154,10 @@
 
 <div id="sidebar">
   <h3>Regional Mesh Resources</h3>
+  <select id="map-select">
+    <option value="map-data">龙门寻宝 (map-data)</option>
+    <option value="map-data-bailong">白龙绝境 (map-data-bailong)</option>
+  </select>
   <div id="tab-bar">
     <button class="tab-btn" data-tab="undecided">Undecided&nbsp;(<span id="count-undecided">0</span>)</button>
     <button class="tab-btn t-approved active" data-tab="approved">&#10003;&nbsp;<span id="count-approved">0</span></button>
@@ -295,6 +303,18 @@ function encodePathSegments(pathLike) {
 
 if (!hasExplicitDataPath) {
   dataPath = normalizeDataPath(await resolvePreferredDefaultPath());
+}
+
+// Map selector
+const mapSelect = document.getElementById('map-select');
+if (mapSelect) {
+  mapSelect.value = dataPath;
+  mapSelect.addEventListener('change', () => {
+    const newPath = mapSelect.value;
+    const url = new URL(window.location);
+    url.searchParams.set('dataPath', newPath);
+    window.location.href = url.toString();
+  });
 }
 
 async function loadMeshNames() {
