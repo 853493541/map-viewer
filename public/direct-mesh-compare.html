@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Direct Mesh vs GLB Comparison</title>
+<link rel="icon" href="data:,">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #1a1a2e; color: #ccc; font-family: monospace; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
+
+  #topbar { display: flex; padding: 8px 12px; background: rgba(0,0,0,0.8); gap: 12px; align-items: center; border-bottom: 1px solid #333; flex-shrink: 0; }
+  #topbar h2 { color: #8cf; font-size: 15px; margin-right: 8px; flex-shrink: 0; }
+  #topbar button { padding: 5px 12px; cursor: pointer; background: #335; border: 1px solid #555; color: #ddd; border-radius: 3px; font-family: monospace; font-size: 12px; }
+  #topbar button:hover { background: #446; }
+  #topbar button:disabled { opacity: 0.4; cursor: default; }
+  #topbar select { background: #222; color: #ddd; border: 1px solid #555; border-radius: 3px; padding: 4px 8px; font-size: 12px; font-family: monospace; max-width: 280px; }
+  #topbar label { font-size: 11px; color: #888; display: flex; align-items: center; gap: 4px; }
+  #topbar input[type=checkbox] { margin-right: 2px; }
+  #page-info { color: #aaa; font-size: 12px; min-width: 60px; }
+
+  #main { display: flex; flex: 1; overflow: hidden; }
+  .side { flex: 1; position: relative; border: 1px solid #333; }
+  .side-left { border-right: 2px solid #555; }
+  .side canvas { width: 100%; height: 100%; display: block; }
+  .side-label { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.8); padding: 4px 10px; border-radius: 4px; font-size: 13px; font-weight: bold; }
+  .side-label.left { color: #f88; }
+  .side-label.right { color: #8f8; }
+  .side-stats { position: absolute; bottom: 8px; left: 8px; right: 8px; background: rgba(0,0,0,0.8); padding: 6px 10px; border-radius: 4px; font-size: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .side-stats span { white-space: nowrap; }
+  .stat-dim { color: #888; }
+  .stat-glow { color: #ff0; }
+
+  #footer { display: flex; padding: 6px 12px; background: rgba(0,0,0,0.8); border-top: 1px solid #333; gap: 16px; font-size: 11px; align-items: center; flex-shrink: 0; }
+  #footer .savings { color: #4e4; font-weight: bold; }
+</style>
+</head>
+<body>
+<div id="topbar">
+  <h2>Mesh vs GLB</h2>
+  <button id="btn-prev" disabled>&laquo; Prev</button>
+  <span id="page-info">0 / 0</span>
+  <button id="btn-next" disabled>Next &raquo;</button>
+  <select id="mesh-select"><option>-- Loading --</option></select>
+  <label><input type="checkbox" id="chkSync" checked> Sync cameras</label>
+  <label><input type="checkbox" id="chkTextures" checked> Textures</label>
+  <label><input type="checkbox" id="chkWireframe"> Wireframe</label>
+  <label><input type="checkbox" id="chkNormals" checked> Smooth</label>
+</div>
+<div id="main">
+  <div class="side side-left" id="side-glb">
+    <div class="side-label left">GLB (converted)</div>
+    <div class="side-stats" id="stats-glb">Loading...</div>
+  </div>
+  <div class="side side-right" id="side-mesh">
+    <div class="side-label right">.mesh (direct)</div>
+    <div class="side-stats" id="stats-mesh">Loading...</div>
+  </div>
+</div>
+<div id="footer">
+  <span>Total savings using .mesh: <span class="savings" id="total-savings">--</span></span>
+  <span id="mesh-list-size">587 meshes: --</span>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "./lib/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from './lib/GLTFLoader.js';
+import { KSword3DMeshLoader } from './js/KSword3DMeshLoader.js';
+
+const meshLoader = new KSword3DMeshLoader();
+const gltfLoader = new GLTFLoader();
+const textureLoader = new THREE.TextureLoader();
+const textureCache = new Map();
+let textureMap = {};
+
+function loadTexCached(filename, linear) {
+  if (!filename) return null;
+  const key = filename + (linear ? '_lin' : '');
+  if (textureCache.has(key)) return textureCache.get(key);
+  const tex = textureLoader.load('map-data/textures/' + encodeURIComponent(filename));
+  tex.colorSpace = linear ? THREE.LinearSRGBColorSpace : THREE.SRGBColorSpace;
+  tex.flipY = false;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  textureCache.set(key, tex);
+  return tex;
+}
+
+function loadMRECached(filename) {
+  if (!filename) return null;
+  const key = filename + '_mre';
+  if (textureCache.has(key)) return textureCache.get(key);
+  const tex = textureLoader.load('map-data/textures/' + encodeURIComponent(filename), (t) => {
+    const img = t.image;
+    const canv = document.createElement('canvas');
+    canv.width = img.width; canv.height = img.height;
+    const ctx = canv.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const d = ctx.getImageData(0, 0, canv.width, canv.height);
+    for (let i = 0; i < d.data.length; i += 4) {
+      const r = d.data[i]; d.data[i] = d.data[i + 2]; d.data[i + 2] = r;
+    }
+    ctx.putImageData(d, 0, 0);
+    t.image = canv; t.needsUpdate = true;
+  });
+  tex.colorSpace = THREE.LinearSRGBColorSpace;
+  tex.flipY = false;
+  textureCache.set(key, tex);
+  return tex;
+}
+
+function buildMaterial(texInfo) {
+  const showTex = document.getElementById('chkTextures').checked;
+  const wireframe = document.getElementById('chkWireframe').checked;
+  const smooth = document.getElementById('chkNormals').checked;
+
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xffffff, roughness: 0.7, metalness: 0.05,
+    side: THREE.DoubleSide,
+    wireframe,
+    flatShading: !smooth,
+  });
+
+  if (showTex && texInfo && texInfo.albedo) {
+    mat.map = loadTexCached(texInfo.albedo, false);
+    mat.color.set(0xffffff);
+  }
+  if (showTex && texInfo && texInfo.mre) {
+    mat.roughnessMap = loadMRECached(texInfo.mre);
+    mat.metalnessMap = mat.roughnessMap;
+    mat.roughness = 1; mat.metalness = 1;
+  }
+  if (showTex && texInfo && texInfo.normal) {
+    mat.normalMap = loadTexCached(texInfo.normal, true);
+    mat.normalScale = new THREE.Vector2(1, -1);
+  }
+  return mat;
+}
+
+// ── Scene setup (shared for both sides) ──
+function makeSide(containerId) {
+  const container = document.getElementById(containerId);
+  const cvs = document.createElement('canvas');
+  container.appendChild(cvs);
+
+  const renderer = new THREE.WebGLRenderer({ canvas: cvs, antialias: true });
+  renderer.setClearColor(0x1a1a2e);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+  const scene = new THREE.Scene();
+  scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+  const dl = new THREE.DirectionalLight(0xffffff, 1.0);
+  dl.position.set(200, 300, 200);
+  scene.add(dl);
+  scene.add(new THREE.HemisphereLight(0x88aacc, 0x8B7355, 0.4));
+
+  const cam = new THREE.PerspectiveCamera(50, 1, 0.1, 100000);
+  let oTheta = 0.3, oPhi = 0.8, oRad = 500, oTgt = new THREE.Vector3();
+  let dragging = false, dpx = 0, dpy = 0;
+
+  function updCam() {
+    cam.position.set(
+      oTgt.x + oRad * Math.sin(oPhi) * Math.cos(oTheta),
+      oTgt.y + oRad * Math.cos(oPhi),
+      oTgt.z + oRad * Math.sin(oPhi) * Math.sin(oTheta)
+    );
+    cam.lookAt(oTgt);
+  }
+
+  cvs.addEventListener('mousedown', (e) => { dragging = true; dpx = e.clientX; dpy = e.clientY; });
+  window.addEventListener('mouseup', () => dragging = false);
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    oTheta += (e.clientX - dpx) * 0.01;
+    oPhi = Math.max(0.1, Math.min(Math.PI - 0.1, oPhi - (e.clientY - dpy) * 0.01));
+    dpx = e.clientX; dpy = e.clientY;
+    updCam();
+  });
+  cvs.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    oRad *= e.deltaY > 0 ? 1.15 : 0.87;
+    oRad = Math.max(1, Math.min(50000, oRad));
+    updCam();
+  }, { passive: false });
+
+  return {
+    container, cvs, renderer, scene, cam,
+    meshGroup: null,
+    syncFrom(other) {
+      oTheta = other.oTheta; oPhi = other.oPhi; oRad = other.oRad;
+      oTgt.copy(other.oTgt); updCam();
+    },
+    setOrbit(t, p, r, tgt) { oTheta = t; oPhi = p; oRad = r; oTgt.copy(tgt); updCam(); },
+    getOrbit() { return { oTheta, oPhi, oRad, oTgt: oTgt.clone() }; },
+  };
+}
+
+const sideGLB = makeSide('side-glb');
+const sideMesh = makeSide('side-mesh');
+
+// ── Mesh list ──
+let meshNames = [];
+let currentIdx = 0;
+let compareGLBSet = new Set();
+
+async function loadMeshList() {
+  // Get source meshes
+  const resp = await fetch('/api/source-meshes-list');
+  const files = await resp.json();
+  const allNames = files.map(f => f.replace(/\\/g, '/').split('/').pop().replace(/\.mesh$/i, ''));
+  
+  // Get available GLBs for comparison
+  const glbResp = await fetch('/api/compare-glbs-list');
+  if (glbResp.ok) {
+    const glbFiles = await glbResp.json();
+    glbFiles.forEach(f => compareGLBSet.add(f.replace(/\.glb$/i, '')));
+  }
+  
+  // Only show meshes that have matching GLBs
+  meshNames = allNames.filter(n => compareGLBSet.has(n))
+    .sort((a,b) => a.localeCompare(b, undefined, {sensitivity:'base'}));
+
+  document.getElementById('page-info').textContent = meshNames.length > 0 ? `1 / ${meshNames.length}` : '0 / 0';
+  updateNavButtons();
+}
+
+function updateNavButtons() {
+  document.getElementById('btn-prev').disabled = currentIdx <= 0;
+  document.getElementById('btn-next').disabled = currentIdx >= meshNames.length - 1;
+  document.getElementById('page-info').textContent = `${currentIdx + 1} / ${meshNames.length}`;
+}
+
+function calcStats(group) {
+  let verts = 0, tris = 0;
+  group.traverse(ch => {
+    if (ch.isMesh && ch.geometry) {
+      const g = ch.geometry;
+      verts += g.getAttribute('position').count;
+      tris += g.index ? g.index.count / 3 : g.getAttribute('position').count / 3;
+    }
+  });
+  return { verts, tris };
+}
+
+const texInfoCache = new Map();
+function getTexInfo(meshName) {
+  if (texInfoCache.has(meshName)) return texInfoCache.get(meshName);
+  if (!textureMap) return null;
+  const glbKey = meshName + '.glb';
+  const info = textureMap[glbKey] || null;
+  texInfoCache.set(meshName, info);
+  return info;
+}
+
+async function loadMeshGLB(meshName, side) {
+  const url = `compare-glbs/${encodeURIComponent(meshName + '.glb')}`;
+  try {
+    const gltf = await gltfLoader.loadAsync(url);
+    const texInfo = getTexInfo(meshName);
+    gltf.scene.traverse(ch => {
+      if (ch.isMesh) ch.material = buildMaterial(texInfo);
+    });
+    return { group: gltf.scene, url };
+  } catch {
+    return { group: new THREE.Group(), url: 'N/A' };
+  }
+}
+
+async function loadMeshDirect(meshName, side) {
+  const url = `source-meshes/${encodeURIComponent(meshName + '.mesh')}`;
+  const buf = await fetch(url).then(r => r.arrayBuffer());
+  const result = meshLoader.parse(buf);
+  const group = new THREE.Group();
+  const texInfo = getTexInfo(meshName);
+  for (const gd of result.geometries) {
+    const mesh = new THREE.Mesh(gd.geometry, buildMaterial(texInfo));
+    group.add(mesh);
+  }
+  return { group, url, meshData: result };
+}
+
+async function loadCurrent() {
+  if (meshNames.length === 0) return;
+  const name = meshNames[currentIdx];
+  document.getElementById('mesh-select').value = name;
+  updateNavButtons();
+
+  // Clear old
+  [sideGLB, sideMesh].forEach(s => {
+    if (s.meshGroup) { s.scene.remove(s.meshGroup); s.meshGroup = null; }
+  });
+
+  // Load direct .mesh first (faster)
+  const directResult = await loadMeshDirect(name, sideMesh);
+  sideMesh.meshGroup = directResult.group;
+  sideMesh.scene.add(directResult.group);
+  const meshStats = calcStats(directResult.group);
+  const meshBox = new THREE.Box3().setFromObject(directResult.group);
+  const meshCenter = new THREE.Vector3();
+  meshBox.getCenter(meshCenter);
+  const meshSize = meshBox.getSize(new THREE.Vector3()).length();
+
+  const glbFileName = name + '_hd.glb';
+  const mb = directResult.meshData ? ((directResult.url.length > 0 ? 'direct' : '--') ) : '--';
+
+  document.getElementById('stats-mesh').innerHTML = `
+    <span>V:${meshStats.verts}</span><span>F:${Math.round(meshStats.tris)}</span>
+    <span .mesh</span>
+    <span class="stat-dim">MH: ${Math.round(meshSize)}u</span>
+  `;
+
+  // Try GLB
+  let glbGroup;
+  try {
+    const glbResult = await loadMeshGLB(name, sideGLB);
+    glbGroup = glbResult.group;
+  } catch {
+    glbGroup = new THREE.Group();
+  }
+
+  sideGLB.meshGroup = glbGroup;
+  sideGLB.scene.add(glbGroup);
+  const glbStats = calcStats(glbGroup);
+  const glbBox = new THREE.Box3().setFromObject(glbGroup);
+  const glbCenter = new THREE.Vector3();
+  glbBox.getCenter(glbCenter);
+  const glbSize = glbBox.getSize(new THREE.Vector3()).length();
+
+  document.getElementById('stats-glb').innerHTML = `
+    <span>V:${glbStats.verts || '-'}</span><span>F:${Math.round(glbStats.tris) || '-'}</span>
+    <span>_hd.glb</span>
+    <span class="stat-dim">GLB: ${Math.round(glbSize)}u</span>
+  `;
+
+  // Set orbit to show full mesh
+  sideMesh.setOrbit(0.3, 0.8, Math.max(meshSize, glbSize) * 1.5, meshCenter);
+  if (document.getElementById('chkSync').checked) {
+    sideGLB.syncFrom(sideMesh);
+  } else if (glbGroup.children.length > 0) {
+    sideGLB.setOrbit(0.3, 0.8, Math.max(meshSize, glbSize) * 1.5, glbCenter);
+  }
+
+  // Calculate savings
+  const meshEstimate = 185; // KB avg from our analysis
+  const glbEstimate = 301; // KB avg
+  const totalMeshMB = (587 * meshEstimate / 1024).toFixed(1);
+  const totalGlbMB = (587 * glbEstimate / 1024).toFixed(1);
+  const savingsPct = Math.round((1 - meshEstimate/glbEstimate) * 100);
+  document.getElementById('total-savings').textContent = `${savingsPct}%`;
+  document.getElementById('mesh-list-size').textContent = `587 meshes: ~${totalMeshMB}MB vs ~${totalGlbMB}MB GLB`;
+}
+
+// ── Events ──
+document.getElementById('btn-prev').addEventListener('click', () => { if (currentIdx > 0) { currentIdx--; loadCurrent(); } });
+document.getElementById('btn-next').addEventListener('click', () => { if (currentIdx < meshNames.length - 1) { currentIdx++; loadCurrent(); } });
+document.getElementById('mesh-select').addEventListener('change', (e) => {
+  const idx = meshNames.indexOf(e.target.value);
+  if (idx >= 0) { currentIdx = idx; loadCurrent(); }
+});
+document.getElementById('chkWireframe').addEventListener('change', loadCurrent);
+document.getElementById('chkTextures').addEventListener('change', loadCurrent);
+document.getElementById('chkNormals').addEventListener('change', loadCurrent);
+
+// ── Animation ──
+function animate() {
+  requestAnimationFrame(animate);
+  [sideGLB, sideMesh].forEach(s => {
+    const w = s.container.clientWidth;
+    const h = s.container.clientHeight;
+    if (w > 0 && h > 0) {
+      s.renderer.setSize(w, h);
+      s.camera.aspect = w / Math.max(1, h);
+      s.camera.updateProjectionMatrix();
+      s.renderer.render(s.scene, s.camera);
+    }
+  });
+}
+
+// ── Init ──
+(async () => {
+  try {
+    textureMap = await (await fetch('map-data/texture-map.json')).json();
+  } catch { textureMap = {}; }
+  await loadMeshList();
+  const sel = document.getElementById('mesh-select');
+  sel.innerHTML = meshNames.map((n, i) => `<option value="${n}">${n}</option>`).join('');
+  loadCurrent();
+})();
+animate();
+</script>
+</body>
+</html>

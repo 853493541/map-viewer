@@ -923,6 +923,19 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  // API: list compare GLBs for direct-mesh-compare page
+  if (method === 'GET' && urlPath === '/api/compare-glbs-list') {
+    try {
+      const baseDir = join(PUBLIC_DIR, 'compare-glbs');
+      if (!existsSync(baseDir)) { sendJson(res, 200, []); return; }
+      const files = readdirSync(baseDir).filter(f => f.toLowerCase().endsWith('.glb')).sort();
+      sendJson(res, 200, files);
+    } catch (err) {
+      sendJson(res, 500, { error: err?.message || String(err) });
+    }
+    return;
+  }
+
   // API: mesh inspector verdicts read.
   if (method === 'GET' && urlPath === '/api/verdicts') {
     try {
