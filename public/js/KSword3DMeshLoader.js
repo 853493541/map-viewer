@@ -287,25 +287,52 @@ export class KSword3DMeshLoader extends THREE.Loader {
 
     // --- UV2 ---
     if (offUV2 && vertexCount > 0) {
-      const ua2 = new Float32Array(vertexCount * 2);
-      // UV2 is typically uncompressed float32
-      for (let vi = 0; vi < vertexCount; vi++) {
-        const o = offUV2 + vi * 12;
-        ua2[vi * 2] = dv.getFloat32(o, true);
-        ua2[vi * 2 + 1] = dv.getFloat32(o + 4, true);
+      const uv2Sz = blockSize(offUV2);
+      if (uv2Sz >= vertexCount * 8) {
+        const uv2Bpv = uv2Sz / vertexCount;
+        const uv2Compressed = uv2Bpv < 8;
+        const stride = Math.round(uv2Bpv);
+        if (uv2Compressed && uv2Sz >= 12 + vertexCount * 6) {
+          const ua2 = new Float32Array(vertexCount * 2);
+          const uScale2 = dv.getFloat32(offUV2, true);
+          const vScale2 = dv.getFloat32(offUV2 + 4, true);
+          const uv2DataStart = offUV2 + 12;
+          for (let vi = 0; vi < vertexCount; vi++) {
+            const o = uv2DataStart + vi * 6;
+            ua2[vi * 2] = (dv.getInt16(o, true) / 32767) * uScale2;
+            ua2[vi * 2 + 1] = (dv.getInt16(o + 2, true) / 32767) * vScale2;
+          }
+          uvs2 = ua2;
+        } else if (stride >= 8 && uv2Sz >= vertexCount * stride) {
+          const ua2 = new Float32Array(vertexCount * 2);
+          for (let vi = 0; vi < vertexCount; vi++) {
+            const o = offUV2 + vi * stride;
+            if (o + 8 <= data.length) {
+              ua2[vi * 2] = dv.getFloat32(o, true);
+              ua2[vi * 2 + 1] = dv.getFloat32(o + 4, true);
+            }
+          }
+          uvs2 = ua2;
+        }
       }
-      uvs2 = ua2;
     }
 
     // --- UV3 ---
     if (offUV3 && vertexCount > 0) {
-      const ua3 = new Float32Array(vertexCount * 2);
-      for (let vi = 0; vi < vertexCount; vi++) {
-        const o = offUV3 + vi * 12;
-        ua3[vi * 2] = dv.getFloat32(o, true);
-        ua3[vi * 2 + 1] = dv.getFloat32(o + 4, true);
+      const uv3Sz = blockSize(offUV3);
+      const uv3Bpv = uv3Sz / vertexCount;
+      const stride3 = Math.round(uv3Bpv);
+      if (uv3Sz >= vertexCount * stride3 && stride3 >= 8) {
+        const ua3 = new Float32Array(vertexCount * 2);
+        for (let vi = 0; vi < vertexCount; vi++) {
+          const o = offUV3 + vi * stride3;
+          if (o + 8 <= data.length) {
+            ua3[vi * 2] = dv.getFloat32(o, true);
+            ua3[vi * 2 + 1] = dv.getFloat32(o + 4, true);
+          }
+        }
+        uvs3 = ua3;
       }
-      uvs3 = ua3;
     }
 
     // --- VERTEX COLORS (ARGB format) ---
