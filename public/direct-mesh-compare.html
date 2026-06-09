@@ -141,6 +141,7 @@ function createSide(containerId) {
 
   const renderer = new THREE.WebGLRenderer({ canvas: cvs, antialias: true });
   renderer.setClearColor(0x1a1a2e);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
@@ -313,12 +314,15 @@ function animate() {
   requestAnimationFrame(animate);
   [sideGLB, sideMesh].forEach(s => {
     const w = s.container.clientWidth, h = s.container.clientHeight;
-    if (w > 0 && h > 0) {
-      s.renderer.setSize(w, h);
+    if (w <= 0 || h <= 0) return;
+    // Only resize if size changed
+    const cvs = s.renderer.domElement;
+    if (cvs.width !== Math.floor(w * s.renderer.getPixelRatio()) || cvs.height !== Math.floor(h * s.renderer.getPixelRatio())) {
+      s.renderer.setSize(w, h, false);
       s.camera.aspect = w / h;
       s.camera.updateProjectionMatrix();
-      s.renderer.render(s.scene, s.camera);
     }
+    s.renderer.render(s.scene, s.camera);
   });
 }
 

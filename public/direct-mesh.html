@@ -276,6 +276,7 @@ for (let i = 0; i < PAGE_SIZE; i++) {
 
   const renderer = new THREE.WebGLRenderer({ canvas: cvs, antialias: true });
   renderer.setClearColor(0x333344);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene3 = new THREE.Scene();
@@ -477,9 +478,15 @@ function animate() {
   requestAnimationFrame(animate);
   for (const c of cells) {
     if (c.meshGroup && c.cell.style.display !== 'none') {
-      c.renderer.setSize(c.cell.clientWidth, c.cell.clientHeight);
-      c.camera.aspect = c.cell.clientWidth / Math.max(1, c.cell.clientHeight);
-      c.camera.updateProjectionMatrix();
+      const w = c.cell.clientWidth, h = c.cell.clientHeight;
+      if (w <= 0 || h <= 0) continue;
+      const cvs = c.renderer.domElement;
+      const pr = c.renderer.getPixelRatio();
+      if (cvs.width !== Math.floor(w * pr) || cvs.height !== Math.floor(h * pr)) {
+        c.renderer.setSize(w, h, false);
+        c.camera.aspect = w / h;
+        c.camera.updateProjectionMatrix();
+      }
       c.renderer.render(c.scene, c.camera);
     }
   }
