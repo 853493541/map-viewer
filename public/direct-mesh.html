@@ -39,8 +39,8 @@
   <h2>Direct .mesh Loader</h2>
   <label>Data Source</label>
   <select id="dataSource">
-    <option value="test-meshes">Test Meshes (local)</option>
-    <option value="map-data">龙门寻宝 (map-data)</option>
+    <option value="source-meshes">Local source-meshes (587 files)</option>
+    <option value="map-data">龙门寻宝 (mesh-map.json)</option>
   </select>
 
   <label>Mesh</label>
@@ -122,9 +122,42 @@ scene.add(dirLight);
 
 const loader = new KSword3DMeshLoader();
 const textureLoader = new THREE.TextureLoader();
+const textureCache = new Map();
+let textureMap = {};  // glbName -> { albedo, mre, normal }
 let currentGroup = null;
 let meshMap = {};
 let selectedPath = '';
+
+async function loadTextureCached(filename) {
+  if (!filename) return null;
+  if (textureCache.has(filename)) return textureCache.get(filename);
+  try {
+    const url = `/map-data/textures/${encodeURIComponent(filename)}`;
+    const tex = await textureLoader.loadAsync(url);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    textureCache.set(filename, tex);
+    return tex;
+  } catch {
+    return null;
+  }
+}
+
+async function loadTextureCachedLinear(filename) {
+  if (!filename) return null;
+  const key = 'linear:' + filename;
+  if (textureCache.has(key)) return textureCache.get(key);
+  try {
+    const url = `/map-data/textures/${encodeURIComponent(filename)}`;
+    const tex = await textureLoader.loadAsync(url);
+    tex.colorSpace = THREE.LinearSRGBColorSpace;
+    textureCache.set(key, tex);
+    return tex;
+  } catch {
+    return null;
+  }
+}
 
 // Load mesh list
 async function loadMeshList() {
@@ -132,9 +165,8 @@ async function loadMeshList() {
   const sel = document.getElementById('meshSelect');
   sel.innerHTML = '';
   try {
-    if (ds === 'test-meshes') {
-      // List .mesh files in test-meshes directory
-      const resp = await fetch('/api/test-meshes-list');
+    if (ds === 'test-meshes' || ds === 'source-meshes') {
+      const resp = await fetch('/api/source-meshes-list');
       if (resp.ok) {
         const files = await resp.json();
         if (files.length === 0) {
@@ -144,13 +176,12 @@ async function loadMeshList() {
         for (const f of files) {
           const opt = document.createElement('option');
           opt.value = f;
-          opt.textContent = f;
+          const displayName = f.replace(/\\/g, '/').split('/').pop();
+          opt.textContent = displayName;
           sel.appendChild(opt);
         }
         selectedPath = files[0];
-        setInfo(`Found ${files.length} test .mesh files`);
-      } else {
-        setError('Failed to list test meshes');
+        setInfo(`Found ${files.length} .mesh files in source-meshes`);
       }
     } else {
       const resp = await fetch(`${ds}/mesh-map.json`);
@@ -166,6 +197,11 @@ async function loadMeshList() {
       if (keys.length > 0) selectedPath = keys[0];
       setInfo(`Loaded ${keys.length} meshes from ${ds}/mesh-map.json`);
     }
+    // Load texture maps
+    try {
+      const tmResp = await fetch('map-data/texture-map.json');
+      if (tmResp.ok) textureMap = await tmResp.json();
+    } catch { textureMap = {}; }
   } catch (e) {
     setError(`Failed to load mesh list: ${e.message}`);
   }
@@ -196,7 +232,7 @@ function updateStats(data) {
   document.getElementById('statHasCol').textContent = data.geometries[0]?.geometry.getAttribute('color') ? 'Yes' : 'No';
 }
 
-function createMaterial(geomData, subsetMaterials) {
+function createMaterial(geomData, subsetMaterials, albedoMap, mreMap, normalMap) {
   const showNormals = document.getElementById('chkNormals').checked;
   const showTangents = document.getElementById('chkTangents').checked;
   const showWireframe = document.getElementById('chkWireframe').checked;
@@ -210,10 +246,26 @@ function createMaterial(geomData, subsetMaterials) {
     wireframe: showWireframe,
   });
 
-  // Apply subset color if no textures
-  if (showSubsetColors && geomData.subsetId !== undefined) {
+  // Apply textures if available
+  if (albedoMap) {
+    mat.map = albedoMap;
+    mat.color.set(0xffffff);
+  } else if (showSubsetColors && geomData.subsetId !== undefined) {
     const col = SUBSET_COLORS[geomData.subsetId % SUBSET_COLORS.length];
     mat.color.setRGB(col[0], col[1], col[2]);
+  }
+
+  if (mreMap) {
+    // MRE = roughness (R), metalness (G) — swizzle R↔B for game convention
+    mat.roughnessMap = mreMap;
+    mat.metalnessMap = mreMap;
+    mat.roughness = 1.0;
+    mat.metalness = 1.0;
+  }
+
+  if (normalMap) {
+    mat.normalMap = normalMap;
+    mat.normalScale = new THREE.Vector2(1, -1); // DirectX → OpenGL Y-flip
   }
 
   // Apply material info from JsonInspack if available
@@ -227,25 +279,19 @@ function createMaterial(geomData, subsetMaterials) {
       mat.blending = THREE.AdditiveBlending;
       mat.depthWrite = false;
     }
-    // Apply color tints
     if (matInfo.colors?.Diffuse && Array.isArray(matInfo.colors.Diffuse)) {
       const d = matInfo.colors.Diffuse;
-      // Handle HDR colors (alpha can exceed 1)
-      if (d.length >= 3) mat.color.setRGB(
-        Math.min(d[0], 1),
-        Math.min(d[1], 1),
-        Math.min(d[2], 1)
-      );
+      if (d.length >= 3 && !albedoMap) {
+        mat.color.setRGB(Math.min(d[0], 1), Math.min(d[1], 1), Math.min(d[2], 1));
+      }
     }
     if (matInfo.colors?.Specular && Array.isArray(matInfo.colors.Specular)) {
-      // Use specular to hint metallic
       const s = matInfo.colors.Specular;
       mat.metalness = Math.min((s[0] + s[1] + s[2]) / 3, 1);
     }
   }
 
   if (!showNormals) {
-    // Flat shading
     mat.flatShading = true;
   }
 
@@ -265,12 +311,11 @@ async function loadMesh() {
   }
 
   let meshUrl;
-  if (ds === 'test-meshes') {
-    meshUrl = `/test-meshes/${encodeURIComponent(meshPath)}`;
+  let glbName = '';
+  if (ds === 'source-meshes' || ds === 'test-meshes') {
+    meshUrl = `/source-meshes/${encodeURIComponent(meshPath)}`;
   } else {
-    // Try to resolve from game path
-    const meshFileName = meshPath.split('/').pop().replace(/\\/g, '/');
-    meshUrl = `/test-meshes/${encodeURIComponent(meshFileName)}`;
+    meshUrl = `/source-meshes/${encodeURIComponent(meshPath.split('/').pop())}`;
   }
 
   setInfo(`Loading: ${meshUrl}`);
@@ -280,26 +325,58 @@ async function loadMesh() {
     updateStats(result);
     const meshFileName = meshPath.split('/').pop();
 
-    // Try to load companion JsonInspack
-    let subsetMaterials = null;
-    try {
-      const jipName = meshPath.replace(/\.[^.\\/]+$/, '.JsonInspack');
-      const jipUrl = `/test-meshes/${encodeURIComponent(jipName.split('/').pop())}`;
-      const jipResp = await fetch(jipUrl);
-      if (jipResp.ok) {
-        const text = await jipResp.text();
-        subsetMaterials = parseJsonInspack(text);
-      }
-    } catch { /* no companion */ }
+    // Resolve glbName for texture lookup
+    if (ds === 'map-data') {
+      const mapped = meshMap[meshPath];
+      if (mapped) glbName = String(mapped).split('/').pop().replace(/\.glb$/i, '');
+    } else {
+      glbName = meshFileName.replace(/\.mesh$/i, '');
+    }
 
-    const matMsg = subsetMaterials ? 'with materials' : 'no materials';
-    setInfo(`Loaded ${meshFileName} — ${result.vertexCount}v, ${result.triangleCount}t, ${result.numSubsets} subsets (${matMsg})`);
+    // Look up textures
+    let texInfo = null;
+    if (glbName && textureMap) {
+      texInfo = textureMap[glbName];
+      if (!texInfo) {
+        // Try case-insensitive match
+        const lc = glbName.toLowerCase();
+        for (const [k, v] of Object.entries(textureMap)) {
+          if (String(k).toLowerCase() === lc) { texInfo = v; break; }
+        }
+      }
+    }
+
+    // Load textures
+    let albedoMap = null, mreMap = null, normalMap = null;
+    if (texInfo) {
+      [albedoMap, mreMap, normalMap] = await Promise.all([
+        loadTextureCached(texInfo.albedo),
+        loadTextureCached(texInfo.mre),
+        loadTextureCachedLinear(texInfo.normal),
+      ]);
+    }
+
+    // Try companion JsonInspack for blend mode info
+    let subsetMaterials = null;
+    if (ds === 'source-meshes' || ds === 'test-meshes') {
+      try {
+        const jipUrl = meshUrl.replace(/\.mesh$/i, '.JsonInspack');
+        const jipResp = await fetch(jipUrl);
+        if (jipResp.ok) {
+          subsetMaterials = parseJsonInspack(await jipResp.text());
+        }
+      } catch { /* no companion */ }
+    }
+
+    const texMsg = albedoMap ? 'with textures' : 'no textures';
+    const matMsg = subsetMaterials ? '+materials' : '';
+    setInfo(`Loaded ${meshFileName} — ${result.vertexCount}v, ${result.triangleCount}t, ${result.numSubsets}s (${texMsg} ${matMsg})`);
 
     currentGroup = new THREE.Group();
     currentGroup.name = meshFileName;
 
     for (const geomData of result.geometries) {
-      const mat = createMaterial(geomData, subsetMaterials);
+      const mat = createMaterial(geomData, subsetMaterials, albedoMap, mreMap, normalMap);
       const mesh = new THREE.Mesh(geomData.geometry, mat);
       mesh.castShadow = true;
       mesh.receiveShadow = true;

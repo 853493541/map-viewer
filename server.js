@@ -898,12 +898,24 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  // API: list test-meshes .mesh files for direct mesh viewer
-  if (method === 'GET' && urlPath === '/api/test-meshes-list') {
+  // API: list source .mesh files recursively for direct mesh viewer
+  if (method === 'GET' && (urlPath === '/api/test-meshes-list' || urlPath === '/api/source-meshes-list')) {
     try {
-      const testDir = join(PUBLIC_DIR, 'test-meshes');
-      if (!existsSync(testDir)) { sendJson(res, 200, []); return; }
-      const files = readdirSync(testDir).filter(f => f.toLowerCase().endsWith('.mesh')).sort();
+      const isSource = urlPath === '/api/source-meshes-list';
+      const baseDir = join(PUBLIC_DIR, isSource ? 'source-meshes' : 'test-meshes');
+      if (!existsSync(baseDir)) { sendJson(res, 200, []); return; }
+      const files = [];
+      function walk(dir, prefix) {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          if (entry.isDirectory()) {
+            walk(join(dir, entry.name), prefix ? prefix + '/' + entry.name : entry.name);
+          } else if (entry.name.toLowerCase().endsWith('.mesh')) {
+            files.push(prefix ? prefix + '/' + entry.name : entry.name);
+          }
+        }
+      }
+      walk(baseDir, '');
+      files.sort();
       sendJson(res, 200, files);
     } catch (err) {
       sendJson(res, 500, { error: err?.message || String(err) });
