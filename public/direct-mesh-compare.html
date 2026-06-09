@@ -181,7 +181,7 @@ function createSide(containerId) {
   }, { passive: false });
 
   return {
-    container, renderer, scene, cam, meshGroup: null,
+    container, renderer, scene, camera: cam, meshGroup: null,
     setOrbit(nt, np, nr, ntgt) { t = nt; p = np; r = nr; tgt.copy(ntgt); updateCam(); },
     syncFrom(other) { const o = other.getOrbit(); t = o.t; p = o.p; r = o.r; tgt.copy(o.tgt); updateCam(); },
     getOrbit() { return { t, p, r, tgt: tgt.clone() }; },
