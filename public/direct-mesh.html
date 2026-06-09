@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Direct Mesh Viewer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; color: #ccc; font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
+  canvas { display: block; }
+  #ui {
+    position: fixed; top: 8px; left: 8px; z-index: 10;
+    background: rgba(0,0,0,0.85); border: 1px solid #444;
+    border-radius: 6px; padding: 10px; min-width: 360px; max-height: 95vh;
+    overflow-y: auto; font-size: 13px;
+  }
+  #ui h2 { font-size: 15px; margin: 0 0 8px; color: #8cf; }
+  select, input, button {
+    background: #222; color: #ddd; border: 1px solid #555;
+    border-radius: 3px; padding: 4px 8px; font-size: 12px; width: 100%;
+    margin-bottom: 6px;
+  }
+  button { cursor: pointer; background: #335; }
+  button:hover { background: #446; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  pre { font-size: 11px; color: #888; margin: 4px 0; max-height: 120px; overflow-y: auto; }
+  .stat { display: flex; justify-content: space-between; padding: 2px 0; }
+  .stat strong { color: #aac; }
+  #info { color: #8a8; margin-top: 4px; font-size: 11px; }
+  #error { color: #f66; margin-top: 4px; font-size: 11px; }
+  label { display: block; font-size: 11px; color: #888; margin-bottom: 2px; }
+  .check-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .check-row input[type=checkbox] { width: auto; margin: 0; }
+  .check-row label { margin: 0; }
+</style>
+</head>
+<body>
+<div id="ui">
+  <h2>Direct .mesh Loader</h2>
+  <label>Data Source</label>
+  <select id="dataSource">
+    <option value="test-meshes">Test Meshes (local)</option>
+    <option value="map-data">龙门寻宝 (map-data)</option>
+  </select>
+
+  <label>Mesh</label>
+  <select id="meshSelect"><option>-- Loading list --</option></select>
+
+  <button id="btnLoad">Load .mesh Directly</button>
+
+  <div class="check-row">
+    <input type="checkbox" id="chkNormals" checked>
+    <label for="chkNormals">Show original normals</label>
+  </div>
+  <div class="check-row">
+    <input type="checkbox" id="chkTangents" checked>
+    <label for="chkTangents">Use tangents</label>
+  </div>
+  <div class="check-row">
+    <input type="checkbox" id="chkWireframe">
+    <label for="chkWireframe">Wireframe</label>
+  </div>
+  <div class="check-row">
+    <input type="checkbox" id="chkSubsetColors" checked>
+    <label for="chkSubsetColors">Subset colors</label>
+  </div>
+
+  <div id="stats">
+    <div class="stat"><strong>Vertex Count</strong><span id="statVerts">-</span></div>
+    <div class="stat"><strong>Triangle Count</strong><span id="statTris">-</span></div>
+    <div class="stat"><strong>Subsets</strong><span id="statSubsets">-</span></div>
+    <div class="stat"><strong>Compressed</strong><span id="statComp">-</span></div>
+    <div class="stat"><strong>Has Normals</strong><span id="statHasNorm">-</span></div>
+    <div class="stat"><strong>Has Tangents</strong><span id="statHasTan">-</span></div>
+    <div class="stat"><strong>Has UV1</strong><span id="statHasUV1">-</span></div>
+    <div class="stat"><strong>Has UV2</strong><span id="statHasUV2">-</span></div>
+    <div class="stat"><strong>Has UV3</strong><span id="statHasUV3">-</span></div>
+    <div class="stat"><strong>Has Colors</strong><span id="statHasCol">-</span></div>
+  </div>
+  <pre id="info"></pre>
+  <div id="error"></div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "./lib/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { KSword3DMeshLoader, parseJsonInspack, SUBSET_COLORS } from './js/KSword3DMeshLoader.js';
+
+// Setup scene
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a2e);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 500000);
+camera.position.set(200, 150, 300);
+camera.lookAt(0, 0, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+
+// Grid and lights
+const grid = new THREE.GridHelper(2000, 40, 0x444466, 0x222244);
+scene.add(grid);
+
+const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+scene.add(ambient);
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(500, 800, 300);
+scene.add(dirLight);
+
+const loader = new KSword3DMeshLoader();
+const textureLoader = new THREE.TextureLoader();
+let currentGroup = null;
+let meshMap = {};
+let selectedPath = '';
+
+// Load mesh list
+async function loadMeshList() {
+  const ds = document.getElementById('dataSource').value;
+  const sel = document.getElementById('meshSelect');
+  sel.innerHTML = '';
+  try {
+    if (ds === 'test-meshes') {
+      // List .mesh files in test-meshes directory
+      const resp = await fetch('/api/test-meshes-list');
+      if (resp.ok) {
+        const files = await resp.json();
+        if (files.length === 0) {
+          sel.innerHTML = '<option>No .mesh files found</option>';
+          return;
+        }
+        for (const f of files) {
+          const opt = document.createElement('option');
+          opt.value = f;
+          opt.textContent = f;
+          sel.appendChild(opt);
+        }
+        selectedPath = files[0];
+        setInfo(`Found ${files.length} test .mesh files`);
+      } else {
+        setError('Failed to list test meshes');
+      }
+    } else {
+      const resp = await fetch(`${ds}/mesh-map.json`);
+      const raw = await resp.json();
+      meshMap = raw;
+      const keys = Object.keys(raw).sort();
+      for (const k of keys) {
+        const opt = document.createElement('option');
+        opt.value = k;
+        opt.textContent = k.split('/').pop();
+        sel.appendChild(opt);
+      }
+      if (keys.length > 0) selectedPath = keys[0];
+      setInfo(`Loaded ${keys.length} meshes from ${ds}/mesh-map.json`);
+    }
+  } catch (e) {
+    setError(`Failed to load mesh list: ${e.message}`);
+  }
+}
+
+function setInfo(msg) {
+  document.getElementById('info').textContent = msg;
+}
+
+function setError(msg) {
+  document.getElementById('error').textContent = msg;
+}
+
+function clearError() {
+  document.getElementById('error').textContent = '';
+}
+
+function updateStats(data) {
+  document.getElementById('statVerts').textContent = data.vertexCount;
+  document.getElementById('statTris').textContent = data.triangleCount;
+  document.getElementById('statSubsets').textContent = data.numSubsets;
+  document.getElementById('statComp').textContent = data.posCompressed ? 'Yes' : 'No';
+  document.getElementById('statHasNorm').textContent = data.geometries[0]?.geometry.getAttribute('normal') ? 'Yes' : 'No';
+  document.getElementById('statHasTan').textContent = data.geometries[0]?.geometry.getAttribute('tangent') ? 'Yes' : 'No';
+  document.getElementById('statHasUV1').textContent = data.geometries[0]?.geometry.getAttribute('uv') ? 'Yes' : 'No';
+  document.getElementById('statHasUV2').textContent = data.geometries[0]?.geometry.getAttribute('uv2') ? 'Yes' : 'No';
+  document.getElementById('statHasUV3').textContent = data.geometries[0]?.geometry.getAttribute('uv3') ? 'Yes' : 'No';
+  document.getElementById('statHasCol').textContent = data.geometries[0]?.geometry.getAttribute('color') ? 'Yes' : 'No';
+}
+
+function createMaterial(geomData, subsetMaterials) {
+  const showNormals = document.getElementById('chkNormals').checked;
+  const showTangents = document.getElementById('chkTangents').checked;
+  const showWireframe = document.getElementById('chkWireframe').checked;
+  const showSubsetColors = document.getElementById('chkSubsetColors').checked;
+
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.7,
+    metalness: 0.05,
+    side: THREE.DoubleSide,
+    wireframe: showWireframe,
+  });
+
+  // Apply subset color if no textures
+  if (showSubsetColors && geomData.subsetId !== undefined) {
+    const col = SUBSET_COLORS[geomData.subsetId % SUBSET_COLORS.length];
+    mat.color.setRGB(col[0], col[1], col[2]);
+  }
+
+  // Apply material info from JsonInspack if available
+  const matInfo = subsetMaterials?.[geomData.subsetId];
+  if (matInfo) {
+    if (matInfo.blendMode === 1) {
+      mat.alphaTest = (matInfo.alphaRef || 128) / 255;
+      mat.transparent = false;
+    } else if (matInfo.blendMode === 2) {
+      mat.transparent = true;
+      mat.blending = THREE.AdditiveBlending;
+      mat.depthWrite = false;
+    }
+    // Apply color tints
+    if (matInfo.colors?.Diffuse && Array.isArray(matInfo.colors.Diffuse)) {
+      const d = matInfo.colors.Diffuse;
+      // Handle HDR colors (alpha can exceed 1)
+      if (d.length >= 3) mat.color.setRGB(
+        Math.min(d[0], 1),
+        Math.min(d[1], 1),
+        Math.min(d[2], 1)
+      );
+    }
+    if (matInfo.colors?.Specular && Array.isArray(matInfo.colors.Specular)) {
+      // Use specular to hint metallic
+      const s = matInfo.colors.Specular;
+      mat.metalness = Math.min((s[0] + s[1] + s[2]) / 3, 1);
+    }
+  }
+
+  if (!showNormals) {
+    // Flat shading
+    mat.flatShading = true;
+  }
+
+  return mat;
+}
+
+async function loadMesh() {
+  clearError();
+  const ds = document.getElementById('dataSource').value;
+  const meshPath = selectedPath;
+  if (!meshPath) { setError('No mesh selected'); return; }
+
+  if (currentGroup) {
+    disposeGroup(currentGroup);
+    scene.remove(currentGroup);
+    currentGroup = null;
+  }
+
+  let meshUrl;
+  if (ds === 'test-meshes') {
+    meshUrl = `/test-meshes/${encodeURIComponent(meshPath)}`;
+  } else {
+    // Try to resolve from game path
+    const meshFileName = meshPath.split('/').pop().replace(/\\/g, '/');
+    meshUrl = `/test-meshes/${encodeURIComponent(meshFileName)}`;
+  }
+
+  setInfo(`Loading: ${meshUrl}`);
+
+  try {
+    const result = await loader.loadAsync(meshUrl);
+    updateStats(result);
+    const meshFileName = meshPath.split('/').pop();
+
+    // Try to load companion JsonInspack
+    let subsetMaterials = null;
+    try {
+      const jipName = meshPath.replace(/\.[^.\\/]+$/, '.JsonInspack');
+      const jipUrl = `/test-meshes/${encodeURIComponent(jipName.split('/').pop())}`;
+      const jipResp = await fetch(jipUrl);
+      if (jipResp.ok) {
+        const text = await jipResp.text();
+        subsetMaterials = parseJsonInspack(text);
+      }
+    } catch { /* no companion */ }
+
+    const matMsg = subsetMaterials ? 'with materials' : 'no materials';
+    setInfo(`Loaded ${meshFileName} — ${result.vertexCount}v, ${result.triangleCount}t, ${result.numSubsets} subsets (${matMsg})`);
+
+    currentGroup = new THREE.Group();
+    currentGroup.name = meshFileName;
+
+    for (const geomData of result.geometries) {
+      const mat = createMaterial(geomData, subsetMaterials);
+      const mesh = new THREE.Mesh(geomData.geometry, mat);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      currentGroup.add(mesh);
+    }
+
+    // Auto-fit camera
+    const box = new THREE.Box3().setFromObject(currentGroup);
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+    const size = box.getSize(new THREE.Vector3()).length();
+
+    currentGroup.position.set(-center.x, -center.y, -center.z);
+    camera.position.set(size * 0.8, size * 0.5, size * 1.0);
+    camera.lookAt(0, 0, 0);
+    controls.target.set(0, 0, 0);
+    controls.update();
+
+    scene.add(currentGroup);
+  } catch (e) {
+    setError(`Load failed: ${e.message}`);
+    console.error(e);
+  }
+}
+
+function disposeGroup(group) {
+  group.traverse(child => {
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) {
+      if (Array.isArray(child.material)) {
+        child.material.forEach(m => m.dispose());
+      } else {
+        child.material.dispose();
+      }
+    }
+  });
+}
+
+// Events
+document.getElementById('dataSource').addEventListener('change', loadMeshList);
+document.getElementById('meshSelect').addEventListener('change', e => { selectedPath = e.target.value; });
+document.getElementById('btnLoad').addEventListener('click', loadMesh);
+document.getElementById('chkWireframe').addEventListener('change', () => {
+  if (currentGroup) {
+    currentGroup.traverse(child => {
+      if (child.material) child.material.wireframe = document.getElementById('chkWireframe').checked;
+    });
+  }
+});
+document.getElementById('chkNormals').addEventListener('change', () => {
+  if (currentGroup) {
+    currentGroup.traverse(child => {
+      if (child.material) child.material.flatShading = !document.getElementById('chkNormals').checked;
+    });
+  }
+});
+document.getElementById('chkSubsetColors').addEventListener('change', loadMesh);
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+// Init
+loadMeshList();
+animate();
+</script>
+</body>
+</html>

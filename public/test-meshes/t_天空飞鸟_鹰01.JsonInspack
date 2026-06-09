@@ -1,0 +1,49 @@
+{
+    "UseDX9Lighting": 0,
+    "UseDX9Detail": 0,
+    "LOD": [
+        {
+            "Group": [
+                {
+                    "Subset": [
+                        {
+                            "Info": {
+                                "Version": 2,
+                                "RefPath": "kg3denginedata\\shader\\defaultsfxmaterial.jsondef"
+                            },
+                            "RenderState": {
+                                "bOverWriteRS": 1,
+                                "nRenderState": 1,
+                                "AlphaRef": 128,
+                                "AlphaRef2": 126,
+                                "TwoSide": 1,
+                                "CreatShadow": 1,
+                                "BlendMode": 2,
+                                "OITWorkflow": 0,
+                                "OITOptimiseOption": 0,
+                                "DistortionMode": 0
+                            },
+                            "Param": [
+                                {
+                                    "Name": "BaseColor",
+                                    "Type": "Texture",
+                                    "Value": "data\\source\\other\\特效\\贴图\\qt_其他\\y_鹰01.tga"
+                                },
+                                {
+                                    "Name": "Color",
+                                    "Type": "Color",
+                                    "Value": [
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        1.0
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}
