@@ -2,453 +2,492 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Direct Mesh Viewer</title>
+<title>Direct Mesh Inspector</title>
+<link rel="icon" href="data:,">
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: #1a1a2e; color: #ccc; font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
-  canvas { display: block; }
-  #ui {
-    position: fixed; top: 8px; left: 8px; z-index: 10;
-    background: rgba(0,0,0,0.85); border: 1px solid #444;
-    border-radius: 6px; padding: 10px; min-width: 360px; max-height: 95vh;
-    overflow-y: auto; font-size: 13px;
-  }
-  #ui h2 { font-size: 15px; margin: 0 0 8px; color: #8cf; }
-  select, input, button {
-    background: #222; color: #ddd; border: 1px solid #555;
-    border-radius: 3px; padding: 4px 8px; font-size: 12px; width: 100%;
-    margin-bottom: 6px;
-  }
-  button { cursor: pointer; background: #335; }
-  button:hover { background: #446; }
-  button:disabled { opacity: 0.4; cursor: default; }
-  pre { font-size: 11px; color: #888; margin: 4px 0; max-height: 120px; overflow-y: auto; }
-  .stat { display: flex; justify-content: space-between; padding: 2px 0; }
-  .stat strong { color: #aac; }
-  #info { color: #8a8; margin-top: 4px; font-size: 11px; }
-  #error { color: #f66; margin-top: 4px; font-size: 11px; }
-  label { display: block; font-size: 11px; color: #888; margin-bottom: 2px; }
-  .check-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
-  .check-row input[type=checkbox] { width: auto; margin: 0; }
-  .check-row label { margin: 0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #222; color: #eee; font-family: monospace; overflow: hidden; display: flex; }
+
+  #sidebar { width: 260px; min-width: 260px; height: 100vh; background: rgba(0,0,0,0.7); padding: 10px; display: flex; flex-direction: column; z-index: 10; }
+  #sidebar h3 { margin: 0 0 8px; font-size: 14px; color: #8cf; }
+
+  #controls { margin-bottom: 6px; font-size: 11px; }
+  #controls label { display: block; margin: 2px 0; }
+  #controls input[type=text] { width: 100%; }
+  #controls input[type=checkbox] { margin-right: 4px; }
+
+  #page-nav { display: flex; gap: 4px; margin-bottom: 6px; align-items: center; font-size: 11px; }
+  #page-nav button { padding: 3px 8px; cursor: pointer; background: #444; border: 1px solid #666; color: #eee; border-radius: 3px; }
+  #page-nav button:hover { background: #666; }
+  #page-nav button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  #meshList { flex: 1; overflow-y: auto; font-size: 11px; }
+  .mesh-btn { cursor: pointer; padding: 2px 6px; display: block; background: #444; border: none; color: #eee; width: 100%; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; font-size: 11px; }
+  .mesh-btn:hover { background: #666; }
+  .mesh-btn.active { background: #0078d4; color: #fff; }
+  .mesh-btn.approved { border-left: 3px solid #2d4 !important; background: rgba(30,150,60,0.25) !important; }
+  .mesh-btn.denied { border-left: 3px solid #d44 !important; background: rgba(150,30,30,0.25) !important; }
+  .btn-row { display: flex; align-items: stretch; margin: 1px 0; }
+
+  #preview-area { flex: 1; display: grid; grid-template-columns: repeat(5, 1fr); grid-template-rows: repeat(2, 1fr); gap: 4px; padding: 4px; height: 100vh; }
+  .preview-cell { position: relative; background: #333344; border-radius: 4px; overflow: hidden; border: 2px solid transparent; cursor: pointer; }
+  .preview-cell.selected { border-color: #0078d4; }
+  .preview-cell.v-approved { border-color: #2d4; }
+  .preview-cell.v-denied { border-color: #d44; }
+  .preview-cell canvas { width: 100%; height: 100%; display: block; }
+  .preview-label { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.75); padding: 3px 6px; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 4px; }
+  .preview-label .name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  .preview-verdict { position: absolute; top: 4px; right: 4px; display: flex; gap: 2px; }
+  .preview-verdict button { width: 26px; height: 26px; border-radius: 4px; cursor: pointer; font-size: 14px; border: 1px solid; font-family: monospace; }
+  .pv-approve { background: rgba(30,160,70,0.3); border-color: #2d4; color: #4e4; }
+  .pv-approve:hover, .pv-approve.active { background: rgba(30,160,70,0.7); color: #fff; }
+  .pv-deny { background: rgba(160,30,30,0.3); border-color: #d44; color: #e44; }
+  .pv-deny:hover, .pv-deny.active { background: rgba(160,30,30,0.7); color: #fff; }
+  .preview-info { position: absolute; top: 4px; left: 4px; font-size: 9px; color: #aaa; pointer-events: none; }
+  .legend { font-size: 10px; margin: 4px 0; color: #aaa; }
 </style>
 </head>
 <body>
-<div id="ui">
-  <h2>Direct .mesh Loader</h2>
-  <label>Data Source</label>
-  <select id="dataSource">
-    <option value="source-meshes">Local source-meshes (587 files)</option>
-    <option value="map-data">龙门寻宝 (mesh-map.json)</option>
-  </select>
-
-  <label>Mesh</label>
-  <select id="meshSelect"><option>-- Loading list --</option></select>
-
-  <button id="btnLoad">Load .mesh Directly</button>
-
-  <div class="check-row">
-    <input type="checkbox" id="chkNormals" checked>
-    <label for="chkNormals">Show original normals</label>
+<div id="sidebar">
+  <h3>Direct .mesh Inspector</h3>
+  <div id="controls">
+    <label>Filter: <input id="filter" type="text" placeholder="type to filter..."></label>
+    <label><input type="checkbox" id="showTextures" checked> Textures</label>
+    <label><input type="checkbox" id="doubleSide" checked> Double-sided</label>
+    <label><input type="checkbox" id="showWireframe"> Wireframe</label>
   </div>
-  <div class="check-row">
-    <input type="checkbox" id="chkTangents" checked>
-    <label for="chkTangents">Use tangents</label>
+  <div id="page-nav">
+    <button id="btn-prev" disabled>&laquo; Prev</button>
+    <span id="page-info">1 / 1</span>
+    <button id="btn-next">&raquo; Next</button>
   </div>
-  <div class="check-row">
-    <input type="checkbox" id="chkWireframe">
-    <label for="chkWireframe">Wireframe</label>
+  <div class="legend">
+    <span style="color:#2d4">&#10003;</span> approved &nbsp;
+    <span style="color:#d44">&#10007;</span> denied
   </div>
-  <div class="check-row">
-    <input type="checkbox" id="chkSubsetColors" checked>
-    <label for="chkSubsetColors">Subset colors</label>
-  </div>
-
-  <div id="stats">
-    <div class="stat"><strong>Vertex Count</strong><span id="statVerts">-</span></div>
-    <div class="stat"><strong>Triangle Count</strong><span id="statTris">-</span></div>
-    <div class="stat"><strong>Subsets</strong><span id="statSubsets">-</span></div>
-    <div class="stat"><strong>Compressed</strong><span id="statComp">-</span></div>
-    <div class="stat"><strong>Has Normals</strong><span id="statHasNorm">-</span></div>
-    <div class="stat"><strong>Has Tangents</strong><span id="statHasTan">-</span></div>
-    <div class="stat"><strong>Has UV1</strong><span id="statHasUV1">-</span></div>
-    <div class="stat"><strong>Has UV2</strong><span id="statHasUV2">-</span></div>
-    <div class="stat"><strong>Has UV3</strong><span id="statHasUV3">-</span></div>
-    <div class="stat"><strong>Has Colors</strong><span id="statHasCol">-</span></div>
-  </div>
-  <pre id="info"></pre>
-  <div id="error"></div>
+  <div id="meshList"></div>
 </div>
+<div id="preview-area"></div>
 
 <script type="importmap">
-{ "imports": {
-  "three": "./lib/three.module.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
-} }
+{ "imports": { "three": "./lib/three.module.js" } }
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { KSword3DMeshLoader, parseJsonInspack, SUBSET_COLORS } from './js/KSword3DMeshLoader.js';
+import { KSword3DMeshLoader } from './js/KSword3DMeshLoader.js';
 
-// Setup scene
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x1a1a2e);
+const PAGE_SIZE = 10;
+const SOURCE_MESHES = 'source-meshes';
 
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 500000);
-camera.position.set(200, 150, 300);
-camera.lookAt(0, 0, 0);
+const previewArea = document.getElementById('preview-area');
+const listDiv = document.getElementById('meshList');
+const filterInput = document.getElementById('filter');
+const showTexCheck = document.getElementById('showTextures');
+const dblSideCheck = document.getElementById('doubleSide');
+const wireframeCheck = document.getElementById('showWireframe');
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-document.body.appendChild(renderer.domElement);
-
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.08;
-
-// Grid and lights
-const grid = new THREE.GridHelper(2000, 40, 0x444466, 0x222244);
-scene.add(grid);
-
-const ambient = new THREE.AmbientLight(0xffffff, 0.6);
-scene.add(ambient);
-const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-dirLight.position.set(500, 800, 300);
-scene.add(dirLight);
-
-const loader = new KSword3DMeshLoader();
+const meshLoader = new KSword3DMeshLoader();
 const textureLoader = new THREE.TextureLoader();
 const textureCache = new Map();
-let textureMap = {};  // glbName -> { albedo, mre, normal }
-let currentGroup = null;
-let meshMap = {};
-let selectedPath = '';
+const geometryCache = new Map(); // meshFileName -> parsed result
 
-async function loadTextureCached(filename) {
-  if (!filename) return null;
-  if (textureCache.has(filename)) return textureCache.get(filename);
-  try {
-    const url = `/map-data/textures/${encodeURIComponent(filename)}`;
-    const tex = await textureLoader.loadAsync(url);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.RepeatWrapping;
-    textureCache.set(filename, tex);
-    return tex;
-  } catch {
-    return null;
+let textureMap = {};
+let approvedSet = new Set();
+let deniedSet = new Set();
+let meshNames = [];
+let currentPage = 0;
+
+function findTextureInfo(meshName) {
+  if (!textureMap) return null;
+  const glbKey = meshName + '.glb';
+  if (textureMap[glbKey]) return textureMap[glbKey];
+  // Try case-insensitive
+  const lc = glbKey.toLowerCase();
+  for (const [k, v] of Object.entries(textureMap)) {
+    if (String(k).toLowerCase() === lc) return v;
   }
+  return null;
 }
 
-async function loadTextureCachedLinear(filename) {
+function loadTexCached(filename, linear) {
   if (!filename) return null;
-  const key = 'linear:' + filename;
+  const key = filename + (linear ? '_lin' : '');
   if (textureCache.has(key)) return textureCache.get(key);
-  try {
-    const url = `/map-data/textures/${encodeURIComponent(filename)}`;
-    const tex = await textureLoader.loadAsync(url);
-    tex.colorSpace = THREE.LinearSRGBColorSpace;
-    textureCache.set(key, tex);
-    return tex;
-  } catch {
-    return null;
-  }
+  const tex = textureLoader.load('map-data/textures/' + encodeURIComponent(filename));
+  tex.colorSpace = linear ? THREE.LinearSRGBColorSpace : THREE.SRGBColorSpace;
+  tex.flipY = false;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  textureCache.set(key, tex);
+  return tex;
 }
 
-// Load mesh list
-async function loadMeshList() {
-  const ds = document.getElementById('dataSource').value;
-  const sel = document.getElementById('meshSelect');
-  sel.innerHTML = '';
-  try {
-    if (ds === 'test-meshes' || ds === 'source-meshes') {
-      const resp = await fetch('/api/source-meshes-list');
-      if (resp.ok) {
-        const files = await resp.json();
-        if (files.length === 0) {
-          sel.innerHTML = '<option>No .mesh files found</option>';
-          return;
-        }
-        for (const f of files) {
-          const opt = document.createElement('option');
-          opt.value = f;
-          const displayName = f.replace(/\\/g, '/').split('/').pop();
-          opt.textContent = displayName;
-          sel.appendChild(opt);
-        }
-        selectedPath = files[0];
-        setInfo(`Found ${files.length} .mesh files in source-meshes`);
+function loadMRECached(filename) {
+  if (!filename) return null;
+  const key = filename + '_mre';
+  if (textureCache.has(key)) return textureCache.get(key);
+  const tex = textureLoader.load(
+    'map-data/textures/' + encodeURIComponent(filename),
+    (t) => {
+      const img = t.image;
+      const canv = document.createElement('canvas');
+      canv.width = img.width; canv.height = img.height;
+      const ctx = canv.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const d = ctx.getImageData(0, 0, canv.width, canv.height);
+      const px = d.data;
+      for (let i = 0; i < px.length; i += 4) {
+        const r = px[i]; px[i] = px[i + 2]; px[i + 2] = r;
       }
-    } else {
-      const resp = await fetch(`${ds}/mesh-map.json`);
-      const raw = await resp.json();
-      meshMap = raw;
-      const keys = Object.keys(raw).sort();
-      for (const k of keys) {
-        const opt = document.createElement('option');
-        opt.value = k;
-        opt.textContent = k.split('/').pop();
-        sel.appendChild(opt);
-      }
-      if (keys.length > 0) selectedPath = keys[0];
-      setInfo(`Loaded ${keys.length} meshes from ${ds}/mesh-map.json`);
+      ctx.putImageData(d, 0, 0);
+      t.image = canv; t.needsUpdate = true;
     }
-    // Load texture maps
-    try {
-      const tmResp = await fetch('map-data/texture-map.json');
-      if (tmResp.ok) textureMap = await tmResp.json();
-    } catch { textureMap = {}; }
+  );
+  tex.colorSpace = THREE.LinearSRGBColorSpace;
+  tex.flipY = false;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  textureCache.set(key, tex);
+  return tex;
+}
+
+async function loadMeshesList() {
+  try {
+    const resp = await fetch('/api/source-meshes-list');
+    const files = await resp.json();
+    meshNames = files.map(f => {
+      const name = f.replace(/\\/g, '/').split('/').pop();
+      return name.replace(/\.mesh$/i, '');
+    }).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    document.querySelector('h3').textContent = `Direct .mesh (${meshNames.length})`;
   } catch (e) {
-    setError(`Failed to load mesh list: ${e.message}`);
+    meshNames = [];
+    listDiv.innerHTML = `<div style="padding:8px;color:#f88">Failed: ${e.message}</div>`;
   }
-}
-
-function setInfo(msg) {
-  document.getElementById('info').textContent = msg;
-}
-
-function setError(msg) {
-  document.getElementById('error').textContent = msg;
-}
-
-function clearError() {
-  document.getElementById('error').textContent = '';
-}
-
-function updateStats(data) {
-  document.getElementById('statVerts').textContent = data.vertexCount;
-  document.getElementById('statTris').textContent = data.triangleCount;
-  document.getElementById('statSubsets').textContent = data.numSubsets;
-  document.getElementById('statComp').textContent = data.posCompressed ? 'Yes' : 'No';
-  document.getElementById('statHasNorm').textContent = data.geometries[0]?.geometry.getAttribute('normal') ? 'Yes' : 'No';
-  document.getElementById('statHasTan').textContent = data.geometries[0]?.geometry.getAttribute('tangent') ? 'Yes' : 'No';
-  document.getElementById('statHasUV1').textContent = data.geometries[0]?.geometry.getAttribute('uv') ? 'Yes' : 'No';
-  document.getElementById('statHasUV2').textContent = data.geometries[0]?.geometry.getAttribute('uv2') ? 'Yes' : 'No';
-  document.getElementById('statHasUV3').textContent = data.geometries[0]?.geometry.getAttribute('uv3') ? 'Yes' : 'No';
-  document.getElementById('statHasCol').textContent = data.geometries[0]?.geometry.getAttribute('color') ? 'Yes' : 'No';
-}
-
-function createMaterial(geomData, subsetMaterials, albedoMap, mreMap, normalMap) {
-  const showNormals = document.getElementById('chkNormals').checked;
-  const showTangents = document.getElementById('chkTangents').checked;
-  const showWireframe = document.getElementById('chkWireframe').checked;
-  const showSubsetColors = document.getElementById('chkSubsetColors').checked;
-
-  const mat = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    roughness: 0.7,
-    metalness: 0.05,
-    side: THREE.DoubleSide,
-    wireframe: showWireframe,
-  });
-
-  // Apply textures if available
-  if (albedoMap) {
-    mat.map = albedoMap;
-    mat.color.set(0xffffff);
-  } else if (showSubsetColors && geomData.subsetId !== undefined) {
-    const col = SUBSET_COLORS[geomData.subsetId % SUBSET_COLORS.length];
-    mat.color.setRGB(col[0], col[1], col[2]);
-  }
-
-  if (mreMap) {
-    // MRE = roughness (R), metalness (G) — swizzle R↔B for game convention
-    mat.roughnessMap = mreMap;
-    mat.metalnessMap = mreMap;
-    mat.roughness = 1.0;
-    mat.metalness = 1.0;
-  }
-
-  if (normalMap) {
-    mat.normalMap = normalMap;
-    mat.normalScale = new THREE.Vector2(1, -1); // DirectX → OpenGL Y-flip
-  }
-
-  // Apply material info from JsonInspack if available
-  const matInfo = subsetMaterials?.[geomData.subsetId];
-  if (matInfo) {
-    if (matInfo.blendMode === 1) {
-      mat.alphaTest = (matInfo.alphaRef || 128) / 255;
-      mat.transparent = false;
-    } else if (matInfo.blendMode === 2) {
-      mat.transparent = true;
-      mat.blending = THREE.AdditiveBlending;
-      mat.depthWrite = false;
-    }
-    if (matInfo.colors?.Diffuse && Array.isArray(matInfo.colors.Diffuse)) {
-      const d = matInfo.colors.Diffuse;
-      if (d.length >= 3 && !albedoMap) {
-        mat.color.setRGB(Math.min(d[0], 1), Math.min(d[1], 1), Math.min(d[2], 1));
-      }
-    }
-    if (matInfo.colors?.Specular && Array.isArray(matInfo.colors.Specular)) {
-      const s = matInfo.colors.Specular;
-      mat.metalness = Math.min((s[0] + s[1] + s[2]) / 3, 1);
-    }
-  }
-
-  if (!showNormals) {
-    mat.flatShading = true;
-  }
-
-  return mat;
-}
-
-async function loadMesh() {
-  clearError();
-  const ds = document.getElementById('dataSource').value;
-  const meshPath = selectedPath;
-  if (!meshPath) { setError('No mesh selected'); return; }
-
-  if (currentGroup) {
-    disposeGroup(currentGroup);
-    scene.remove(currentGroup);
-    currentGroup = null;
-  }
-
-  let meshUrl;
-  let glbName = '';
-  if (ds === 'source-meshes' || ds === 'test-meshes') {
-    meshUrl = `/source-meshes/${encodeURIComponent(meshPath)}`;
-  } else {
-    meshUrl = `/source-meshes/${encodeURIComponent(meshPath.split('/').pop())}`;
-  }
-
-  setInfo(`Loading: ${meshUrl}`);
 
   try {
-    const result = await loader.loadAsync(meshUrl);
-    updateStats(result);
-    const meshFileName = meshPath.split('/').pop();
+    textureMap = await (await fetch('map-data/texture-map.json')).json();
+  } catch { textureMap = {}; }
 
-    // Resolve glbName for texture lookup
-    if (ds === 'map-data') {
-      const mapped = meshMap[meshPath];
-      if (mapped) glbName = String(mapped).split('/').pop().replace(/\.glb$/i, '');
-    } else {
-      glbName = meshFileName.replace(/\.mesh$/i, '');
+  loadVerdictsFromStorage();
+}
+
+function loadVerdictsFromStorage() {
+  try {
+    const raw = localStorage.getItem('direct-mesh-verdicts');
+    if (raw) {
+      const obj = JSON.parse(raw);
+      approvedSet = new Set(obj.approved || []);
+      deniedSet = new Set(obj.denied || []);
     }
+  } catch {}
+}
 
-    // Look up textures
-    let texInfo = null;
-    if (glbName && textureMap) {
-      texInfo = textureMap[glbName];
-      if (!texInfo) {
-        // Try case-insensitive match
-        const lc = glbName.toLowerCase();
-        for (const [k, v] of Object.entries(textureMap)) {
-          if (String(k).toLowerCase() === lc) { texInfo = v; break; }
-        }
-      }
-    }
+function saveVerdictsToStorage() {
+  localStorage.setItem('direct-mesh-verdicts', JSON.stringify({
+    approved: [...approvedSet],
+    denied: [...deniedSet],
+  }));
+}
 
-    // Load textures
-    let albedoMap = null, mreMap = null, normalMap = null;
+function getVisibleList() {
+  const f = filterInput.value.toLowerCase();
+  return meshNames.filter(name => {
+    if (f && !name.toLowerCase().includes(f)) return false;
+    return true;
+  });
+}
+
+async function loadMeshData(meshName) {
+  if (geometryCache.has(meshName)) return geometryCache.get(meshName);
+  const url = `/${SOURCE_MESHES}/${encodeURIComponent(meshName + '.mesh')}`;
+  const buffer = await fetch(url).then(r => r.arrayBuffer());
+  const result = meshLoader.parse(buffer);
+  geometryCache.set(meshName, result);
+  return result;
+}
+
+function buildSceneGroup(meshData, meshName) {
+  const group = new THREE.Group();
+  const texInfo = showTexCheck.checked ? findTextureInfo(meshName) : null;
+
+  for (const geomData of meshData.geometries) {
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0xffffff, roughness: 0.7, metalness: 0.05,
+      side: dblSideCheck ? THREE.DoubleSide : THREE.FrontSide,
+      wireframe: wireframeCheck.checked,
+    });
+
     if (texInfo) {
-      [albedoMap, mreMap, normalMap] = await Promise.all([
-        loadTextureCached(texInfo.albedo),
-        loadTextureCached(texInfo.mre),
-        loadTextureCachedLinear(texInfo.normal),
-      ]);
+      if (texInfo.albedo)  mat.map = loadTexCached(texInfo.albedo, false);
+      if (texInfo.mre)     { mat.roughnessMap = loadMRECached(texInfo.mre); mat.metalnessMap = mat.roughnessMap; mat.roughness = 1; mat.metalness = 1; }
+      if (texInfo.normal)  { mat.normalMap = loadTexCached(texInfo.normal, true); mat.normalScale = new THREE.Vector2(1, -1); }
     }
 
-    // Try companion JsonInspack for blend mode info
-    let subsetMaterials = null;
-    if (ds === 'source-meshes' || ds === 'test-meshes') {
-      try {
-        const jipUrl = meshUrl.replace(/\.mesh$/i, '.JsonInspack');
-        const jipResp = await fetch(jipUrl);
-        if (jipResp.ok) {
-          subsetMaterials = parseJsonInspack(await jipResp.text());
-        }
-      } catch { /* no companion */ }
-    }
-
-    const texMsg = albedoMap ? 'with textures' : 'no textures';
-    const matMsg = subsetMaterials ? '+materials' : '';
-    setInfo(`Loaded ${meshFileName} — ${result.vertexCount}v, ${result.triangleCount}t, ${result.numSubsets}s (${texMsg} ${matMsg})`);
-
-    currentGroup = new THREE.Group();
-    currentGroup.name = meshFileName;
-
-    for (const geomData of result.geometries) {
-      const mat = createMaterial(geomData, subsetMaterials, albedoMap, mreMap, normalMap);
-      const mesh = new THREE.Mesh(geomData.geometry, mat);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      currentGroup.add(mesh);
-    }
-
-    // Auto-fit camera
-    const box = new THREE.Box3().setFromObject(currentGroup);
-    const center = new THREE.Vector3();
-    box.getCenter(center);
-    const size = box.getSize(new THREE.Vector3()).length();
-
-    currentGroup.position.set(-center.x, -center.y, -center.z);
-    camera.position.set(size * 0.8, size * 0.5, size * 1.0);
-    camera.lookAt(0, 0, 0);
-    controls.target.set(0, 0, 0);
-    controls.update();
-
-    scene.add(currentGroup);
-  } catch (e) {
-    setError(`Load failed: ${e.message}`);
-    console.error(e);
-  }
-}
-
-function disposeGroup(group) {
-  group.traverse(child => {
-    if (child.geometry) child.geometry.dispose();
-    if (child.material) {
-      if (Array.isArray(child.material)) {
-        child.material.forEach(m => m.dispose());
+    if (!texInfo || !texInfo.albedo) {
+      const hasColors = geomData.geometry.hasAttribute('color');
+      if (hasColors) {
+        mat.vertexColors = true;
       } else {
-        child.material.dispose();
+        const subsetColors = [0xccbbaa, 0x99aa88, 0xaa9988, 0x8888aa, 0xaa8888, 0x88aa99, 0xaaaa88, 0x9988aa];
+        mat.color.setHex(subsetColors[geomData.subsetId % subsetColors.length]);
       }
     }
-  });
+
+    const mesh = new THREE.Mesh(geomData.geometry, mat);
+    group.add(mesh);
+  }
+
+  return group;
 }
 
-// Events
-document.getElementById('dataSource').addEventListener('change', loadMeshList);
-document.getElementById('meshSelect').addEventListener('change', e => { selectedPath = e.target.value; });
-document.getElementById('btnLoad').addEventListener('click', loadMesh);
-document.getElementById('chkWireframe').addEventListener('change', () => {
-  if (currentGroup) {
-    currentGroup.traverse(child => {
-      if (child.material) child.material.wireframe = document.getElementById('chkWireframe').checked;
-    });
-  }
-});
-document.getElementById('chkNormals').addEventListener('change', () => {
-  if (currentGroup) {
-    currentGroup.traverse(child => {
-      if (child.material) child.material.flatShading = !document.getElementById('chkNormals').checked;
-    });
-  }
-});
-document.getElementById('chkSubsetColors').addEventListener('change', loadMesh);
+// ── Cells setup ──
+const cells = [];
+for (let i = 0; i < PAGE_SIZE; i++) {
+  const cell = document.createElement('div');
+  cell.className = 'preview-cell';
+  cell.style.display = 'none';
 
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  const cvs = document.createElement('canvas');
+  cell.appendChild(cvs);
+
+  const infoDiv = document.createElement('div');
+  infoDiv.className = 'preview-info';
+  cell.appendChild(infoDiv);
+
+  const verdictDiv = document.createElement('div');
+  verdictDiv.className = 'preview-verdict';
+  const approveBtn = document.createElement('button');
+  approveBtn.className = 'pv-approve'; approveBtn.innerHTML = '&#10003;'; approveBtn.title = 'Approve';
+  const denyBtn = document.createElement('button');
+  denyBtn.className = 'pv-deny'; denyBtn.innerHTML = '&#10007;'; denyBtn.title = 'Deny';
+  verdictDiv.appendChild(approveBtn);
+  verdictDiv.appendChild(denyBtn);
+  cell.appendChild(verdictDiv);
+
+  const label = document.createElement('div');
+  label.className = 'preview-label';
+  const nameSpan = document.createElement('span');
+  nameSpan.className = 'name';
+  label.appendChild(nameSpan);
+  cell.appendChild(label);
+
+  previewArea.appendChild(cell);
+
+  const renderer = new THREE.WebGLRenderer({ canvas: cvs, antialias: true });
+  renderer.setClearColor(0x333344);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+  const scene3 = new THREE.Scene();
+  scene3.add(new THREE.AmbientLight(0xffffff, 0.5));
+  const dl = new THREE.DirectionalLight(0xffffff, 1.0);
+  dl.position.set(100, 200, 150);
+  scene3.add(dl);
+  scene3.add(new THREE.HemisphereLight(0x88aacc, 0x8B7355, 0.4));
+
+  const cam = new THREE.PerspectiveCamera(50, 1, 0.1, 100000);
+  let oTheta = 0.3, oPhi = 0.8, oRad = 500, oTgt = new THREE.Vector3();
+  let dragging = false, dpx = 0, dpy = 0;
+
+  function updCam() {
+    cam.position.set(
+      oTgt.x + oRad * Math.sin(oPhi) * Math.cos(oTheta),
+      oTgt.y + oRad * Math.cos(oPhi),
+      oTgt.z + oRad * Math.sin(oPhi) * Math.sin(oTheta)
+    );
+    cam.lookAt(oTgt);
+  }
+
+  cvs.addEventListener('mousedown', (e) => { dragging = true; dpx = e.clientX; dpy = e.clientY; });
+  cvs.addEventListener('mouseup', () => dragging = false);
+  cvs.addEventListener('mouseleave', () => dragging = false);
+  cvs.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    oTheta += (e.clientX - dpx) * 0.01;
+    oPhi = Math.max(0.1, Math.min(Math.PI - 0.1, oPhi - (e.clientY - dpy) * 0.01));
+    dpx = e.clientX; dpy = e.clientY;
+    updCam();
+  });
+  cvs.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    oRad *= e.deltaY > 0 ? 1.15 : 0.87;
+    oRad = Math.max(1, Math.min(50000, oRad));
+    updCam();
+  }, { passive: false });
+
+  cells.push({
+    cell, cvs, renderer, scene: scene3, camera: cam, infoDiv,
+    approveBtn, denyBtn, nameSpan, label,
+    meshGroup: null, meshName: null,
+    setOrbit(t, p, r, tgt) { oTheta = t; oPhi = p; oRad = r; oTgt.copy(tgt); updCam(); },
+  });
+
+  const idx = i;
+  approveBtn.addEventListener('click', (e) => { e.stopPropagation(); setVerdict(idx, 'approved'); });
+  denyBtn.addEventListener('click', (e) => { e.stopPropagation(); setVerdict(idx, 'denied'); });
+}
+
+async function loadMeshIntoCell(cellIdx, meshName) {
+  const c = cells[cellIdx];
+  c.meshName = meshName;
+  c.nameSpan.textContent = meshName;
+  c.nameSpan.title = meshName;
+  c.cell.style.display = '';
+  c.approveBtn.classList.toggle('active', approvedSet.has(meshName));
+  c.denyBtn.classList.toggle('active', deniedSet.has(meshName));
+  c.cell.classList.toggle('v-approved', approvedSet.has(meshName));
+  c.cell.classList.toggle('v-denied', deniedSet.has(meshName));
+
+  if (c.meshGroup) { c.scene.remove(c.meshGroup); c.meshGroup = null; }
+
+  try {
+    const meshData = await loadMeshData(meshName);
+    const group = buildSceneGroup(meshData, meshName);
+
+    const box = new THREE.Box3().setFromObject(group);
+    const center = new THREE.Vector3(), size = new THREE.Vector3();
+    box.getCenter(center); box.getSize(size);
+
+    let totalVerts = 0, totalFaces = 0;
+    group.traverse(child => {
+      if (child.isMesh) {
+        const g = child.geometry;
+        totalVerts += g.getAttribute('position').count;
+        totalFaces += g.index ? g.index.count / 3 : g.getAttribute('position').count / 3;
+        if (wireframeCheck.checked) child.material.wireframe = true;
+      }
+    });
+
+    c.scene.add(group);
+    c.meshGroup = group;
+    c.setOrbit(0.3, 0.8, Math.max(size.x, size.y, size.z) * 1.5, center);
+    c.infoDiv.textContent = `V:${totalVerts} F:${Math.round(totalFaces)}`;
+  } catch (err) {
+    c.infoDiv.textContent = 'Load failed';
+    console.error(meshName, err);
+  }
+}
+
+function setVerdict(cellIdx, verdict) {
+  const c = cells[cellIdx];
+  if (!c.meshName) return;
+  const name = c.meshName;
+  if (verdict === 'approved') {
+    if (approvedSet.has(name)) { approvedSet.delete(name); } else { approvedSet.add(name); deniedSet.delete(name); }
+  } else {
+    if (deniedSet.has(name)) { deniedSet.delete(name); } else { deniedSet.add(name); approvedSet.delete(name); }
+  }
+  saveVerdictsToStorage();
+  loadPage();
+}
+
+// ── Init ──
+function loadPage() {
+  const visible = getVisibleList();
+  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
+  currentPage = Math.max(0, Math.min(currentPage, pageCount - 1));
+  const start = currentPage * PAGE_SIZE;
+  const pageItems = visible.slice(start, start + PAGE_SIZE);
+
+  document.getElementById('page-info').textContent = `${currentPage + 1} / ${pageCount}`;
+  document.getElementById('btn-prev').disabled = currentPage === 0;
+  document.getElementById('btn-next').disabled = currentPage >= pageCount - 1;
+
+  for (let i = 0; i < PAGE_SIZE; i++) {
+    if (i < pageItems.length) {
+      loadMeshIntoCell(i, pageItems[i]);
+    } else {
+      const c = cells[i];
+      c.cell.style.display = 'none';
+      if (c.meshGroup) { c.scene.remove(c.meshGroup); c.meshGroup = null; }
+      c.meshName = null;
+    }
+  }
+  renderSidebarList();
+}
+
+function renderSidebarList() {
+  listDiv.innerHTML = '';
+  const visible = getVisibleList();
+  const start = currentPage * PAGE_SIZE;
+  const end = Math.min(start + PAGE_SIZE, visible.length);
+
+  if (visible.length === 0) {
+    listDiv.innerHTML = '<div style="padding:8px;color:#f88;font-size:11px">No meshes matching filter</div>';
+    return;
+  }
+
+  for (let i = 0; i < Math.min(visible.length, 1000); i++) {
+    const name = visible[i];
+    const row = document.createElement('div');
+    row.className = 'btn-row';
+
+    const btn = document.createElement('button');
+    btn.className = 'mesh-btn';
+    if (approvedSet.has(name)) btn.classList.add('approved');
+    else if (deniedSet.has(name)) btn.classList.add('denied');
+    if (i >= start && i < end) btn.classList.add('active');
+    btn.textContent = name;
+    btn.title = name;
+    btn.addEventListener('click', () => {
+      currentPage = Math.floor(i / PAGE_SIZE);
+      loadPage();
+    });
+    row.appendChild(btn);
+    listDiv.appendChild(row);
+
+    if (i === 999) {
+      const more = document.createElement('div');
+      more.style.cssText = 'padding:4px;color:#888;font-size:10px';
+      more.textContent = `...${visible.length - 1000} more (use filter)`;
+      listDiv.appendChild(more);
+      break;
+    }
+  }
+}
+
+// ── Event handlers ──
+document.getElementById('btn-prev').addEventListener('click', () => { currentPage--; loadPage(); });
+document.getElementById('btn-next').addEventListener('click', () => { currentPage++; loadPage(); });
+filterInput.addEventListener('input', () => { currentPage = 0; loadPage(); });
+showTexCheck.addEventListener('change', loadPage);
+dblSideCheck.addEventListener('change', () => {
+  cells.forEach(c => {
+    if (!c.meshGroup) return;
+    c.meshGroup.traverse(ch => {
+      if (ch.material && ch.material.side !== undefined) {
+        ch.material.side = dblSideCheck.checked ? THREE.DoubleSide : THREE.FrontSide;
+      }
+    });
+  });
+});
+wireframeCheck.addEventListener('change', () => {
+  cells.forEach(c => {
+    if (!c.meshGroup) return;
+    c.meshGroup.traverse(ch => {
+      if (ch.material && ch.material.wireframe !== undefined) {
+        ch.material.wireframe = wireframeCheck.checked;
+      }
+    });
+  });
 });
 
+// ── Animation loop ──
 function animate() {
   requestAnimationFrame(animate);
-  controls.update();
-  renderer.render(scene, camera);
+  for (const c of cells) {
+    if (c.meshGroup && c.cell.style.display !== 'none') {
+      c.renderer.setSize(c.cell.clientWidth, c.cell.clientHeight);
+      c.camera.aspect = c.cell.clientWidth / Math.max(1, c.cell.clientHeight);
+      c.camera.updateProjectionMatrix();
+      c.renderer.render(c.scene, c.camera);
+    }
+  }
 }
 
-// Init
-loadMeshList();
+// ── Init ──
+await loadMeshesList();
+loadPage();
 animate();
 </script>
 </body>
