@@ -64,6 +64,12 @@ class MapEditor {
 
   // ─── Resource Manager ─────────────────────────────
   async init() {
+    const params = new URLSearchParams(window.location.search);
+    const directMap = params.get('map') || params.get('data');
+    if (directMap && /^[A-Za-z0-9_\-/]+$/.test(directMap) && !directMap.includes('..')) {
+      await this.loadMap(directMap, directMap === 'map-data');
+      return;
+    }
     this.loadCustomMapList();
     this.populateManager();
   }
@@ -106,6 +112,18 @@ class MapEditor {
     `;
     card.addEventListener('click', () => this.loadMap('map-data', true));
     grid.appendChild(card);
+
+    // Bailong map card
+    const bailongCard = document.createElement('div');
+    bailongCard.className = 'map-card';
+    bailongCard.innerHTML = `
+      <div class="map-thumb"><img src="map-data-bailong/minimap.png" onerror="this.style.display='none';this.parentElement.textContent='🗺️'"></div>
+      <div class="map-name">白龙绝境</div>
+      <div class="map-meta">8×8 regions</div>
+      <span class="map-badge original">ORIGINAL</span>
+    `;
+    bailongCard.addEventListener('click', () => this.loadMap('map-data-bailong', true));
+    grid.appendChild(bailongCard);
 
     // Custom maps section
     const customSection = document.getElementById('custom-maps-section');
@@ -215,23 +233,13 @@ class MapEditor {
     this.setupTransformPanel();
     // Region dialog (R key)
     this.setupRegionDialog();
-    // Save dialog (Ctrl+S)
-    this.setupSaveDialog();
     // Drag-select
     this.setupDragSelect();
     // Region draw on map (3D drag)
     this._regionDrawMode = false;
     this._pendingRegion = null;
     this._setupRegionDrag();
-    this._setupPenMode();
     this._setupRegionActionBar();
-
-    // Save Changes button (custom maps) — wire once
-    const scBtn = document.getElementById('save-changes-btn');
-    if (scBtn && !scBtn._wired) {
-      scBtn._wired = true;
-      scBtn.addEventListener('click', () => this.openSaveDialog());
-    }
 
     // Mode bar (Camera / Select)
     this._setupModeBar();
@@ -285,11 +293,7 @@ class MapEditor {
       document.getElementById('rd-max-x').value = cm.region.maxX;
       document.getElementById('rd-min-z').value = cm.region.minZ;
       document.getElementById('rd-max-z').value = cm.region.maxZ;
-      this._updateRegionPreviewFromDialog();
     }
-    // Show "Save Changes" button for custom maps
-    const scBtn = document.getElementById('save-changes-btn');
-    if (scBtn) scBtn.style.display = 'block';
     this.showToast(`Loaded: ${cm.name} — Press R to edit region bounds`);
   }
 
@@ -360,17 +364,13 @@ class MapEditor {
     // Stop animation
     this._stopAnimation = true;
 
-    // Clean up 3D region box and pen
+    // Clean up 3D region box
     this._remove3DRegionBox();
-    this._clearPenVisuals();
     this._clearMultiHighlights();
     this._hideRegionActionBar();
     this._hideDrawHint();
-    this._penMode = false;
     this._regionDrawMode = false;
     this._currentCustomMap = null;
-    const scBtn = document.getElementById('save-changes-btn');
-    if (scBtn) scBtn.style.display = 'none';
 
     // Clean up scene
     while (this.scene.children.length > 0) {
@@ -509,34 +509,33 @@ class MapEditor {
     const innerFrac = 4 / 8; // 4×4 out of 8×8
     const borderFrac = (1 - innerFrac) / 2; // 0.25 on each side
 
-    // Try to load minimap.png (from game's RegionInfo/RLSplit.bmp, the real in-game minimap)
-    const regionImg = new Image();
-    regionImg.onload = () => {
+    const drawInnerImage = (image) => {
       mmCanvas.width = mmSize;
       mmCanvas.height = mmSize;
       ctx.fillStyle = '#333';
       ctx.fillRect(0, 0, mmSize, mmSize);
       const innerPx = Math.round(mmSize * innerFrac);
       const borderPx = Math.round(mmSize * borderFrac);
-      ctx.drawImage(regionImg, borderPx, borderPx, innerPx, innerPx);
+      ctx.drawImage(image, borderPx, borderPx, innerPx, innerPx);
       this._mmReady = true;
     };
-    regionImg.onerror = () => {
-      // Fallback to regioninfo.png then heightmap
-      const fallback = new Image();
-      fallback.onload = () => {
-        mmCanvas.width = mmSize; mmCanvas.height = mmSize;
-        ctx.fillStyle = '#333';
-        ctx.fillRect(0, 0, mmSize, mmSize);
-        const innerPx = Math.round(mmSize * innerFrac);
-        const borderPx = Math.round(mmSize * borderFrac);
-        ctx.drawImage(fallback, borderPx, borderPx, innerPx, innerPx);
-        this._mmReady = true;
-      };
-      fallback.onerror = () => this._buildHeightmapMinimap(mmCanvas, ctx);
-      fallback.src = `${this.currentMapPath}/regioninfo.png`;
+
+    const loadOptionalImage = async (url) => {
+      return await new Promise((resolve) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => resolve(null);
+        image.src = url;
+      });
     };
-    regionImg.src = `${this.currentMapPath}/minimap.png`;
+
+    (async () => {
+      const environmentItems = this.resourceInventory?.categories?.environment?.items || {};
+      const image = (environmentItems.minimap ? await loadOptionalImage(`${this.currentMapPath}/minimap.png`) : null)
+        || (environmentItems.regioninfo ? await loadOptionalImage(`${this.currentMapPath}/regioninfo.png`) : null);
+      if (image) drawInnerImage(image);
+      else this._buildHeightmapMinimap(mmCanvas, ctx);
+    })();
 
     // Click to teleport — uses FULL map bounds, so clicking gray area teleports to outer regions
     const container = document.getElementById('minimap-container');
@@ -576,38 +575,41 @@ class MapEditor {
     }
   }
 
-  _drawMinimapMode(canvas) {
+  async _drawMinimapMode(canvas) {
     const ctx = canvas.getContext('2d');
     const sz = this._mmSize;
     const innerFrac = this._mmInnerFrac;
     const borderFrac = this._mmBorderFrac;
     if (this._mmMode === 'height') {
       this._buildHeightmapMinimap(canvas, ctx);
-    } else if (this._mmMode === 'editor') {
-      // Editor minimap (RLSplit.bmp) also covers the inner 4×4 playable area
-      const img = new Image();
-      img.onload = () => {
-        canvas.width = sz; canvas.height = sz;
-        ctx.fillStyle = '#333';
-        ctx.fillRect(0, 0, sz, sz);
-        const innerPx = Math.round(sz * innerFrac);
-        const borderPx = Math.round(sz * borderFrac);
-        ctx.drawImage(img, borderPx, borderPx, innerPx, innerPx);
-      };
-      img.src = `${this.currentMapPath}/editor-minimap.png`;
-    } else {
-      // Region mode: image in center, gray border for outer regions
-      const img = new Image();
-      img.onload = () => {
-        canvas.width = sz; canvas.height = sz;
-        ctx.fillStyle = '#333';
-        ctx.fillRect(0, 0, sz, sz);
-        const innerPx = Math.round(sz * innerFrac);
-        const borderPx = Math.round(sz * borderFrac);
-        ctx.drawImage(img, borderPx, borderPx, innerPx, innerPx);
-      };
-      img.src = `${this.currentMapPath}/minimap.png`;
+      return;
     }
+
+    const fileName = this._mmMode === 'editor' ? 'editor-minimap.png' : 'minimap.png';
+    const imageUrl = `${this.currentMapPath}/${fileName}`;
+    const environmentItems = this.resourceInventory?.categories?.environment?.items || {};
+    if (!environmentItems.minimap) {
+      this._buildHeightmapMinimap(canvas, ctx);
+      return;
+    }
+
+    await new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        canvas.width = sz; canvas.height = sz;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(0, 0, sz, sz);
+        const innerPx = Math.round(sz * innerFrac);
+        const borderPx = Math.round(sz * borderFrac);
+        ctx.drawImage(img, borderPx, borderPx, innerPx, innerPx);
+        resolve();
+      };
+      img.onerror = () => {
+        this._buildHeightmapMinimap(canvas, ctx);
+        resolve();
+      };
+      img.src = imageUrl;
+    });
   }
 
   _buildHeightmapMinimap(canvas, ctx) {
@@ -1018,7 +1020,6 @@ class MapEditor {
     const el = document.getElementById('tab-region');
     el.innerHTML = '';
 
-    const bounds = this.terrainSystem ? this.terrainSystem.getWorldBounds() : { minX: 0, maxX: 100000, minZ: -100000, maxZ: 0 };
     const pos = this.camera.position;
 
     // Default region: 20k×20k square around current camera position
@@ -1041,11 +1042,14 @@ class MapEditor {
         <div><label>Min Z</label><input type="number" id="region-min-z" value="${defMinZ}" step="1000"></div>
         <div><label>Max Z</label><input type="number" id="region-max-z" value="${defMaxZ}" step="1000"></div>
       </div>
-      <button class="region-btn" id="region-use-camera">📍 Use Camera Position (±${defaultSize / 2})</button>
-      <button class="region-btn" id="region-preview">👁 Preview Region</button>
       <button class="region-btn" id="region-apply">✂ Apply Region Filter</button>
       <button class="region-btn danger" id="region-clear">↩ Show Full Map</button>
       <button class="region-btn" id="region-export" style="margin-top:8px">💾 Export Custom Map JSON</button>
+      <div style="border-top:1px solid #3a3a3a;margin-top:10px;padding-top:8px" id="exported-areas-section">
+        <div style="color:#dca;font-weight:bold;margin-bottom:6px">Exported Map Areas</div>
+        <div style="color:#888;font-size:10px;margin-bottom:6px">One-click select exported map regions at matching size.</div>
+        <div id="exported-areas-list" style="color:#888;font-size:11px">Loading...</div>
+      </div>
     `;
     el.appendChild(form);
 
@@ -1054,29 +1058,14 @@ class MapEditor {
     statsEl.textContent = 'No region filter active';
     el.appendChild(statsEl);
 
-    // Use camera position
-    document.getElementById('region-use-camera').addEventListener('click', () => {
-      const p = this.camera.position;
-      document.getElementById('region-min-x').value = Math.round(p.x - defaultSize / 2);
-      document.getElementById('region-max-x').value = Math.round(p.x + defaultSize / 2);
-      document.getElementById('region-min-z').value = Math.round(p.z - defaultSize / 2);
-      document.getElementById('region-max-z').value = Math.round(p.z + defaultSize / 2);
-    });
-
-    // Preview region (show box on minimap)
-    document.getElementById('region-preview').addEventListener('click', () => {
-      this._updateRegionPreview();
-      const r = this._getRegionBounds();
-      this._update3DRegionBox(r);
-      this.showToast('Region preview shown on minimap + 3D');
-    });
+    // Preset exported area buttons — fetch dynamically
+    this._loadExportedAreas(statsEl);
 
     // Apply region filter
     document.getElementById('region-apply').addEventListener('click', () => {
       const r = this._getRegionBounds();
       this.entitySystem.regionFilter = r;
       if (this.terrainSystem) this.terrainSystem.setRegionClip(r);
-      this._updateRegionPreview();
       const count = this._countEntitiesInRegion(r);
       statsEl.innerHTML = `<strong>Region filter active:</strong> ${count} entities visible<br>
         X: ${r.minX.toFixed(0)} → ${r.maxX.toFixed(0)} | Z: ${r.minZ.toFixed(0)} → ${r.maxZ.toFixed(0)}<br>
@@ -1088,7 +1077,6 @@ class MapEditor {
     document.getElementById('region-clear').addEventListener('click', () => {
       this.entitySystem.regionFilter = null;
       if (this.terrainSystem) this.terrainSystem.setRegionClip(null);
-      this._hideRegionPreview();
       this._remove3DRegionBox();
       statsEl.textContent = 'No region filter active';
       this.showToast('Full map restored');
@@ -1138,6 +1126,110 @@ class MapEditor {
     };
   }
 
+  _applyPresetRegion(r, statsEl) {
+    document.getElementById('region-min-x').value = r.minX;
+    document.getElementById('region-max-x').value = r.maxX;
+    document.getElementById('region-min-z').value = r.minZ;
+    document.getElementById('region-max-z').value = r.maxZ;
+
+    // Sync R dialog fields if present
+    const rdMinX = document.getElementById('rd-min-x');
+    const rdMaxX = document.getElementById('rd-max-x');
+    const rdMinZ = document.getElementById('rd-min-z');
+    const rdMaxZ = document.getElementById('rd-max-z');
+    if (rdMinX) rdMinX.value = r.minX;
+    if (rdMaxX) rdMaxX.value = r.maxX;
+    if (rdMinZ) rdMinZ.value = r.minZ;
+    if (rdMaxZ) rdMaxZ.value = r.maxZ;
+
+    this._regionCorners = [
+      { x: r.minX, z: r.minZ },
+      { x: r.maxX, z: r.minZ },
+      { x: r.maxX, z: r.maxZ },
+      { x: r.minX, z: r.maxZ },
+    ];
+
+    this.entitySystem.regionFilter = r;
+    if (this.terrainSystem) this.terrainSystem.setRegionClip(r);
+
+    const count = this._countEntitiesInRegion(r);
+    const spanX = r.maxX - r.minX;
+    const spanZ = r.maxZ - r.minZ;
+    if (statsEl) {
+      statsEl.innerHTML = `<strong>Region filter active:</strong> ${count} entities visible<br>
+        X: ${r.minX.toFixed(0)} → ${r.maxX.toFixed(0)} | Z: ${r.minZ.toFixed(0)} → ${r.maxZ.toFixed(0)}<br>
+        Size: ${(spanX / 1000).toFixed(1)}k × ${(spanZ / 1000).toFixed(1)}k`;
+    }
+
+    this._update3DRegionBox(r);
+
+    // Sync region action bar if present
+    const rabInfo = document.getElementById('rab-info');
+    if (rabInfo) rabInfo.textContent = `${(spanX / 1000).toFixed(1)}k × ${(spanZ / 1000).toFixed(1)}k — drag white corners to resize`;
+  }
+
+  async _loadExportedAreas(statsEl) {
+    const listEl = document.getElementById('exported-areas-list');
+    if (!listEl) return;
+    listEl.innerHTML = 'Loading...';
+
+    try {
+      const res = await fetch('/api/full-exports');
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json();
+      const exports = Array.isArray(data?.exports) ? data.exports : [];
+      const withRegion = exports.filter((e) => e.region && Number.isFinite(e.region.minX));
+
+      if (withRegion.length === 0) {
+        listEl.innerHTML = '<span style="color:#888">No exported map regions found.</span>';
+        return;
+      }
+
+      listEl.innerHTML = '';
+      for (const exp of withRegion) {
+        const r = exp.region;
+        const spanX = r.maxX - r.minX;
+        const spanZ = r.maxZ - r.minZ;
+        const sizeLabel = `${(spanX / 1000).toFixed(1)}k × ${(spanZ / 1000).toFixed(1)}k`;
+        const dateStr = exp.createdAt ? new Date(exp.createdAt).toLocaleDateString() : '';
+
+        const btn = document.createElement('button');
+        btn.className = 'region-btn exported-area-btn';
+        btn.style.cssText = 'display:block;width:100%;margin-bottom:4px;text-align:left';
+        btn.innerHTML = `📐 ${this._escapeHtml(exp.name)} — ${sizeLabel} <span style="color:#888;font-size:10px">${dateStr}</span>`;
+        btn.title = `X: ${r.minX} → ${r.maxX} | Z: ${r.minZ} → ${r.maxZ}`;
+
+        btn.addEventListener('click', () => {
+          const region = {
+            minX: Number(r.minX),
+            maxX: Number(r.maxX),
+            minZ: Number(r.minZ),
+            maxZ: Number(r.maxZ),
+          };
+          // Include corners if available from manifest
+          if (exp.regionCorners && Array.isArray(exp.regionCorners) && exp.regionCorners.length === 4) {
+            const corners = exp.regionCorners.map(c => ({ x: Number(c.x), z: Number(c.z) }));
+            if (corners.every(c => Number.isFinite(c.x) && Number.isFinite(c.z))) {
+              this._regionCorners = corners;
+            }
+          }
+          this._applyPresetRegion(region, statsEl);
+          this.showToast(`${exp.name} region applied (match exported size)`);
+        });
+
+        listEl.appendChild(btn);
+      }
+    } catch (err) {
+      listEl.innerHTML = `<span style="color:#f66">Failed: ${this._escapeHtml(err.message || String(err))}</span>`;
+    }
+  }
+
+  _escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
   _countEntitiesInRegion(r) {
     return this.entitySystem.allEntities.filter(e => {
       const p = e.worldPos;
@@ -1145,31 +1237,6 @@ class MapEditor {
       if (r.polygon) return this._pointInPolygon(p.x, p.z, r.polygon);
       return true;
     }).length;
-  }
-
-  _updateRegionPreview() {
-    const box = document.getElementById('minimap-region-box');
-    if (!box || !this._mmBounds) return;
-    const r = this._getRegionBounds();
-    const b = this._mmBounds;
-    const canvas = this._mmCanvas;
-    const rect = canvas.getBoundingClientRect();
-
-    const x1 = ((r.minX - b.minX) / (b.maxX - b.minX)) * rect.width;
-    const x2 = ((r.maxX - b.minX) / (b.maxX - b.minX)) * rect.width;
-    const z1 = ((r.minZ - b.minZ) / (b.maxZ - b.minZ)) * rect.height;
-    const z2 = ((r.maxZ - b.minZ) / (b.maxZ - b.minZ)) * rect.height;
-
-    box.style.left = `${Math.min(x1, x2)}px`;
-    box.style.top = `${Math.min(z1, z2)}px`;
-    box.style.width = `${Math.abs(x2 - x1)}px`;
-    box.style.height = `${Math.abs(z2 - z1)}px`;
-    box.style.display = 'block';
-  }
-
-  _hideRegionPreview() {
-    const box = document.getElementById('minimap-region-box');
-    if (box) box.style.display = 'none';
   }
 
   /** Extract folder hierarchy from a mesh path */
@@ -1723,6 +1790,12 @@ class MapEditor {
       this._editMode = mode;
       camBtn.classList.toggle('active', mode === 'camera');
       selBtn.classList.toggle('active', mode === 'select');
+      if (this.playerController) {
+        this.playerController.allowPointerLock = (mode === 'camera');
+      }
+      if (mode !== 'camera' && document.pointerLockElement === this.canvas) {
+        document.exitPointerLock();
+      }
     };
 
     if (!bar._wired) {
@@ -1751,10 +1824,6 @@ class MapEditor {
       if (e.code === 'KeyV' && !e.ctrlKey && !e.metaKey) {
         this._editMode = 'select';
         this._setupModeBar();
-      }
-      if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault();
-        this.openSaveDialog();
       }
       if (e.code === 'KeyC' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
@@ -1809,19 +1878,18 @@ class MapEditor {
     this.selectionHighlight = null; // outline mesh for selected object
 
     this.canvas.addEventListener('click', (e) => {
-      // Only pick if pointer is NOT locked and NOT in drag-select and NOT in pen mode
+      // Only pick if pointer is NOT locked and NOT in drag-select
       if (document.pointerLockElement) return; // don't pick while in FPS mode
       if (this._editMode !== 'select') return; // only pick in select mode
       if (this._justFinishedDrag) { this._justFinishedDrag = false; return; }
-      if (this._penMode) return; // pen mode handles its own clicks
       if (this._regionDrawMode) return; // don't pick while drawing region
       this.onCanvasClick(e);
     });
 
     // Escape to deselect
     document.addEventListener('keydown', (e) => {
-      if (e.code === 'Escape' && this.selectedEntry) {
-        this.deselectMesh();
+      if (e.code === 'Escape' && this._editMode === 'select') {
+        this.clearSelectionState();
       }
     });
   }
@@ -1852,12 +1920,13 @@ class MapEditor {
       for (const entry of this.entitySystem.instancedMeshes) {
         const subs = entry.subMeshes || [entry.mesh];
         if (subs.includes(hitMesh)) {
+          this.clearMultiSelection();
           this.selectMesh(entry, instanceId);
           return;
         }
       }
     } else {
-      this.deselectMesh();
+      this.clearSelectionState();
     }
   }
 
@@ -2060,6 +2129,11 @@ class MapEditor {
     }
     this.selectedEntry = null;
     document.getElementById('transform-panel').classList.remove('visible');
+  }
+
+  clearSelectionState() {
+    this.deselectMesh();
+    this.clearMultiSelection();
   }
 
   // ─── Transform Panel ────────────────────────────────
@@ -2301,15 +2375,6 @@ class MapEditor {
       dialog.classList.remove('visible');
     });
 
-    // Use camera position
-    document.getElementById('rd-use-camera').addEventListener('click', () => {
-      const p = this.camera.position;
-      document.getElementById('rd-min-x').value = Math.round(p.x - defaultSize);
-      document.getElementById('rd-max-x').value = Math.round(p.x + defaultSize);
-      document.getElementById('rd-min-z').value = Math.round(p.z - defaultSize);
-      document.getElementById('rd-max-z').value = Math.round(p.z + defaultSize);
-    });
-
     // Draw box on map mode
     this._regionDrawMode = false;
     this._rdDrawBtn = document.getElementById('rd-draw-on-map');
@@ -2328,21 +2393,6 @@ class MapEditor {
       }
     });
 
-    // Pen mode
-    document.getElementById('rd-pen-mode').addEventListener('click', () => {
-      this._startPenMode();
-    });
-
-    // Preview
-    document.getElementById('rd-preview').addEventListener('click', () => {
-      this._updateRegionPreviewFromDialog();
-      const r = this._getRegionDialogBounds();
-      this._update3DRegionBox(r);
-      this._pendingRegion = r;
-      this._showRegionActionBar(r);
-      dialog.classList.remove('visible');
-    });
-
     // Apply (from dialog directly)
     document.getElementById('rd-apply').addEventListener('click', () => {
       this._applyRegionAction();
@@ -2353,7 +2403,6 @@ class MapEditor {
     document.getElementById('rd-clear').addEventListener('click', () => {
       this.entitySystem.regionFilter = null;
       if (this.terrainSystem) this.terrainSystem.setRegionClip(null);
-      this._hideRegionPreview();
       this._remove3DRegionBox();
       this._hideRegionActionBar();
       this._pendingRegion = null;
@@ -2361,35 +2410,13 @@ class MapEditor {
       this.showToast('Full map restored');
     });
 
-    // Save arena
-    document.getElementById('rd-save-arena').addEventListener('click', () => {
-      this.openSaveDialog();
-    });
-
-    // Full export
-    document.getElementById('rd-full-export').addEventListener('click', () => {
-      this.exportFullMap({ attachMeshCollision: false });
-    });
-
     // Full export with per-GLB collision sidecars
     const exportWithCollisionBtn = document.getElementById('rd-full-export-collision');
     if (exportWithCollisionBtn) {
       exportWithCollisionBtn.addEventListener('click', () => {
-        this.exportFullMap({ attachMeshCollision: true });
+        this.exportFullMap();
       });
     }
-
-    const exportRegionalWithCollisionBtn = document.getElementById('rd-regional-export-collision');
-    if (exportRegionalWithCollisionBtn) {
-      exportRegionalWithCollisionBtn.addEventListener('click', () => {
-        this.exportFullMap({ attachMeshCollision: true, requireRegion: true });
-      });
-    }
-
-    // Full import
-    document.getElementById('rd-full-import').addEventListener('click', () => {
-      this.importFullMap();
-    });
 
     // Collision test mode (single mesh precision check)
     const collisionTestBtn = document.getElementById('rd-collision-test-mode');
@@ -2397,8 +2424,7 @@ class MapEditor {
       collisionTestBtn.addEventListener('click', () => {
         const dataPath = this.currentMapPath || 'map-data';
         const url = `/collision-test-mode.html?dataPath=${encodeURIComponent(dataPath)}`;
-        const win = window.open(url, '_blank');
-        if (!win) this.showToast('Popup blocked. Open /collision-test-mode.html manually.');
+        window.location.href = url;
       });
     }
   }
@@ -2504,26 +2530,6 @@ class MapEditor {
     this._update3DRegionBox(r);
     const info = document.getElementById('rab-info');
     if (info) info.textContent = `${((r.maxX-r.minX)/1000).toFixed(1)}k × ${Math.abs((r.maxZ-r.minZ)/1000).toFixed(1)}k — drag white corners to resize`;
-  }
-
-  _updateRegionPreviewFromDialog() {
-    const box = document.getElementById('minimap-region-box');
-    if (!box || !this._mmBounds) return;
-    const r = this._getRegionDialogBounds();
-    const b = this._mmBounds;
-    const canvas = this._mmCanvas;
-    const rect = canvas.getBoundingClientRect();
-
-    const x1 = ((r.minX - b.minX) / (b.maxX - b.minX)) * rect.width;
-    const x2 = ((r.maxX - b.minX) / (b.maxX - b.minX)) * rect.width;
-    const z1 = ((r.minZ - b.minZ) / (b.maxZ - b.minZ)) * rect.height;
-    const z2 = ((r.maxZ - b.minZ) / (b.maxZ - b.minZ)) * rect.height;
-
-    box.style.left = `${Math.min(x1, x2)}px`;
-    box.style.top = `${Math.min(z1, z2)}px`;
-    box.style.width = `${Math.abs(x2 - x1)}px`;
-    box.style.height = `${Math.abs(z2 - z1)}px`;
-    box.style.display = 'block';
   }
 
   // ─── 3D Region Box ─────────────────────────────────
@@ -2767,9 +2773,6 @@ class MapEditor {
     document.getElementById('rab-apply').addEventListener('click', () => {
       this._applyRegionAction();
     });
-    document.getElementById('rab-save').addEventListener('click', () => {
-      this.openSaveDialog();
-    });
     document.getElementById('rab-edit').addEventListener('click', () => {
       document.getElementById('region-dialog').classList.add('visible');
       // Show the 3D box when entering edit mode
@@ -2781,7 +2784,6 @@ class MapEditor {
       this._hideRegionActionBar();
       this._hideDrawHint();
       this._pendingRegion = null;
-      this._exitPenMode();
     });
   }
 
@@ -2790,7 +2792,6 @@ class MapEditor {
     if (this._pendingRegion?.polygon) r.polygon = this._pendingRegion.polygon;
     this.entitySystem.regionFilter = r;
     if (this.terrainSystem) this.terrainSystem.setRegionClip(r);
-    this._updateRegionPreviewFromDialog();
     const count = this._countEntitiesInRegion(r);
     document.getElementById('rd-stats').innerHTML =
       `<strong>Active:</strong> ${count} entities | ${((r.maxX-r.minX)/1000).toFixed(1)}k × ${Math.abs((r.maxZ-r.minZ)/1000).toFixed(1)}k`;
@@ -2824,129 +2825,6 @@ class MapEditor {
     document.getElementById('draw-hint').classList.remove('visible');
   }
 
-  // ─── Pen / Polygon Mode ───────────────────────────
-  _setupPenMode() {
-    if (this._penModeSetup) return;
-    this._penModeSetup = true;
-    this._penMode = false;
-    this._penPoints = [];
-    this._penGroup = null;
-    this._penLastClick = 0;
-
-    this.canvas.addEventListener('click', (e) => {
-      if (!this._penMode) return;
-      if (document.pointerLockElement) return;
-      if (this._justFinishedDrag) return;
-      const world = this._getMouseWorldPos(e);
-      if (!world) return;
-      const now = performance.now();
-      const dbl = (now - this._penLastClick) < 380;
-      this._penLastClick = now;
-      if (dbl) { this._finishPenPolygon(); return; }
-      this._addPenPoint(world);
-    });
-
-    document.addEventListener('keydown', (e) => {
-      if (!this._penMode) return;
-      if (e.code === 'Backspace' && e.target.tagName !== 'INPUT') {
-        e.preventDefault(); this._removePenLastPoint();
-      }
-      if (e.code === 'Enter') this._finishPenPolygon();
-      if (e.code === 'Escape') this._exitPenMode();
-    });
-  }
-
-  _startPenMode() {
-    this._penMode = true;
-    this._penPoints = [];
-    this._clearPenVisuals();
-    this._regionDrawMode = false;
-    if (this.playerController) this.playerController._blockPointerLock = true;
-    document.getElementById('region-dialog').classList.remove('visible');
-    this._showDrawHint('🖊 Pen: click terrain to add points | Double-click or Enter to finish | Backspace to undo | Esc to cancel');
-  }
-
-  _addPenPoint(worldPos) {
-    this._penPoints.push(worldPos.clone());
-    this._drawPenVisuals();
-    this.showToast(`Point ${this._penPoints.length} added`);
-  }
-
-  _removePenLastPoint() {
-    if (this._penPoints.length > 0) {
-      this._penPoints.pop();
-      this._drawPenVisuals();
-      this.showToast(`Removed — ${this._penPoints.length} points`);
-    }
-  }
-
-  _drawPenVisuals() {
-    this._clearPenVisuals();
-    const pts = this._penPoints;
-    if (pts.length === 0) return;
-    this._penGroup = new THREE.Group();
-    this._penGroup.name = 'pen-group';
-    this.scene.add(this._penGroup);
-
-    const dotGeo = new THREE.SphereGeometry(180, 8, 6);
-    for (let i = 0; i < pts.length; i++) {
-      const dot = new THREE.Mesh(dotGeo, new THREE.MeshBasicMaterial({ color: i === 0 ? 0xffff00 : 0x00ffff, depthTest: false }));
-      dot.position.set(pts[i].x, pts[i].y + 50, pts[i].z);
-      dot.renderOrder = 1002;
-      this._penGroup.add(dot);
-    }
-
-    if (pts.length >= 2) {
-      const linePts = [...pts.map(p => new THREE.Vector3(p.x, p.y + 50, p.z)), new THREE.Vector3(pts[0].x, pts[0].y + 50, pts[0].z)];
-      const lineGeo = new THREE.BufferGeometry().setFromPoints(linePts);
-      const line = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.85, depthTest: false }));
-      line.renderOrder = 1001;
-      this._penGroup.add(line);
-    }
-  }
-
-  _clearPenVisuals() {
-    if (this._penGroup) {
-      this._penGroup.traverse(c => {
-        if (c.geometry) c.geometry.dispose();
-        if (c.material) c.material.dispose();
-      });
-      this.scene.remove(this._penGroup);
-      this._penGroup = null;
-    }
-  }
-
-  _finishPenPolygon() {
-    if (this._penPoints.length < 3) { this.showToast('Need at least 3 points'); return; }
-    const xs = this._penPoints.map(p => p.x);
-    const zs = this._penPoints.map(p => p.z);
-    const r = {
-      minX: Math.min(...xs), maxX: Math.max(...xs),
-      minZ: Math.min(...zs), maxZ: Math.max(...zs),
-      polygon: this._penPoints.map(p => ({ x: p.x, z: p.z })),
-    };
-    document.getElementById('rd-min-x').value = Math.round(r.minX);
-    document.getElementById('rd-max-x').value = Math.round(r.maxX);
-    document.getElementById('rd-min-z').value = Math.round(r.minZ);
-    document.getElementById('rd-max-z').value = Math.round(r.maxZ);
-    this._pendingRegion = r;
-    this._update3DRegionBox(r);
-    this._clearPenVisuals();
-    this._showRegionActionBar(r);
-    this._hideDrawHint();
-    this._penMode = false;
-    if (this.playerController) this.playerController._blockPointerLock = false;
-  }
-
-  _exitPenMode() {
-    this._penMode = false;
-    this._penPoints = [];
-    this._clearPenVisuals();
-    if (this.playerController) this.playerController._blockPointerLock = false;
-    this._hideDrawHint();
-    this.showToast('Pen mode cancelled');
-  }
-
   _pointInPolygon(x, z, poly) {
     let inside = false;
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -2954,135 +2832,6 @@ class MapEditor {
       if (((zi > z) !== (zj > z)) && (x < (xj - xi) * (z - zi) / (zj - zi) + xi)) inside = !inside;
     }
     return inside;
-  }
-
-  // ─── Save Dialog (Ctrl+S) ─────────────────────────
-  setupSaveDialog() {
-    document.getElementById('save-cancel').addEventListener('click', () => {
-      document.getElementById('save-dialog').classList.remove('visible');
-    });
-
-    document.getElementById('save-confirm').addEventListener('click', () => {
-      this.performSave();
-    });
-
-    // Enter key in name field triggers save
-    document.getElementById('save-map-name').addEventListener('keydown', (e) => {
-      if (e.code === 'Enter') this.performSave();
-    });
-  }
-
-  openSaveDialog() {
-    const dialog = document.getElementById('save-dialog');
-    const nameInput = document.getElementById('save-map-name');
-    const overwriteSection = document.getElementById('save-overwrite-section');
-    const overwriteNameSpan = document.getElementById('save-overwrite-name');
-    const overwriteRadio = document.getElementById('save-mode-overwrite');
-    const newRadio = document.getElementById('save-mode-new');
-
-    // Show overwrite option if editing an existing custom map
-    if (this._currentCustomMap) {
-      overwriteSection.style.display = 'block';
-      overwriteNameSpan.textContent = this._currentCustomMap.name;
-      overwriteRadio.checked = true;
-      nameInput.value = this._currentCustomMap.name;
-    } else {
-      overwriteSection.style.display = 'none';
-      newRadio.checked = true;
-      // Auto-suggest name based on current region
-      const r = this.entitySystem?.regionFilter;
-      if (r) {
-        nameInput.value = `arena-${Math.round(r.minX/1000)}k-${Math.round(r.maxX/1000)}k`;
-      } else {
-        nameInput.value = `full-map-${Date.now()}`;
-      }
-    }
-
-    dialog.classList.add('visible');
-    nameInput.focus();
-    nameInput.select();
-  }
-
-  performSave() {
-    const nameInput = document.getElementById('save-map-name');
-    const name = nameInput.value.trim();
-    if (!name) {
-      this.showToast('Please enter a map name');
-      return;
-    }
-
-    // Sanitize name
-    const safeName = name.replace(/[^a-zA-Z0-9\u4e00-\u9fff_-]/g, '-');
-
-    const r = this.entitySystem.regionFilter;
-
-    // Read CURRENT scene state (reflects moves/deletes/additions)
-    const entities = this.entitySystem.getCurrentEntities().filter(e => {
-      if (!r) return true;
-      const p = e.worldPos;
-      return p.x >= r.minX && p.x <= r.maxX && p.z >= r.minZ && p.z <= r.maxZ;
-    });
-
-    const exportData = {
-      name: safeName,
-      region: r || null,
-      entityCount: entities.length,
-      created: Date.now(),
-      entities,
-    };
-
-    // Download as file
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${safeName}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-
-    // Check if overwriting existing or saving as new
-    const isOverwrite = this._currentCustomMap &&
-      document.getElementById('save-mode-overwrite')?.checked;
-
-    if (isOverwrite) {
-      // Update existing entry
-      const idx = this.customMaps.indexOf(this._currentCustomMap);
-      if (idx >= 0) {
-        this.customMaps[idx] = {
-          name: safeName, region: r, entityCount: entities.length,
-          created: this._currentCustomMap.created, updated: Date.now(),
-        };
-        this._currentCustomMap = this.customMaps[idx];
-      }
-    } else {
-      // Save as new custom map
-      const cmEntry = {
-        name: safeName, region: r, entityCount: entities.length,
-        created: Date.now(),
-      };
-      this.customMaps.push(cmEntry);
-      this._currentCustomMap = cmEntry;
-    }
-
-    this.saveCustomMapList();
-
-    // Store entity data separately (keyed by map name)
-    try {
-      localStorage.setItem('jx3-map-entities-' + safeName, JSON.stringify(entities));
-    } catch (e) {
-      console.warn('Could not store entities in localStorage:', e);
-      this.showToast('Warning: entity data too large for local storage — use the downloaded JSON file');
-    }
-
-    document.getElementById('save-dialog').classList.remove('visible');
-    this.showToast(`Saved: ${safeName} (${entities.length} entities)`);
-
-    // Unlock the map for editing after saving a copy
-    if (this.isOriginalMap) {
-      this.isOriginalMap = false;
-      document.getElementById('lock-indicator').style.display = 'none';
-      this.showToast('Map unlocked for editing');
-    }
   }
 
   _collectCurrentSceneEntities(region = null) {
@@ -3130,42 +2879,26 @@ class MapEditor {
   }
 
   // ─── Full Export (terrain + entities + GLBs list) ────
-  async exportFullMap(options = {}) {
+  async exportFullMap() {
     if (!this.entitySystem) {
       this.showToast('Entity system not ready');
       return;
     }
 
-    const attachMeshCollision = !!options.attachMeshCollision;
-    const requireRegion = !!options.requireRegion;
-    const endpoint = requireRegion && attachMeshCollision
-      ? '/api/export-regional-with-collision'
-      : (attachMeshCollision ? '/api/export-full-with-collision' : '/api/export-full');
-    const buttonId = requireRegion
-      ? 'rd-regional-export-collision'
-      : (attachMeshCollision ? 'rd-full-export-collision' : 'rd-full-export');
-    const fallbackButtonLabel = requireRegion
-      ? '🗺 Export Region + Collision'
-      : (attachMeshCollision ? '🧱 Export With Collision' : '📦 Full Export');
-    const busyLabel = requireRegion
-      ? '⏳ Building regional export + attaching mesh collision...'
-      : (attachMeshCollision
-        ? '⏳ Building export + attaching GLB collision...'
-        : '⏳ Building full export on Desktop...');
+    const attachMeshCollision = true;
+    const endpoint = '/api/export-full-with-collision';
+    const buttonId = 'rd-full-export-collision';
+    const fallbackButtonLabel = '🧱 Export With Collision';
+    const busyLabel = '⏳ Building export + attaching GLB collision...';
 
     const region = this.entitySystem.regionFilter || this._pendingRegion || null;
-    if (requireRegion && !region) {
-      this.showToast('No region selected. Apply/preview a region first, then export.');
-      return;
-    }
-
     const entities = this._collectCurrentSceneEntities(region);
     if (entities.length === 0) {
       this.showToast('No entities to export');
       return;
     }
 
-    const btn = document.getElementById(buttonId) || document.getElementById('rd-full-export');
+    const btn = document.getElementById(buttonId);
     const prevText = btn?.textContent;
     if (btn) {
       btn.disabled = true;
@@ -3173,8 +2906,7 @@ class MapEditor {
     }
 
     try {
-      const exportName = this._currentCustomMap?.name
-        || `${requireRegion ? 'regional-map' : 'full-map'}-${Date.now()}`;
+      const exportName = this._currentCustomMap?.name || `full-map-${Date.now()}`;
       const payload = {
         name: exportName,
         sourceMapPath: this.currentMapPath || 'map-data',
@@ -3205,19 +2937,14 @@ class MapEditor {
       const sidecarsMissing = Number.isFinite(st.meshCollisionMissing)
         ? st.meshCollisionMissing
         : Math.max(0, sidecarsExpected - sidecarsAttached);
-      const attachedSummary = attachMeshCollision
-        ? `, sidecars ${sidecarsAttached}/${sidecarsExpected} (missing ${sidecarsMissing})`
-        : '';
-      const exportLabel = requireRegion
-        ? 'REGIONAL export + collision done'
-        : (attachMeshCollision ? 'FULL export + collision done' : 'FULL export done');
+      const attachedSummary = `, sidecars ${sidecarsAttached}/${sidecarsExpected} (missing ${sidecarsMissing})`;
+      const exportLabel = 'FULL export + collision done';
       const msg = `${exportLabel}: ${st.entities || entities.length} entities, ${st.meshesCopied || 0}/${st.meshesRequested || 0} GLBs, ${st.heightmapsCopied || 0} heightmaps${collisionSummary}${attachedSummary}`;
       this.showToast(msg);
 
-      // Open full viewer directly to the new package.
+      // Open Export Reader directly to the new package.
       if (data.viewerUrl) {
-        const win = window.open(data.viewerUrl, '_blank');
-        if (!win) this.showToast('Export done. Open /full-viewer.html to load the package');
+        window.location.href = data.viewerUrl;
       }
     } catch (err) {
       console.error('Full export failed:', err);
@@ -3230,96 +2957,18 @@ class MapEditor {
     }
   }
 
-  // ─── Import Full Export ────────────────────────────
-  importFullMap() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      try {
-        const text = await file.text();
-        const data = JSON.parse(text);
-        await this._loadImportedMap(data);
-      } catch (err) {
-        console.error('Import error:', err);
-        this.showToast('Import failed: ' + err.message);
-      }
-    });
-    input.click();
-  }
-
-  async _loadImportedMap(data) {
-    if (!data.entities?.length) {
-      this.showToast('No entities in import data');
-      return;
-    }
-
-    // If version 2 export with terrain data — rebuild terrain
-    if (data.version >= 2 && data.terrainTiles && data.terrainConfig) {
-      // Reconstruct terrain heightmaps from base64
-      const ts = this.terrainSystem;
-      if (ts) {
-        for (const [key, b64] of Object.entries(data.terrainTiles)) {
-          const binary = atob(b64);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-          const hd = new Float32Array(bytes.buffer);
-          ts.heightmaps.set(key, hd);
-          // Rebuild mesh for this tile
-          const [rx, ry] = key.split('_').map(Number);
-          ts.createRegionMesh(rx, ry, hd);
-        }
-        ts.buildMinimap();
-        this.showToast(`Rebuilt ${Object.keys(data.terrainTiles).length} terrain tiles`);
-      }
-    }
-
-    // Apply region filter
-    if (data.region) {
-      this.entitySystem.regionFilter = data.region;
-      if (this.terrainSystem) this.terrainSystem.setRegionClip(data.region);
-      document.getElementById('rd-min-x').value = Math.round(data.region.minX);
-      document.getElementById('rd-max-x').value = Math.round(data.region.maxX);
-      document.getElementById('rd-min-z').value = Math.round(data.region.minZ);
-      document.getElementById('rd-max-z').value = Math.round(data.region.maxZ);
-      this._update3DRegionBox(data.region);
-    }
-
-    // Restore corners if present
-    if (data.regionCorners) {
-      this._regionCorners = data.regionCorners;
-      if (data.region) this._update3DRegionBox(data.region);
-    }
-
-    // Restore entities
-    this._restoreSavedEntities(data.entities);
-    this.showToast(`Imported: ${data.entities.length} entities from "${data.name}"`);
-
-    // Track as custom map
-    this._currentCustomMap = {
-      name: data.name,
-      region: data.region,
-      entityCount: data.entities.length,
-      created: data.created,
-    };
-    this.isOriginalMap = false;
-    document.getElementById('lock-indicator').style.display = 'none';
-  }
-
   // ─── Drag-Select ─────────────────────────────────
   setupDragSelect() {
     const box = document.getElementById('drag-select-box');
     let startX = 0, startY = 0;
     let isDragging = false;
+    let canStartDragSelect = false;
 
     this.canvas.addEventListener('mousedown', (e) => {
+      canStartDragSelect = false;
       if (document.pointerLockElement) return;
       if (e.button !== 0) return; // left button only
       if (document.getElementById('region-dialog').classList.contains('visible')) return;
-      if (document.getElementById('save-dialog').classList.contains('visible')) return;
-      if (this._penMode) return; // pen mode handles clicks separately
       if (this._regionDrawMode) return; // don't drag-select while drawing region
 
       // Priority: check corner handles before drag-select (works in all modes)
@@ -3341,12 +2990,14 @@ class MapEditor {
       startY = e.clientY;
       isDragging = false;
       this.isDragSelecting = false;
+      canStartDragSelect = true;
     });
 
     window.addEventListener('mousemove', (e) => {
       // Handle corner drag takes priority over everything
       if (this._draggingHandle) { this._updateHandleDrag(e); return; }
       if (document.pointerLockElement) return;
+      if (!canStartDragSelect) return;
       if (e.buttons !== 1) return; // left button held
       const dx = Math.abs(e.clientX - startX);
       const dy = Math.abs(e.clientY - startY);
@@ -3374,6 +3025,7 @@ class MapEditor {
       // Finish handle drag
       if (this._draggingHandle) {
         this._draggingHandle = null;
+        canStartDragSelect = false;
         this.isDragSelecting = false;
         this._justFinishedDrag = true;
         setTimeout(() => { if (this.playerController) this.playerController._blockPointerLock = false; }, 50);
@@ -3400,6 +3052,7 @@ class MapEditor {
           this.performBoxSelect(x1, y1, x2, y2);
         }
       }
+      canStartDragSelect = false;
       isDragging = false;
     });
 
@@ -3811,6 +3464,7 @@ class MapEditor {
 }
 
 const editor = new MapEditor();
+window.editor = editor;
 editor.init().catch(err => {
   console.error('Init failed:', err);
 });

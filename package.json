@@ -4,14 +4,36 @@
   "description": "JX3 Map Viewer - Reverse-engineered KSword3D scene renderer for web",
   "type": "module",
   "scripts": {
-    "convert": "node tools/convert-map.js",
-    "convert:mesh": "node tools/convert-mesh.js",
+    "setup:runtime-libs": "node tools/setup-runtime-libs.js",
+    "predev": "npm run setup:runtime-libs",
+    "prelocal": "npm run setup:runtime-libs",
+    "prestart": "npm run setup:runtime-libs",
+    "postinstall": "npm run setup:runtime-libs",
     "dev": "node server.js",
-    "dev:py": "python tools/serve.py",
-    "build": "node tools/build-map-data.js"
+    "local": "node tools/start-local.mjs",
+    "start": "node server.js",
+    "wwise:index": "node tools/index-wwise-soundbanks-v3.mjs",
+    "wwise:event-folders": "node tools/export-wwise-event-folders.mjs",
+    "sidecar:build": "dotnet build -c Release tools/pss-renderer-cli",
+    "sidecar:probe": "tools/pss-renderer-cli/bin/Release/PssRendererCli.exe probe",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed"
   },
   "dependencies": {
+    "fzstd": "^0.1.1",
+    "iconv-lite": "^0.7.2",
+    "koffi": "^2.16.0",
     "three": "^0.170.0",
-    "three-mesh-bvh": "^0.9.9"
+    "three-mesh-bvh": "^0.9.9",
+    "zstd-napi": "^0.0.12"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "lz4js": "^0.2.0",
+    "playwright": "^1.59.1"
+  },
+  "optionalDependencies": {
+    "frida": "^17.9.3"
   }
 }

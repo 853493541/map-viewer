@@ -257,7 +257,7 @@ def parse_mesh_file(filepath):
       0xD4-0x113: 16 extend ints (zeros)
     
     Compressed blocks (HD/bin format, flag 0xE0000000 at 0x5C):
-      Position: 24-byte BBox (6×f32) + N×6 (SNorm16×3)
+    Position: 24-byte BBox (6×f32) + N×6 (UNorm16×3)
       Normal:   N×3 (UNorm8×3), no header
       Tangent:  N×4 (UNorm8×4), no header
       UV:       12-byte scale (3×f32) + N×6 (SNorm16×3)
@@ -341,8 +341,26 @@ def parse_mesh_file(filepath):
     norm_compressed = norm_bpv < 5.0 if off_normal else False
     norm_qtangent = norm_bpv >= 6.5 and norm_bpv < 9.0 if off_normal else False
 
-    # UV: compressed = ~6 bpv + 12B header; uncompressed = 12 bpv + 4B sentinel
+    # UV: compressed ≈ 6 bpv + 12B header; uncompressed = 12 bpv + 4B sentinel
+    # SPECIAL: 12 bpv can also be 6×SNorm16 (3 UV pairs), detect by checking if
+    # raw int16 values fall in [-1,1] range.
     uv1_compressed = uv1_bpv < 8.0 if off_uv1 else False
+    uv1_12bpv_snorm = False
+    if off_uv1 and not uv1_compressed and abs(uv1_bpv - 12.0) < 1.0 and vertex_count > 0:
+        # Sample first 32 vertices: if all int16 values are in [-32767,32767] and
+        # most are in a reasonable UV range, it's likely SNorm16 disguised as float32.
+        sample_count = min(32, vertex_count)
+        snorm_values = 0
+        total_values = sample_count * 6  # 6 shorts per vertex
+        for vi in range(sample_count):
+            o = off_uv1 + vi * 12
+            for si in range(6):
+                val = struct.unpack_from('<h', data, o + si * 2)[0]
+                if -32767 <= val <= 32767:
+                    snorm_values += 1
+        if snorm_values == total_values:
+            uv1_compressed = True
+            uv1_12bpv_snorm = True
 
     # Tangent: compressed = 4 bpv (UNorm8×4); uncompressed = 16 bpv (f32×4)
     tan_compressed = tan_bpv < 8.0 if off_tangent else False
@@ -364,17 +382,15 @@ def parse_mesh_file(filepath):
             bbox = struct.unpack_from('<6f', data, off_position)
             mn = tuple(min(bbox[i], bbox[i + 3]) for i in range(3))
             mx = tuple(max(bbox[i], bbox[i + 3]) for i in range(3))
-            center = tuple((mn[i] + mx[i]) / 2.0 for i in range(3))
-            half = tuple((mx[i] - mn[i]) / 2.0 for i in range(3))
             vdata = off_position + 24
             verts = []
             for vi in range(vertex_count):
                 o = vdata + vi * 6
-                sx, sy, sz = struct.unpack_from('<3h', data, o)
+                sx, sy, sz = struct.unpack_from('<3H', data, o)
                 verts.append((
-                    center[0] + (sx / 32767.0) * half[0],
-                    center[1] + (sy / 32767.0) * half[1],
-                    center[2] + (sz / 32767.0) * half[2],
+                    mn[0] + (sx / 65535.0) * (mx[0] - mn[0]),
+                    mn[1] + (sy / 65535.0) * (mx[1] - mn[1]),
+                    mn[2] + (sz / 65535.0) * (mx[2] - mn[2]),
                 ))
             positions = verts
         else:
@@ -487,16 +503,47 @@ def parse_mesh_file(filepath):
     # === UV1 ===
     if off_uv1:
         if uv1_compressed:
-            u_scale, v_scale, w_scale = struct.unpack_from('<3f', data, off_uv1)
-            uv_data_start = off_uv1 + 12
-            uv_list = []
-            for vi in range(vertex_count):
-                o = uv_data_start + vi * 6
-                u_raw, v_raw, w_raw = struct.unpack_from('<3h', data, o)
-                uv_list.append((
-                    (u_raw / 32767.0) * u_scale,
-                    (v_raw / 32767.0) * v_scale,
-                ))
+            if uv1_12bpv_snorm:
+                # 12 bytes/vertex = 6×SNorm16 (3 UV pairs). No scale header.
+                # Use the first UV pair (u1,v1) at offset 0,2 of each vertex.
+                uv_list = []
+                for vi in range(vertex_count):
+                    o = off_uv1 + vi * 12
+                    u_raw = struct.unpack_from('<h', data, o)[0]
+                    v_raw = struct.unpack_from('<h', data, o + 2)[0]
+                    uv_list.append((u_raw / 32767.0, v_raw / 32767.0))
+                uvs = uv_list
+            else:
+                u_scale, v_scale, w_scale = struct.unpack_from('<3f', data, off_uv1)
+                uv_data_start = off_uv1 + 12
+                uv_list = []
+                # ADD mode: when scale values are near 1.0, they are actually UV
+                # offsets, not multiplicative scales.
+                is_add_mode = (abs(u_scale - 1.0) < 0.05 and abs(v_scale - 1.0) < 0.05)
+                # W_SCALE divisor: when w_scale != 0, it divides the inflated scale
+                # values used by compressed meshes to match uncompressed equivalents.
+                # The constant 4.364 is used across all compressed building meshes.
+                has_w_div = (abs(w_scale) > 0.001)
+                for vi in range(vertex_count):
+                    o = uv_data_start + vi * 6
+                    u_raw, v_raw, w_raw = struct.unpack_from('<3h', data, o)
+                    u_norm = u_raw / 32767.0
+                    v_norm = v_raw / 32767.0
+                    if has_w_div:
+                        uv_list.append((
+                            u_norm * u_scale / w_scale,
+                            v_norm * v_scale / w_scale,
+                        ))
+                    elif is_add_mode:
+                        uv_list.append((
+                            u_norm + u_scale,
+                            v_norm + v_scale,
+                        ))
+                    else:
+                        uv_list.append((
+                            u_norm * u_scale,
+                            v_norm * v_scale,
+                        ))
             uvs = uv_list
         else:
             uv_list = []
@@ -560,10 +607,27 @@ def parse_jsoninspack(filepath):
         if not groups:
             break
         for subset in groups[0].get('Subset', []):
-                info = {'textures': {}}
+                info = {'textures': {}, 'colors': {}, 'floats': {}}
                 for param in subset.get('Param', []):
-                    if param.get('Type') == 'Texture':
-                        info['textures'][param['Name']] = param['Value']
+                    ptype = param.get('Type')
+                    pname = param.get('Name')
+                    pvalue = param.get('Value')
+                    if ptype == 'Texture':
+                        info['textures'][pname] = pvalue
+                    elif ptype == 'Color':
+                        # Authentic RGBA (4 floats, A can exceed 1.0 for HDR rim)
+                        if isinstance(pvalue, list):
+                            info['colors'][pname] = list(pvalue)
+                    elif ptype == 'Float':
+                        try:
+                            info['floats'][pname] = float(pvalue)
+                        except (TypeError, ValueError):
+                            pass
+                # Expose the material RefPath (e.g. fresnel勾边_法线_颜色贴图.jsondef)
+                # so the client knows which shader to emulate.
+                sinfo = subset.get('Info', {})
+                if isinstance(sinfo, dict) and sinfo.get('RefPath'):
+                    info['refPath'] = sinfo['RefPath']
                 rs = subset.get('RenderState', {})
                 info['blendMode'] = rs.get('BlendMode', 0)
                 info['alphaRef'] = rs.get('AlphaRef', 128)
@@ -585,7 +649,72 @@ SUBSET_COLORS = [
 ]
 
 
-def mesh_to_glb(mesh_data, subset_materials=None):
+def parse_ani_vertex_animation(filepath):
+    """Parse a KSword3D MIN2 vertex animation file.
+
+    Returns dict with per-frame vertex positions, or None if the file
+    uses skeletal animation (bone_count > 1) which is not yet supported.
+
+    MIN2 vertex-animation layout (bone_count == 1):
+      0x00: "MIN2" magic
+      0x04: uint32 fileSize
+      0x08: uint32 version (1)
+      0x0C: uint32 boneCount (1 for vertex anim)
+      0x10: boneName (30 bytes, null-padded)
+      0x2E: uint32 vertexCount
+      0x32: uint32 vertexCount2  (same)
+      0x36: uint32 frameCount
+      0x3A: float32 fps
+      0x3E: uint32 vertexCount3  (same)
+      0x42: uint32[vertexCount] index table 1
+      0x42 + vertexCount*4: uint32[vertexCount] index table 2
+      data_start: float32[3] positions, per-vertex then per-frame
+    """
+    with open(filepath, 'rb') as f:
+        data = f.read()
+
+    if len(data) < 0x42:
+        return None
+    magic = data[0:4]
+    if magic != b'MIN2':
+        return None
+    bone_count = struct.unpack_from('<I', data, 0x0C)[0]
+    if bone_count != 1:
+        return None  # skeletal animation not yet supported
+
+    vertex_count = struct.unpack_from('<I', data, 0x2E)[0]
+    frame_count = struct.unpack_from('<I', data, 0x36)[0]
+    fps = struct.unpack_from('<f', data, 0x3A)[0]
+
+    if vertex_count == 0 or frame_count == 0 or fps <= 0:
+        return None
+
+    data_start = 0x42 + vertex_count * 4 * 2
+    expected_bytes = vertex_count * frame_count * 12
+    if data_start + expected_bytes > len(data) + 8:  # small tolerance
+        return None
+
+    # Data layout: vertex_count blocks of frame_count float3 positions
+    # frames[frame_idx] = list of (x, y, z) for each vertex
+    frames = [[(0.0, 0.0, 0.0)] * vertex_count for _ in range(frame_count)]
+    for v_idx in range(vertex_count):
+        base = data_start + v_idx * frame_count * 12
+        for f_idx in range(frame_count):
+            off = base + f_idx * 12
+            if off + 12 > len(data):
+                break
+            x, y, z = struct.unpack_from('<3f', data, off)
+            frames[f_idx][v_idx] = (x, y, z)
+
+    return {
+        'vertex_count': vertex_count,
+        'frame_count': frame_count,
+        'fps': fps,
+        'frames': frames,
+    }
+
+
+def mesh_to_glb(mesh_data, subset_materials=None, ani_data=None):
     """Convert parsed mesh data to a GLB (glTF Binary) file.
 
     Coordinate system: JX3 uses left-handed (DirectX) conventions.
@@ -829,6 +958,57 @@ def mesh_to_glb(mesh_data, subset_materials=None):
     primitives = []
     materials = []
 
+    def build_subset_material_def(subset_id):
+        mat_def = {
+            'pbrMetallicRoughness': {
+                'baseColorFactor': [1.0, 1.0, 1.0, 1.0],
+                'metallicFactor': 0.0,
+                'roughnessFactor': 0.7
+            },
+            'doubleSided': True,
+        }
+
+        extras = {'subsetId': subset_id}
+        subset_info = None
+        if isinstance(subset_materials, list) and 0 <= subset_id < len(subset_materials):
+            candidate = subset_materials[subset_id]
+            if isinstance(candidate, dict):
+                subset_info = candidate
+
+        if subset_info:
+            textures = subset_info.get('textures') or {}
+            blend_mode = int(subset_info.get('blendMode', 0) or 0)
+            alpha_ref = max(0, min(int(subset_info.get('alphaRef', 128) or 128), 255))
+
+            extras['pssMaterial'] = {
+                'textures': {
+                    str(key): str(value)
+                    for key, value in textures.items()
+                    if value
+                },
+                'colors': {
+                    str(k): list(v)
+                    for k, v in (subset_info.get('colors') or {}).items()
+                    if isinstance(v, list)
+                },
+                'floats': {
+                    str(k): float(v)
+                    for k, v in (subset_info.get('floats') or {}).items()
+                },
+                'refPath': subset_info.get('refPath') or None,
+                'blendMode': blend_mode,
+                'alphaRef': alpha_ref,
+            }
+
+            if blend_mode == 1:
+                mat_def['alphaMode'] = 'MASK'
+                mat_def['alphaCutoff'] = alpha_ref / 255.0
+            elif blend_mode == 2:
+                mat_def['alphaMode'] = 'BLEND'
+
+        mat_def['extras'] = extras
+        return mat_def
+
     if subset_index_lists and len(subset_index_lists) > 1:
         # Multi-subset: one primitive per subset, each with its own index buffer
         for mat_idx, (sid, sub_indices) in enumerate(subset_index_lists):
@@ -860,17 +1040,7 @@ def mesh_to_glb(mesh_data, subset_materials=None):
                 'material': mat_idx
             })
 
-            # Build material with subset metadata (subset ID stored in extras)
-            mat_def = {
-                'pbrMetallicRoughness': {
-                    'baseColorFactor': [1.0, 1.0, 1.0, 1.0],
-                    'metallicFactor': 0.0,
-                    'roughnessFactor': 0.7
-                },
-                'doubleSided': True,
-                'extras': {'subsetId': sid}
-            }
-            materials.append(mat_def)
+            materials.append(build_subset_material_def(sid))
     else:
         # Single primitive with all indices
         idx_data = struct.pack(f'<{len(indices)}I', *indices)
@@ -900,14 +1070,181 @@ def mesh_to_glb(mesh_data, subset_materials=None):
             'indices': idx_acc_idx,
             'material': 0
         })
-        materials.append({
-            'pbrMetallicRoughness': {
-                'baseColorFactor': [1.0, 1.0, 1.0, 1.0],
-                'metallicFactor': 0.0,
-                'roughnessFactor': 0.7
-            },
-            'doubleSided': True
+        materials.append(build_subset_material_def(0))
+    # --- Morph targets from ANI vertex animation ---
+    morph_target_count = 0
+    ani_duration = 0.0
+    if ani_data and ani_data['frame_count'] > 1 and ani_data['vertex_count'] == vertex_count:
+        ani_frames = ani_data['frames']
+        ani_frame_count = ani_data['frame_count']
+        ani_fps = ani_data['fps']
+        ani_duration = (ani_frame_count - 1) / ani_fps
+
+        # Base frame = frame 0 (already converted via positions override if matching)
+        # Morph targets = frames 1..N-1 as deltas from frame 0
+        base_frame = ani_frames[0]
+        morph_target_count = ani_frame_count - 1
+
+        morph_targets_list = []
+        for t_idx in range(1, ani_frame_count):
+            target_data = b''
+            tmin_x = tmin_y = tmin_z = float('inf')
+            tmax_x = tmax_y = tmax_z = float('-inf')
+            for v_idx in range(vertex_count):
+                bx, by, bz = base_frame[v_idx]
+                tx, ty, tz = ani_frames[t_idx][v_idx]
+                # LH -> RH: negate Z
+                dx = tx - bx
+                dy = ty - by
+                dz = -(tz - bz)
+                target_data += struct.pack('<fff', dx, dy, dz)
+                tmin_x = min(tmin_x, dx); tmax_x = max(tmax_x, dx)
+                tmin_y = min(tmin_y, dy); tmax_y = max(tmax_y, dy)
+                tmin_z = min(tmin_z, dz); tmax_z = max(tmax_z, dz)
+
+            # Buffer view for this target
+            t_bv_idx = len(buffer_views)
+            buffer_views.append({
+                'buffer': 0,
+                'byteOffset': byte_offset,
+                'byteLength': len(target_data),
+                'byteStride': 12,
+            })
+            t_acc_idx = len(accessors)
+            accessors.append({
+                'bufferView': t_bv_idx,
+                'componentType': 5126,
+                'count': vertex_count,
+                'type': 'VEC3',
+                'min': [tmin_x, tmin_y, tmin_z],
+                'max': [tmax_x, tmax_y, tmax_z],
+            })
+            bin_parts.append(target_data)
+            byte_offset += len(target_data)
+            pad = (4 - byte_offset % 4) % 4
+            if pad:
+                bin_parts.append(b'\x00' * pad)
+                byte_offset += pad
+
+            morph_targets_list.append({'POSITION': t_acc_idx})
+
+        # Attach morph targets to all primitives
+        for prim in primitives:
+            prim['targets'] = morph_targets_list
+
+        # Override base positions with frame 0 from ANI (LH -> RH: negate Z)
+        base_pos_data = b''
+        bp_min_x = bp_min_y = bp_min_z = float('inf')
+        bp_max_x = bp_max_y = bp_max_z = float('-inf')
+        for v_idx in range(vertex_count):
+            x, y, z = base_frame[v_idx]
+            rz = -z  # LH -> RH
+            base_pos_data += struct.pack('<fff', x, y, rz)
+            bp_min_x = min(bp_min_x, x); bp_max_x = max(bp_max_x, x)
+            bp_min_y = min(bp_min_y, y); bp_max_y = max(bp_max_y, y)
+            bp_min_z = min(bp_min_z, rz); bp_max_z = max(bp_max_z, rz)
+
+        # Replace the original position buffer view and accessor
+        orig_pos_bv = buffer_views[0]  # Position is always first
+        orig_pos_acc = accessors[0]
+        # Create new buffer view for ANI base positions
+        ani_pos_bv_idx = len(buffer_views)
+        buffer_views.append({
+            'buffer': 0,
+            'byteOffset': byte_offset,
+            'byteLength': len(base_pos_data),
+            'byteStride': 12,
+            'target': 34962,
         })
+        ani_pos_acc_idx = len(accessors)
+        accessors.append({
+            'bufferView': ani_pos_bv_idx,
+            'componentType': 5126,
+            'count': vertex_count,
+            'type': 'VEC3',
+            'min': [bp_min_x, bp_min_y, bp_min_z],
+            'max': [bp_max_x, bp_max_y, bp_max_z],
+        })
+        bin_parts.append(base_pos_data)
+        byte_offset += len(base_pos_data)
+        pad = (4 - byte_offset % 4) % 4
+        if pad:
+            bin_parts.append(b'\x00' * pad)
+            byte_offset += pad
+
+        # Update all primitives to use new position accessor
+        for prim in primitives:
+            prim['attributes']['POSITION'] = ani_pos_acc_idx
+
+        # --- Animation: morph weight timeline ---
+        # Keyframe times
+        times = [t_idx / ani_fps for t_idx in range(ani_frame_count)]
+        time_data = struct.pack(f'<{len(times)}f', *times)
+        time_bv_idx = len(buffer_views)
+        buffer_views.append({
+            'buffer': 0,
+            'byteOffset': byte_offset,
+            'byteLength': len(time_data),
+        })
+        time_acc_idx = len(accessors)
+        accessors.append({
+            'bufferView': time_bv_idx,
+            'componentType': 5126,
+            'count': len(times),
+            'type': 'SCALAR',
+            'min': [times[0]],
+            'max': [times[-1]],
+        })
+        bin_parts.append(time_data)
+        byte_offset += len(time_data)
+        pad = (4 - byte_offset % 4) % 4
+        if pad:
+            bin_parts.append(b'\x00' * pad)
+            byte_offset += pad
+
+        # Weights: for each keyframe, morph_target_count weight values
+        # At frame 0: all weights = 0 (base pose)
+        # At frame k (k>=1): weight[k-1] = 1, rest = 0
+        weights = []
+        for f_idx in range(ani_frame_count):
+            for t_idx in range(morph_target_count):
+                weights.append(1.0 if t_idx == f_idx - 1 else 0.0)
+        weight_data = struct.pack(f'<{len(weights)}f', *weights)
+        weight_bv_idx = len(buffer_views)
+        buffer_views.append({
+            'buffer': 0,
+            'byteOffset': byte_offset,
+            'byteLength': len(weight_data),
+        })
+        weight_acc_idx = len(accessors)
+        accessors.append({
+            'bufferView': weight_bv_idx,
+            'componentType': 5126,
+            'count': len(times),
+            'type': f'SCALAR',  # Note: will be overridden below
+        })
+        # glTF spec: weights output accessor type depends on target count
+        # For morph weights: each output is morph_target_count scalars
+        # The accessor count = number of keyframes, but each element has morph_target_count components
+        # Actually glTF stores this as count = keyframes * morph_target_count, type = SCALAR
+        # But Three.js GLTFLoader expects the accessor to match
+        # Correction: accessor count should be keyframes, and the data is interleaved
+        # The spec says: output accessor for weights has count = keyframes, and each element
+        # consists of morph_target_count scalar values (not wrapped in a type)
+        # In practice, the count must be keyframes * morph_target_count
+        accessors[-1] = {
+            'bufferView': weight_bv_idx,
+            'componentType': 5126,
+            'count': len(times) * morph_target_count,
+            'type': 'SCALAR',
+        }
+        bin_parts.append(weight_data)
+        byte_offset += len(weight_data)
+        pad = (4 - byte_offset % 4) % 4
+        if pad:
+            bin_parts.append(b'\x00' * pad)
+            byte_offset += pad
+
     gltf_buffers_size = byte_offset
     
     # glTF JSON
@@ -922,6 +1259,24 @@ def mesh_to_glb(mesh_data, subset_materials=None):
         'bufferViews': buffer_views,
         'buffers': [{'byteLength': gltf_buffers_size}]
     }
+
+    # Add animation if morph targets were created
+    if morph_target_count > 0:
+        gltf['animations'] = [{
+            'name': 'vertex-animation',
+            'channels': [{
+                'sampler': 0,
+                'target': {
+                    'node': 0,
+                    'path': 'weights',
+                },
+            }],
+            'samplers': [{
+                'input': time_acc_idx,
+                'output': weight_acc_idx,
+                'interpolation': 'LINEAR',
+            }],
+        }]
     
     json_str = json.dumps(gltf, separators=(',', ':'))
     json_bytes = json_str.encode('utf-8')

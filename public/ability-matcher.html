@@ -1,0 +1,1007 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Ability Matcher</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    height: 100vh;
+    overflow: hidden;
+    color: #dfe4e1;
+    background: #202321;
+    font: 13px/1.36 "Segoe UI", system-ui, sans-serif;
+  }
+  button, input { font: inherit; }
+  .app { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100vh; }
+  .topbar {
+    display: grid;
+    grid-template-columns: auto auto minmax(220px, 1fr) auto auto auto auto;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 10px;
+    border-bottom: 1px solid #151716;
+    background: #2c302e;
+  }
+  .brand { display: inline-flex; align-items: center; gap: 8px; min-width: 180px; font-weight: 700; }
+  .mark {
+    width: 26px;
+    height: 26px;
+    display: grid;
+    place-items: center;
+    border: 2px solid #48a2d7;
+    border-radius: 4px;
+    color: #48a2d7;
+  }
+  .page-nav { display: inline-flex; gap: 4px; align-items: center; }
+  .page-nav a {
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 9px;
+    border: 1px solid #46504b;
+    border-radius: 4px;
+    color: #dfe4e1;
+    text-decoration: none;
+    background: #252a27;
+    white-space: nowrap;
+  }
+  .page-nav a.active { border-color: #4e90b5; color: #f5fbff; background: #26313a; }
+  .search {
+    width: 100%;
+    height: 32px;
+    padding: 0 11px;
+    border: 1px solid #161817;
+    border-radius: 5px;
+    outline: none;
+    color: #f3f6f4;
+    background: #181a19;
+  }
+  .button {
+    height: 32px;
+    padding: 0 12px;
+    border: 1px solid #28658d;
+    border-radius: 4px;
+    color: #f5fbff;
+    background: #2d719f;
+    cursor: pointer;
+  }
+  .button:disabled { opacity: 0.55; cursor: default; }
+  .button.secondary { border-color: #4a5550; background: #39423d; }
+  .status { min-width: 150px; color: #aab3af; text-align: right; white-space: nowrap; }
+  .main { display: grid; grid-template-columns: 360px minmax(0, 1fr); min-height: 0; }
+  .results { min-height: 0; overflow: auto; border-right: 1px solid #151716; background: #292d2b; }
+  .detail { min-height: 0; overflow: auto; background: #202321; }
+  .section-title {
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px;
+    border-bottom: 1px solid #181b19;
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .result-toolbar { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; border-bottom: 1px solid #181b19; }
+  .filter-button {
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid #46504b;
+    border-radius: 4px;
+    color: #dfe4e1;
+    background: #242825;
+    cursor: pointer;
+  }
+  .filter-button.active { border-color: #4e90b5; color: #f5fbff; background: #26313a; }
+  .result-list { padding: 8px; display: grid; gap: 7px; }
+  .group-title { margin: 5px 0 0; padding: 0; }
+  .group-toggle {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 7px 4px 4px;
+    border: 0;
+    color: #d7ded9;
+    background: transparent;
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+  }
+  .group-toggle .muted { font-weight: 500; }
+  .result {
+    width: 100%;
+    display: grid;
+    gap: 4px;
+    padding: 9px 10px;
+    border: 1px solid #373d39;
+    border-radius: 6px;
+    color: #dfe4e1;
+    background: #242825;
+    text-align: left;
+    cursor: pointer;
+  }
+  .result:hover, .result.active { border-color: #4e90b5; background: #26313a; }
+  .result.scriptless { border-style: dashed; }
+  .result-name { font-weight: 700; color: #f1f5f3; overflow-wrap: anywhere; }
+  .result-meta { color: #aab3af; font-size: 12px; overflow-wrap: anywhere; }
+  .detail-inner { padding: 12px; display: grid; gap: 12px; }
+  .panel { border: 1px solid #343a37; border-radius: 6px; background: #272b29; overflow: hidden; }
+  .panel-title { padding: 9px 11px; border-bottom: 1px solid #343a37; font-weight: 700; color: #f1f5f3; }
+  .kv { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 0; }
+  .kv div { padding: 7px 10px; border-bottom: 1px solid #323733; overflow-wrap: anywhere; }
+  .kv div:nth-child(odd) { color: #9fa9a4; background: #242825; }
+  .kv div:nth-last-child(-n+2) { border-bottom: 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px; }
+  .chip { padding: 4px 7px; border: 1px solid #46504b; border-radius: 4px; color: #dfe4e1; background: #202421; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th, td { padding: 7px 9px; border-bottom: 1px solid #333936; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+  th { color: #aeb7b2; background: #222624; font-weight: 600; }
+  tr:last-child td { border-bottom: 0; }
+  .path { font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px; color: #e8ecea; }
+  .muted { color: #9fa9a4; }
+  .empty { padding: 18px 12px; color: #aab3af; }
+  .subskill { margin: 10px; border: 1px solid #39423d; border-radius: 5px; overflow: hidden; }
+  .subskill .panel-title { background: #222924; }
+  .call-tree { overflow: auto; padding: 12px; }
+  .tree-root { display: inline-flex; align-items: flex-start; min-width: max-content; padding: 4px 10px 12px 0; }
+  .tree-node-wrap { display: flex; align-items: flex-start; }
+  .tree-node {
+    width: 230px;
+    min-height: 84px;
+    display: grid;
+    align-content: start;
+    gap: 5px;
+    padding: 9px;
+    border: 1px solid #42504a;
+    border-radius: 6px;
+    background: #202522;
+  }
+  .tree-node.script { border-color: #4f7fa1; }
+  .tree-node.skill { border-color: #4f8a67; }
+  .tree-node.buff { border-color: #8f7b45; }
+  .tree-node.effect, .tree-node.animation, .tree-node.sound { border-color: #8c5f76; }
+  .tree-kind { color: #aab3af; font-size: 11px; text-transform: uppercase; letter-spacing: 0; }
+  .tree-title { color: #f1f5f3; font-weight: 700; overflow-wrap: anywhere; }
+  .tree-meta { color: #b7c0bb; font-size: 12px; overflow-wrap: anywhere; }
+  .tree-children { display: grid; gap: 10px; margin-left: 34px; }
+  .tree-branch { display: flex; align-items: flex-start; }
+  .tree-edge { position: relative; width: 30px; height: 1px; margin-top: 42px; background: #53615b; }
+  .tree-edge::after { content: ""; position: absolute; right: -2px; top: -3px; width: 6px; height: 6px; border-top: 1px solid #7f8c87; border-right: 1px solid #7f8c87; transform: rotate(45deg); }
+  .tabs { display: flex; gap: 6px; padding: 8px 10px 0; border-bottom: 1px solid #343a37; background: #222624; }
+  .tab { padding: 6px 10px; border: 1px solid #42504a; border-bottom: 0; border-radius: 5px 5px 0 0; color: #f1f5f3; background: #2b312d; font-weight: 700; cursor: pointer; }
+  .tab.active { border-color: #4e90b5; background: #26313a; }
+  .tab-panel[hidden], .tab-panel.is-hidden { display: none !important; }
+  .sound-summary { padding: 10px; display: grid; gap: 10px; }
+  .sound-answer { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid #39423d; border-radius: 6px; overflow: hidden; }
+  .sound-answer div { padding: 8px 10px; border-bottom: 1px solid #333936; overflow-wrap: anywhere; }
+  .sound-answer div:nth-child(odd) { color: #9fa9a4; background: #242825; }
+  .sound-answer div:nth-last-child(-n+2) { border-bottom: 0; }
+  .sound-answer .answer-yes { color: #9be5b4; font-weight: 700; }
+  .sound-answer .answer-no { color: #e9b0a6; font-weight: 700; }
+  .sound-note { color: #aab3af; }
+  .sound-play { height: 28px; padding: 0 9px; border: 1px solid #4f8a67; border-radius: 4px; color: #eef8f1; background: #326445; cursor: pointer; }
+  .sound-play:disabled { opacity: 0.6; cursor: default; }
+  .audio-slot { margin-top: 7px; }
+  .audio-slot audio { width: 100%; max-width: 520px; }
+  @media (max-width: 820px) {
+    .topbar { grid-template-columns: 1fr; }
+    .brand { min-width: 0; }
+    .status { text-align: left; }
+    .main { grid-template-columns: 1fr; grid-template-rows: 38vh minmax(0, 1fr); }
+    .results { border-right: 0; border-bottom: 1px solid #151716; }
+    .kv { grid-template-columns: 1fr; }
+    .kv div:nth-child(odd) { border-bottom: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><span class="mark">AM</span><span>Ability Matcher</span></div>
+    <nav class="page-nav" aria-label="Pages"><a class="active" href="/ability-matcher.html">Ability Matcher</a><a href="/ability-tani-sound.html">TANI-SOUND</a><a href="/cdn-resource-browser.html">CDN Browser</a><a href="/wwise-soundbanks.html">Soundbanks</a></nav>
+    <input id="query" class="search" placeholder="伪传·踏星行, 绝境·龙牙, 踏星行, 65029" autocomplete="off" />
+    <button id="searchButton" class="button" type="button">Search</button>
+    <button id="cacheButton" class="button secondary" type="button">Build Cache</button>
+    <button id="soundCacheButton" class="button secondary" type="button">Build Sounds</button>
+    <div id="status" class="status">Ready</div>
+  </header>
+  <main class="main">
+    <section class="results">
+      <div class="section-title"><span>Matches</span><span id="count" class="muted">0</span></div>
+      <div id="soundFilters" class="result-toolbar"></div>
+      <div id="results" class="result-list"></div>
+    </section>
+    <section class="detail">
+      <div class="section-title"><span>Sound</span><span id="roots" class="muted"></span></div>
+      <div id="detail" class="detail-inner"><div class="empty">Type a name or ID to begin.</div></div>
+    </section>
+  </main>
+</div>
+<script>
+const queryInput = document.getElementById('query');
+const searchButton = document.getElementById('searchButton');
+const cacheButton = document.getElementById('cacheButton');
+const soundCacheButton = document.getElementById('soundCacheButton');
+const statusEl = document.getElementById('status');
+const countEl = document.getElementById('count');
+const soundFiltersEl = document.getElementById('soundFilters');
+const resultsEl = document.getElementById('results');
+const detailEl = document.getElementById('detail');
+const rootsEl = document.getElementById('roots');
+let lastData = null;
+let soundCache = null;
+let activeIndex = 0;
+let activeDetailTab = 'sound';
+let soundFilter = 'all';
+const collapsedGroups = new Set();
+const soundDurationCache = new Map();
+const soundDurationLoading = new Set();
+const GROUP_ORDER = ['绝境', '伪传'];
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+}
+
+function field(value) {
+  return escapeHtml(value || '');
+}
+
+function renderKv(items) {
+  return `<div class="kv">${items.map(([key, value]) => `<div>${escapeHtml(key)}</div><div>${field(value)}</div>`).join('')}</div>`;
+}
+
+function renderChips(values) {
+  if (!values || values.length === 0) return '<div class="empty">None</div>';
+  return `<div class="chips">${values.map(value => `<span class="chip">${escapeHtml(value)}</span>`).join('')}</div>`;
+}
+
+function renderFiles(files) {
+  if (!files || files.length === 0) return '<div class="empty">No files collected.</div>';
+  return `<table><thead><tr><th style="width:110px">Type</th><th>Path</th><th style="width:210px">Source</th><th style="width:90px">Local</th></tr></thead><tbody>${files.map(file => `
+    <tr>
+      <td>${escapeHtml(file.category || 'file')}</td>
+      <td><div class="path">${escapeHtml(file.path)}</div>${file.localPath ? `<div class="muted path">${escapeHtml(file.localPath)}</div>` : ''}</td>
+      <td>${escapeHtml(file.source || '')}${file.note ? `<div class="muted">${escapeHtml(file.note)}</div>` : ''}</td>
+      <td>${file.extracted ? 'yes' : 'no'}</td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+function renderBuffs(title, buffs) {
+  if (!buffs || buffs.length === 0) return '';
+  return `<section class="panel"><div class="panel-title">${escapeHtml(title)}</div><table><thead><tr><th style="width:90px">Buff</th><th>Name</th><th style="width:110px">Represent</th><th>Resource rows</th></tr></thead><tbody>${buffs.map(buff => `
+    <tr>
+      <td>${escapeHtml(buff.buffId || buff.row?.ID || '')}</td>
+      <td>${escapeHtml(buff.row?.Name || '')}</td>
+      <td>${escapeHtml(buff.row?.RepresentID || '')}</td>
+      <td>${(buff.skillBuffRows || []).map(row => `<div class="path">${escapeHtml(row.SFXFilePathLeft || row.SFXFilePathRight || row.SkillBuffID || '')}</div>`).join('') || '<span class="muted">none</span>'}</td>
+    </tr>`).join('')}</tbody></table></section>`;
+}
+
+function renderTableHits(hits) {
+  if (!hits || hits.length === 0) return '';
+  return `<section class="panel"><div class="panel-title">Table Hits</div><table><thead><tr><th style="width:210px">Table</th><th>Rows</th></tr></thead><tbody>${hits.map(hit => `
+    <tr><td>${escapeHtml(hit.table)}</td><td>${hit.block ? `<pre class="path">${escapeHtml(hit.block)}</pre>` : (hit.rows || []).map(row => `<div class="path">${escapeHtml(row.lineNo)}: ${escapeHtml(row.raw)}</div>`).join('')}</td></tr>`).join('')}</tbody></table></section>`;
+}
+
+function renderPlaySfxRefs(refs) {
+  if (!refs || refs.length === 0) return '';
+  return `<section class="panel"><div class="panel-title">Script PlaySfx IDs</div><table><thead><tr><th style="width:90px">ID</th><th>Name</th><th style="width:120px">Effect Type</th><th>Script</th><th style="width:150px">Source</th></tr></thead><tbody>${refs.map(ref => `
+    <tr>
+      <td>${escapeHtml(ref.id || '')}</td>
+      <td>${escapeHtml(ref.skill?.SkillName || '')}</td>
+      <td>${escapeHtml(ref.skill?.EffectPlayType || '')}</td>
+      <td><div class="path">${escapeHtml(ref.skill?.ScriptFile || '')}</div></td>
+      <td>${escapeHtml(ref.source || 'skill script')}</td>
+    </tr>`).join('')}</tbody></table></section>`;
+}
+
+function soundLabel(sound) {
+  const event = sound.event || (sound.candidates || []).join(', ') || '';
+  const bank = sound.bank ? ` · ${sound.bank}` : '';
+  return `${sound.system || 'Sound'}${bank}${event ? ` · ${event}` : ''}`;
+}
+
+function renderSoundHints(hints) {
+  if (!hints || hints.length === 0) return '';
+  return `<section class="panel"><div class="panel-title">Animation Sound Tags</div><table><thead><tr><th style="width:240px">TANI</th><th>Sound Events</th><th style="width:250px">PSS / Match</th></tr></thead><tbody>${hints.map(hint => `
+    <tr>
+      <td><div class="path">${escapeHtml(hint.file || '')}</div>${hint.refAni ? `<div class="muted path">${escapeHtml(hint.refAni)}</div>` : ''}</td>
+      <td>${(hint.sounds || []).map(sound => `
+        <div>${escapeHtml(soundLabel(sound))}</div>
+        ${(sound.wwise || []).length ? `<div class="muted path">${escapeHtml(sound.wwise.map(item => `${item.name}${item.playable ? ' playable' : ''}`).join(' | '))}</div>` : ''}
+      `).join('') || '<span class="muted">none</span>'}</td>
+      <td>${(hint.pss || []).slice(0, 4).map(path => `<div class="path">${escapeHtml(path)}</div>`).join('')}${hint.reason ? `<div class="muted">${escapeHtml(hint.reason)}</div>` : ''}</td>
+    </tr>`).join('')}</tbody></table></section>`;
+}
+
+function soundEntryForAbility(ability) {
+  if (ability?.soundResolution) return ability.soundResolution;
+  const id = String(ability?.id || '');
+  if (!id || !soundCache?.ok) return null;
+  return soundCache.byKey?.[`${ability.prefix || ''}:${id}`] || soundCache.byId?.[id] || null;
+}
+
+function attachSoundCacheToAbility(ability, seen = new Set()) {
+  if (!ability || typeof ability !== 'object') return;
+  const key = `${ability.prefix || ''}:${ability.id || ''}:${ability.kind || ''}`;
+  if (seen.has(key)) return;
+  seen.add(key);
+  const entry = soundEntryForAbility(ability);
+  if (entry) ability.soundResolution = entry;
+  for (const child of ability.children || []) attachSoundCacheToAbility(child, seen);
+  for (const relatedSkill of ability.relatedSkills || []) attachSoundCacheToAbility(relatedSkill, seen);
+}
+
+function applySoundCacheToData() {
+  if (!lastData) return;
+  for (const ability of flattenGroups(lastData)) attachSoundCacheToAbility(ability);
+}
+
+function playableKey(playable) {
+  return playable?.playback?.url || `${playable?.kind || ''}:${playable?.wemId || ''}:${playable?.path || playable?.label || ''}`;
+}
+
+function playableDuration(playable) {
+  const value = soundDurationCache.get(playableKey(playable));
+  return Number.isFinite(value) ? value : null;
+}
+
+function formatDuration(seconds) {
+  if (!Number.isFinite(seconds)) return '';
+  const total = Math.max(0, Math.round(seconds));
+  const minutes = Math.floor(total / 60);
+  const rest = String(total % 60).padStart(2, '0');
+  return `${minutes}:${rest}`;
+}
+
+function sortedPlayables(sound) {
+  return triggerPlayables(sound).map((playable, index) => ({ playable, index, duration: playableDuration(playable) }))
+    .sort((left, right) => {
+      const leftKnown = Number.isFinite(left.duration);
+      const rightKnown = Number.isFinite(right.duration);
+      if (leftKnown && rightKnown && right.duration !== left.duration) return right.duration - left.duration;
+      if (leftKnown !== rightKnown) return leftKnown ? -1 : 1;
+      return left.index - right.index;
+    })
+    .map(item => item.playable);
+}
+
+function triggerPlayables(sound) {
+  if (Array.isArray(sound?.triggerPlayable)) return sound.triggerPlayable;
+  return sound?.playable || [];
+}
+
+function requestSoundDurations(sound) {
+  for (const playable of triggerPlayables(sound)) {
+    const key = playableKey(playable);
+    const url = playable?.playback?.url || '';
+    if (!key || !url || soundDurationCache.has(key) || soundDurationLoading.has(key)) continue;
+    soundDurationLoading.add(key);
+    const audio = new Audio();
+    audio.preload = 'metadata';
+    audio.addEventListener('loadedmetadata', () => {
+      soundDurationLoading.delete(key);
+      soundDurationCache.set(key, Number.isFinite(audio.duration) ? audio.duration : null);
+      if (soundEntryForAbility(lastData?.results?.[activeIndex])?.id === sound.id) renderDetail();
+    }, { once: true });
+    audio.addEventListener('error', () => {
+      soundDurationLoading.delete(key);
+      soundDurationCache.set(key, null);
+    }, { once: true });
+    audio.src = url;
+  }
+}
+
+function soundFound(sound) {
+  return new Set(['trigger-playable', 'trigger-event']).has(sound?.status || '') || (sound?.triggerEvents || []).length > 0;
+}
+
+function primarySoundEvent(sound) {
+  return (sound?.triggerEvents || []).find(event => event.confidence !== 'candidate') || null;
+}
+
+function eventWemIds(event) {
+  return [...(event?.wems?.streamed || []), ...(event?.wems?.inMemory || [])];
+}
+
+function triggerWemsForEvent(sound, event) {
+  const ids = new Set(eventWemIds(event).map(id => String(id)));
+  return (sound?.triggerWems || sound?.wems || []).filter(wem => ids.has(String(wem.id)));
+}
+
+function soundFileLabel(sound, event) {
+  const ids = eventWemIds(event).map(id => String(id));
+  if (!ids.length) return '';
+  const wemById = new Map(triggerWemsForEvent(sound, event).map(wem => [String(wem.id), wem]));
+  return ids.map(id => {
+    const wem = wemById.get(id) || {};
+    const name = wem.name || `${id}.wem`;
+    const local = (wem.localFiles || []).find(file => file.exists)?.path || wem.file || '';
+    return `${name} (WEM ${id})${local ? ` · ${local}` : ''}`;
+  }).join(' | ');
+}
+
+function primarySoundSource(event) {
+  return (event?.sources || []).find(source => source.kind === 'cast-action-tani-event' && source.triggerSound === true) || (event?.sources || [])[0] || null;
+}
+
+function renderSoundSummary(sound) {
+  const found = soundFound(sound);
+  const playable = triggerPlayables(sound).length > 0;
+  const event = primarySoundEvent(sound);
+  const source = primarySoundSource(event);
+  const wemIds = eventWemIds(event);
+  const soundFile = soundFileLabel(sound, event);
+  const rows = [
+    ['Found', found ? 'Yes' : 'No', found ? 'answer-yes' : 'answer-no'],
+    ['Type', 'Trigger Sound', ''],
+    ['Playable', playable ? 'Yes' : 'No', playable ? 'answer-yes' : 'answer-no'],
+    ['Event', event?.name || '', 'path'],
+    ['Event ID', event?.id || '', ''],
+    ['Sound File', soundFile, 'path'],
+    ['WEM ID', wemIds.join(', '), 'path'],
+    ['Client Event', source?.rawEvent || source?.name || '', 'path'],
+    ['Client Path', source?.path || (sound?.directAudio || [])[0]?.path || '', 'path'],
+  ].filter(([key, value]) => key === 'Found' || key === 'Type' || key === 'Playable' || value);
+  return `<div class="sound-summary">
+    <div class="sound-answer">${rows.map(([key, value, className]) => `<div>${escapeHtml(key)}</div><div class="${escapeHtml(className || '')}">${escapeHtml(value)}</div>`).join('')}</div>
+    <div class="sound-note">${escapeHtml(sound?.statusText || 'no confirmed client sound found')}</div>
+  </div>`;
+}
+
+function renderSoundPlayables(sound) {
+  const playables = sortedPlayables(sound);
+  if (!playables.length) return '';
+  return `<table><thead><tr><th style="width:95px">Play</th><th style="width:80px">Length</th><th>Resolved File</th><th style="width:190px">Local Source</th><th>Event / Source</th></tr></thead><tbody>${playables.map((playable, index) => {
+    const targetId = `audio-${escapeHtml(sound.id || 'ability')}-${index}`;
+    const playback = JSON.stringify(playable.playback || {});
+    const eventNames = (playable.eventNames || []).join(' | ');
+    const localSource = (playable.localFiles || []).find(file => file.exists)?.path || playable.wemName || playable.kind || '';
+    const duration = playableDuration(playable);
+    return `<tr>
+      <td><button class="sound-play" type="button" data-target="${targetId}" data-playback="${escapeHtml(playback)}">Play</button></td>
+      <td>${escapeHtml(formatDuration(duration))}</td>
+      <td><div class="path">${escapeHtml(playable.memberPath || playable.path || playable.label || '')}</div><div id="${targetId}" class="audio-slot"></div></td>
+      <td><div class="path">${escapeHtml(localSource)}</div></td>
+      <td>${eventNames ? `<div class="path">${escapeHtml(eventNames)}</div>` : `<span class="muted">${escapeHtml(playable.kind || '')}</span>`}</td>
+    </tr>`;
+  }).join('')}</tbody></table>`;
+}
+
+function renderSoundEvents(sound) {
+  const events = sound?.events || [];
+  if (!events.length) return '';
+  return `<table><thead><tr><th>Event</th><th style="width:120px">ID</th><th style="width:180px">Banks</th><th>WEM IDs</th></tr></thead><tbody>${events.map(event => `
+    <tr>
+      <td><div class="path">${escapeHtml(event.name || '')}</div><div class="muted">${escapeHtml(event.confidence || '')}</div></td>
+      <td>${escapeHtml(event.id || '')}</td>
+      <td>${(event.banks || []).map(bank => `<div>${escapeHtml(bank)}</div>`).join('')}</td>
+      <td><div class="path">${escapeHtml([...(event.wems?.streamed || []), ...(event.wems?.inMemory || [])].join(', '))}</div></td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+function renderSoundUnresolved(sound) {
+  const rows = [];
+  for (const ref of sound?.castActionRefs || []) rows.push(['cast action', ref.path, `${ref.source || ''} ${ref.coreSkillId || ''} ${ref.coreSkillName || ''} -> ${ref.table || ''} AnimationID ${ref.animationId || ''}${ref.soundIndexed ? '' : ' (not indexed)'}`.trim()]);
+  for (const tag of sound?.soundTags || []) {
+    if (tag.context === 'cast-action') continue;
+    rows.push(['TANI tag', tag.event || '(no event)', tag.source || tag.reason || '']);
+  }
+  for (const event of sound?.unresolvedEvents || []) rows.push(['event', event.name, (event.sources || []).map(source => source.path || source.name).join(' | ')]);
+  for (const effect of sound?.clientEffectRefs || []) rows.push(['effect', effect.path, (effect.sources || []).map(source => source.name || source.path).join(' | ')]);
+  for (const effect of sound?.propertyEffectRefs || []) rows.push(['property effect', effect.path, (effect.sources || []).map(source => source.name || source.path).join(' | ')]);
+  for (const audio of sound?.directAudio || []) rows.push(['audio file', audio.path, (audio.sources || []).map(source => source.name || source.path).join(' | ')]);
+  for (const ref of sound?.playSfxRefs || []) rows.push(['PlaySfx', ref.id, `${ref.name || ''} ${ref.scriptFile || ''}`.trim()]);
+  for (const ref of sound?.taniCatalogRefs || []) rows.push(['TANI', ref.path, ref.reason || (ref.extracted ? ref.localPath : '')]);
+  if (!rows.length) return '';
+  return `<table><thead><tr><th style="width:110px">Type</th><th>Reference</th><th>Source</th></tr></thead><tbody>${rows.map(row => `
+    <tr><td>${escapeHtml(row[0])}</td><td><div class="path">${escapeHtml(row[1])}</div></td><td>${escapeHtml(row[2])}</td></tr>`).join('')}</tbody></table>`;
+}
+
+function renderSoundResolution(ability) {
+  const sound = soundEntryForAbility(ability);
+  if (!sound) {
+    return `<section class="panel"><div class="panel-title">Sound</div><div class="empty">Sound cache not loaded.</div></section>`;
+  }
+  const noSound = !soundFound(sound);
+  return `<section class="panel">
+    <div class="panel-title">Sound</div>
+    ${renderSoundSummary(sound)}
+    ${noSound ? '<div class="empty">No confirmed trigger sound event found in the client trace.</div>' : ''}
+    ${renderSoundPlayables(sound)}
+    ${(sound.notes || []).length ? `<div class="empty">${(sound.notes || []).slice(0, 6).map(note => `<div>${escapeHtml(note)}</div>`).join('')}</div>` : ''}
+  </section>`;
+}
+
+function primaryResolvedSkill(ability) {
+  return ability?.primaryRelatedSkill?.skill || ability?.relatedSkills?.[0]?.skill || ability?.resolvedSkill || null;
+}
+
+function primaryResolutionMatch(ability) {
+  const resolved = primaryResolvedSkill(ability);
+  const id = String(resolved?.SkillID || ability?.resolvedSkillId || '');
+  return (ability?.relatedSkillMatches || []).find(match => String(match.id || match.skill?.SkillID || '') === id) || null;
+}
+
+function renderRelatedSkills(ability) {
+  const matches = ability?.relatedSkillMatches || [];
+  if (!matches.length) return '';
+  const traced = new Set((ability.relatedSkills || []).map(skill => String(skill.id || skill.skill?.SkillID || '')));
+  return `<section class="panel"><div class="panel-title">Resolved Skill References</div><table><thead><tr><th style="width:75px">Rank</th><th style="width:90px">SkillID</th><th>Name</th><th style="width:135px">Reason</th><th>Script</th><th style="width:75px">Trace</th></tr></thead><tbody>${matches.slice(0, 10).map(match => `
+    <tr>
+      <td>${escapeHtml(match.rank || '')}</td>
+      <td>${escapeHtml(match.id || match.skill?.SkillID || '')}</td>
+      <td>${escapeHtml(match.skill?.SkillName || '')}</td>
+      <td>${escapeHtml(match.reason || '')}</td>
+      <td><div class="path">${escapeHtml(match.skill?.ScriptFile || '')}</div></td>
+      <td>${traced.has(String(match.id || match.skill?.SkillID || '')) ? 'yes' : 'match'}</td>
+    </tr>`).join('')}</tbody></table></section>`;
+}
+
+function normalizePath(value) {
+  return String(value || '').replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+/g, '/');
+}
+
+function baseName(value) {
+  const normalized = normalizePath(value);
+  return normalized.split('/').filter(Boolean).pop() || normalized || 'file';
+}
+
+function makeTreeNode(kind, title, meta, path, children = []) {
+  return { kind, title, meta, path: normalizePath(path), children: children.filter(Boolean) };
+}
+
+function resourceKind(path) {
+  const ext = (normalizePath(path).match(/\.[^.\/]+$/)?.[0] || '').toLowerCase();
+  if (ext === '.lua' || ext === '.lh') return 'script';
+  if (ext === '.pss' || ext === '.sfx') return 'effect';
+  if (ext === '.tani' || ext === '.ani') return 'animation';
+  if (ext === '.wem' || ext === '.bnk' || ext === '.wav' || ext === '.ogg' || ext === '.mp3') return 'sound';
+  if (ext === '.tab' || ext === '.txt' || ext === '.krl') return 'table';
+  return 'file';
+}
+
+function uniquePaths(values) {
+  const seen = new Set();
+  const out = [];
+  for (const value of values) {
+    const normalized = normalizePath(value);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
+}
+
+function buffTree(buff, sourceLabel) {
+  if (!buff) return null;
+  const row = buff.row || {};
+  const effectPaths = [];
+  for (const resourceRow of buff.skillBuffRows || []) {
+    effectPaths.push(resourceRow.SFXFilePathLeft, resourceRow.SFXFilePathRight);
+  }
+  const effectNodes = uniquePaths(effectPaths).map(path => makeTreeNode(resourceKind(path), baseName(path), 'skill_buff.txt resource', path));
+  const children = [];
+  if ((buff.skillBuffRows || []).length) {
+    children.push(makeTreeNode('table', 'skill_buff.txt', `Represent ${row.RepresentID || ''}`, 'Represent/skill/skill_buff.txt', effectNodes));
+  }
+  if (row.ScriptFile) {
+    const scriptPath = normalizePath(`scripts/buff/${row.ScriptFile}`);
+    children.push(makeTreeNode('script', baseName(scriptPath), 'buff script', scriptPath));
+  }
+  return makeTreeNode('buff', `${buff.buffId || row.ID || ''} ${row.Name || ''}`.trim(), sourceLabel || buff.source || 'buff reference', 'settings/skill/Buff.tab', children);
+}
+
+function scriptTree(ability) {
+  const script = ability.script || null;
+  if (!script?.logicalPath) return null;
+  const children = [];
+  for (const includePath of script.includes || []) {
+    children.push(makeTreeNode('script', baseName(includePath), 'Include()', includePath));
+  }
+  for (const buff of ability.scriptBuffs || []) {
+    children.push(buffTree(buff, 'script buff reference'));
+  }
+  if ((ability.cooldownIds || []).length) {
+    children.push(makeTreeNode('cooldown', ability.cooldownIds.join(', '), 'cooldown IDs', 'settings/skill/CoolDownList.tab'));
+  }
+  for (const ref of ability.playSfxRefs || []) {
+    children.push(makeTreeNode('effect', ref.id || '', ref.skill?.SkillName || 'PlaySfx()', 'settings/skill/skills.tab'));
+  }
+  for (const hit of ability.tableHits || []) {
+    children.push(makeTreeNode('table', hit.table, 'direct represent table hit', hit.table));
+  }
+  for (const child of ability.children || []) {
+    children.push(abilityTree(child, 'child skill'));
+  }
+  return makeTreeNode('script', baseName(script.logicalPath), 'skill script', script.logicalPath, children);
+}
+
+function abilityTree(ability, sourceLabel = 'matched skill') {
+  if (ability.kind === 'buff') {
+    const root = buffTree(ability.directBuff, 'matched buff') || makeTreeNode('buff', `${ability.id} ${ability.matchAlias?.Name || ''}`.trim(), 'matched buff', 'settings/skill/Buff.tab');
+    for (const relatedSkill of ability.relatedSkills || []) {
+      const match = (ability.relatedSkillMatches || []).find(item => String(item.id) === String(relatedSkill.id));
+      root.children.push(abilityTree(relatedSkill, `resolved ${match?.reason || 'same-core skill'}`));
+    }
+    return root;
+  }
+  const skill = ability.skill || {};
+  const children = [];
+  const scriptNode = scriptTree(ability);
+  if (scriptNode) children.push(scriptNode);
+  if (ability.directBuff) children.push(buffTree(ability.directBuff, 'same numeric ID'));
+  for (const hint of ability.soundHints || []) {
+    const soundTitle = (hint.sounds || []).map(sound => sound.event || (sound.candidates || [])[0] || sound.bank || sound.system).filter(Boolean).join(', ') || baseName(hint.file);
+    children.push(makeTreeNode('sound', soundTitle, 'animation tag sound', hint.file));
+  }
+  return makeTreeNode('skill', `${skill.SkillID || ability.id} ${skill.SkillName || ''}`.trim(), sourceLabel, 'settings/skill/skills.tab', children);
+}
+
+function renderTreeNode(node) {
+  if (!node) return '';
+  const children = node.children || [];
+  return `<div class="tree-node-wrap">
+    <div class="tree-node ${escapeHtml(node.kind || 'file')}">
+      <div class="tree-kind">${escapeHtml(node.kind || 'file')}</div>
+      <div class="tree-title">${escapeHtml(node.title || '')}</div>
+      ${node.meta ? `<div class="tree-meta">${escapeHtml(node.meta)}</div>` : ''}
+      ${node.path ? `<div class="path muted">${escapeHtml(node.path)}</div>` : ''}
+    </div>
+    ${children.length ? `<div class="tree-children">${children.map(child => `<div class="tree-branch"><div class="tree-edge"></div>${renderTreeNode(child)}</div>`).join('')}</div>` : ''}
+  </div>`;
+}
+
+function renderCallTree(ability) {
+  const root = abilityTree(ability);
+  if (!root) return '';
+  return `<section class="panel"><div class="panel-title">Call Tree</div><div class="call-tree"><div class="tree-root">${renderTreeNode(root)}</div></div></section>`;
+}
+
+function renderAbility(ability, isChild = false) {
+  const skill = ability.skill || {};
+  const alias = ability.matchAlias || null;
+  const displayName = alias?.Name || skill.SkillName || ability.id;
+  const isBuffOnly = ability.kind === 'buff';
+  const files = ability.files || [];
+  const directBuffs = ability.directBuff ? [ability.directBuff] : [];
+  const resolvedSkill = primaryResolvedSkill(ability);
+  const resolutionMatch = primaryResolutionMatch(ability);
+  const header = `
+    <section class="panel${isChild ? ' subskill' : ''}">
+      <div class="panel-title">${escapeHtml(displayName)} (${escapeHtml(ability.id)})</div>
+      ${renderKv([
+        [isBuffOnly ? 'BuffID' : 'SkillID', skill.SkillID || ability.id],
+        ['Matched Name', alias?.Name || ''],
+        ['Name', skill.SkillName || alias?.Name],
+        ['Match Source', isBuffOnly ? `Buff.tab ID ${alias?.ID || ability.id}` : (alias ? `Buff.tab alias + skills.tab ID ${alias.ID}` : 'skills.tab')],
+        ['Resolved Skill', resolvedSkill ? `${resolvedSkill.SkillID || ''} ${resolvedSkill.SkillName || ''}`.trim() : ''],
+        ['Resolve Reason', resolutionMatch?.reason || ''],
+        ['EffectPlayType', skill.EffectPlayType],
+        ['FunctionType', skill.FunctionType],
+        ['KindType', skill.KindType],
+        ['CastMode', skill.CastMode],
+        ['MaxLevel', skill.MaxLevel],
+        ['ScriptFile', skill.ScriptFile || resolvedSkill?.ScriptFile],
+      ])}
+    </section>`;
+  const tracePanel = `
+    ${isChild ? '' : renderCallTree(ability)}
+    ${renderPlaySfxRefs(ability.playSfxRefs || [])}
+    ${renderSoundHints(ability.soundHints || [])}
+    ${renderRelatedSkills(ability)}`;
+  const filePanel = `
+    <section class="panel"><div class="panel-title">Files</div>${renderFiles(files)}</section>
+    <section class="panel"><div class="panel-title">Child Skills</div>${renderChips(ability.childIds || [])}</section>
+    <section class="panel"><div class="panel-title">Cooldown IDs</div>${renderChips(ability.cooldownIds || [])}</section>`;
+  const tablePanel = `
+    ${renderBuffs('Same-ID Buff Rows', directBuffs)}
+    ${renderBuffs('Script Buff References', ability.scriptBuffs || [])}
+    ${renderTableHits(ability.tableHits || [])}`;
+  const childPanel = (ability.children || []).map(child => renderAbility(child, true)).join('');
+  if (isChild) return `${header}${tracePanel}${renderSoundResolution(ability)}${filePanel}${tablePanel}${childPanel}`;
+  const activeTab = activeDetailTab || 'sound';
+  return `${header}
+    <div class="tabs" role="tablist">
+      <button class="tab${activeTab === 'sound' ? ' active' : ''}" type="button" role="tab" data-tab="sound">Sound</button>
+      <button class="tab${activeTab === 'trace' ? ' active' : ''}" type="button" role="tab" data-tab="trace">Trace</button>
+      <button class="tab${activeTab === 'files' ? ' active' : ''}" type="button" role="tab" data-tab="files">Files</button>
+      <button class="tab${activeTab === 'tables' ? ' active' : ''}" type="button" role="tab" data-tab="tables">Tables</button>
+    </div>
+    <div class="tab-panel${activeTab === 'sound' ? '' : ' is-hidden'}" data-tab-panel="sound"${activeTab === 'sound' ? '' : ' hidden'}>${renderSoundResolution(ability)}</div>
+    <div class="tab-panel${activeTab === 'trace' ? '' : ' is-hidden'}" data-tab-panel="trace"${activeTab === 'trace' ? '' : ' hidden'}>${tracePanel}</div>
+    <div class="tab-panel${activeTab === 'files' ? '' : ' is-hidden'}" data-tab-panel="files"${activeTab === 'files' ? '' : ' hidden'}>${filePanel}</div>
+    <div class="tab-panel${activeTab === 'tables' ? '' : ' is-hidden'}" data-tab-panel="tables"${activeTab === 'tables' ? '' : ' hidden'}>${tablePanel}${childPanel}</div>`;
+}
+
+function bindDetailTabs() {
+  const tabs = [...detailEl.querySelectorAll('.tab[data-tab]')];
+  if (!tabs.length) return;
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const name = tab.dataset.tab;
+      activeDetailTab = name || 'sound';
+      tabs.forEach(item => item.classList.toggle('active', item === tab));
+      for (const panel of detailEl.querySelectorAll('.tab-panel[data-tab-panel]')) {
+        const isHidden = panel.dataset.tabPanel !== name;
+        panel.hidden = isHidden;
+        panel.classList.toggle('is-hidden', isHidden);
+      }
+    });
+  });
+}
+
+function flattenGroups(data) {
+  if (!data?.groups) return data?.results || [];
+  return GROUP_ORDER.flatMap(group => data.groups[group] || []);
+}
+
+function soundFilterMatches(result) {
+  if (soundFilter === 'all') return true;
+  const found = soundFound(soundEntryForAbility(result));
+  return soundFilter === 'found' ? found : !found;
+}
+
+function soundStats(results) {
+  let found = 0;
+  for (const result of results || []) if (soundFound(soundEntryForAbility(result))) found += 1;
+  const total = (results || []).length;
+  return { total, found, missing: total - found };
+}
+
+function renderSoundFilters(results) {
+  const stats = soundStats(results);
+  const filters = [
+    ['all', `All ${stats.total}`],
+    ['found', `Sound yes ${stats.found}`],
+    ['missing', `Sound no ${stats.missing}`],
+  ];
+  soundFiltersEl.innerHTML = filters.map(([value, label]) => `<button class="filter-button${soundFilter === value ? ' active' : ''}" type="button" data-filter="${value}">${escapeHtml(label)}</button>`).join('');
+}
+
+function visibleIndexedResults(results) {
+  return (results || []).map((result, index) => ({ result, index })).filter(item => soundFilterMatches(item.result));
+}
+
+function ensureVisibleActive(results) {
+  const visible = visibleIndexedResults(results);
+  if (!visible.length) return;
+  if (!visible.some(item => item.index === activeIndex)) activeIndex = visible[0].index;
+}
+
+function resultName(result) {
+  return result.matchAlias?.Name || result.skill?.SkillName || result.id;
+}
+
+function soundMetaSuffix(sound) {
+  if (!sound) return '';
+  const playable = sound.counts?.triggerPlayable ?? triggerPlayables(sound).length;
+  return ` · sound ${soundFound(sound) ? 'yes' : 'no'}${playable ? ` · playable ${playable}` : ''}`;
+}
+
+function resultMeta(result) {
+  if (result.kind === 'buff') {
+    const resolved = primaryResolvedSkill(result);
+    const suffix = resolved ? ` · via SkillID ${resolved.SkillID || result.resolvedSkillId || ''} · ${resolved.ScriptFile || result.resolvedScriptFile || ''}` : '';
+    const sound = soundEntryForAbility(result);
+    return `BuffID ${result.id} · Buff.tab${suffix}${soundMetaSuffix(sound)}`;
+  }
+  const scriptLabel = result.hasLua ? 'Lua' : (result.hasScript || result.skill?.ScriptFile ? 'script' : 'no Lua');
+  const sound = soundEntryForAbility(result);
+  return `SkillID ${result.id} · ${scriptLabel} · ${result.skill?.EffectPlayType || ''} · ${result.skill?.ScriptFile || ''}${soundMetaSuffix(sound)}`;
+}
+
+function resultButton(result, index) {
+  const resolved = primaryResolvedSkill(result);
+  const scriptless = result.kind === 'buff'
+    ? !(resolved?.ScriptFile || result.resolvedScriptFile)
+    : !result.hasScript && !result.skill?.ScriptFile;
+  return `
+    <button class="result${index === activeIndex ? ' active' : ''}${scriptless ? ' scriptless' : ''}" type="button" data-index="${index}">
+      <span class="result-name">${escapeHtml(resultName(result))}</span>
+      <span class="result-meta">${escapeHtml(resultMeta(result))}</span>
+    </button>`;
+}
+
+function renderResults() {
+  const results = flattenGroups(lastData);
+  if (lastData) lastData.results = results;
+  ensureVisibleActive(results);
+  renderSoundFilters(results);
+  const visible = visibleIndexedResults(results);
+  countEl.textContent = `${visible.length}/${results.length || lastData?.total || lastData?.count || 0}`;
+  if (lastData?.groups) {
+    const indexByResult = new Map(results.map((result, index) => [result, index]));
+    resultsEl.innerHTML = GROUP_ORDER.map(group => {
+      const groupResults = lastData.groups[group] || [];
+      const stats = soundStats(groupResults);
+      const filtered = groupResults.filter(soundFilterMatches);
+      const collapsed = collapsedGroups.has(group);
+      const header = `<div class="group-title"><button class="group-toggle" type="button" data-group="${escapeHtml(group)}"><span>${collapsed ? '+' : '-'} ${escapeHtml(group)}</span><span class="muted">${filtered.length}/${stats.total} · yes ${stats.found} · no ${stats.missing}</span></button></div>`;
+      if (collapsed) return header;
+      const rows = filtered.map(result => resultButton(result, indexByResult.get(result) ?? 0)).join('') || '<div class="empty">No matching rows.</div>';
+      return header + rows;
+    }).join('');
+  } else {
+    resultsEl.innerHTML = visible.length ? visible.map(item => resultButton(item.result, item.index)).join('') : '<div class="empty">No matching rows.</div>';
+  }
+  [...soundFiltersEl.querySelectorAll('.filter-button')].forEach(button => {
+    button.addEventListener('click', () => {
+      soundFilter = button.dataset.filter || 'all';
+      renderResults();
+      renderDetail();
+    });
+  });
+  [...resultsEl.querySelectorAll('.group-toggle')].forEach(button => {
+    button.addEventListener('click', () => {
+      const group = button.dataset.group || '';
+      if (collapsedGroups.has(group)) collapsedGroups.delete(group);
+      else collapsedGroups.add(group);
+      renderResults();
+    });
+  });
+  [...resultsEl.querySelectorAll('.result')].forEach(button => {
+    button.addEventListener('click', () => {
+      activeIndex = Number(button.dataset.index || 0);
+      activeDetailTab = 'sound';
+      renderResults();
+      renderDetail();
+    });
+  });
+}
+
+function renderDetail() {
+  const result = lastData?.results?.[activeIndex];
+  rootsEl.textContent = lastData?.cachePath || lastData?.dataRoots?.skillTables || '';
+  if (!result) {
+    const buffRows = lastData?.buffMatches || [];
+    detailEl.innerHTML = buffRows.length ? `<section class="panel"><div class="panel-title">Buff Matches</div>${renderBuffs('Buff Matches', buffRows.map(row => ({ row })))}</section>` : '<div class="empty">No trace selected.</div>';
+    return;
+  }
+  detailEl.innerHTML = renderAbility(result);
+  bindDetailTabs();
+  requestSoundDurations(soundEntryForAbility(result));
+}
+
+async function search() {
+  const query = queryInput.value.trim();
+  if (!query) return;
+  searchButton.disabled = true;
+  cacheButton.disabled = true;
+  soundCacheButton.disabled = true;
+  statusEl.textContent = 'Searching...';
+  try {
+    const response = await fetch(`/api/ability-matcher/search?q=${encodeURIComponent(query)}&limit=40`);
+    lastData = await response.json();
+    activeIndex = 0;
+    activeDetailTab = 'sound';
+    if (!lastData.ok) throw new Error(lastData.error || 'Search failed');
+    await loadSoundCache(false, true);
+    applySoundCacheToData();
+    statusEl.textContent = `${lastData.returned || 0}/${lastData.count || 0}`;
+    renderResults();
+    renderDetail();
+  } catch (err) {
+    statusEl.textContent = 'Error';
+    detailEl.innerHTML = `<div class="empty">${escapeHtml(err.message || String(err))}</div>`;
+  } finally {
+    searchButton.disabled = false;
+    cacheButton.disabled = false;
+    soundCacheButton.disabled = false;
+  }
+}
+
+async function loadSoundCache(force = false, quiet = false) {
+  if (!quiet) statusEl.textContent = force ? 'Building sounds...' : 'Loading sounds...';
+  const response = await fetch(`/api/ability-matcher/sound-cache${force ? '?force=1' : ''}`);
+  const data = await response.json();
+  if (data.ok) {
+    soundCache = data;
+    applySoundCacheToData();
+    if (!quiet) statusEl.textContent = `${data.stats?.total?.withReferences || 0}/${data.total || 0} referenced`;
+  } else if (!quiet) {
+    statusEl.textContent = 'No sound cache';
+  }
+  return data;
+}
+
+async function loadPrefixCache(force = false) {
+  searchButton.disabled = true;
+  cacheButton.disabled = true;
+  soundCacheButton.disabled = true;
+  statusEl.textContent = force ? 'Building cache...' : 'Loading cache...';
+  try {
+    const response = await fetch(`/api/ability-matcher/prefix-cache${force ? '?force=1' : ''}`);
+    lastData = await response.json();
+    activeIndex = 0;
+    activeDetailTab = 'sound';
+    if (!lastData.ok) throw new Error(lastData.error || 'Cache build failed');
+    await loadSoundCache(false, true);
+    applySoundCacheToData();
+    lastData.results = flattenGroups(lastData);
+    statusEl.textContent = `${lastData.total || lastData.results.length || 0} cached`;
+    renderResults();
+    renderDetail();
+  } catch (err) {
+    statusEl.textContent = 'Error';
+    detailEl.innerHTML = `<div class="empty">${escapeHtml(err.message || String(err))}</div>`;
+  } finally {
+    searchButton.disabled = false;
+    cacheButton.disabled = false;
+    soundCacheButton.disabled = false;
+  }
+}
+
+async function buildSoundCache() {
+  searchButton.disabled = true;
+  cacheButton.disabled = true;
+  soundCacheButton.disabled = true;
+  try {
+    await loadSoundCache(true, false);
+    applySoundCacheToData();
+    renderResults();
+    renderDetail();
+  } catch (err) {
+    statusEl.textContent = 'Error';
+    detailEl.innerHTML = `<div class="empty">${escapeHtml(err.message || String(err))}</div>`;
+  } finally {
+    searchButton.disabled = false;
+    cacheButton.disabled = false;
+    soundCacheButton.disabled = false;
+  }
+}
+
+async function playSoundFromButton(button) {
+  const target = document.getElementById(button.dataset.target || '');
+  let playback = null;
+  try { playback = JSON.parse(button.dataset.playback || '{}'); } catch { playback = null; }
+  if (!playback?.url && !playback?.payload) return;
+  button.disabled = true;
+  const previous = button.textContent;
+  button.textContent = 'Loading';
+  try {
+    if (playback.url) {
+      if (target) {
+        target.innerHTML = `<audio controls autoplay src="${escapeHtml(playback.url)}"></audio><div class="muted path">${escapeHtml(playback.url)}</div>`;
+      }
+      return;
+    }
+    if (!playback.route) throw new Error('playback route missing');
+    const response = await fetch(playback.route, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(playback.payload || {}),
+    });
+    const result = await response.json();
+    if (!result.ok) throw new Error(result.error || 'extract failed');
+    if (!result.playback?.url) throw new Error('extracted file has no playable audio URL');
+    if (target) {
+      target.innerHTML = `<audio controls autoplay src="${escapeHtml(result.playback.url)}"></audio><div class="muted path">${escapeHtml(result.playback.relativePath || '')}</div>`;
+    }
+  } catch (err) {
+    if (target) target.innerHTML = `<div class="muted">${escapeHtml(err.message || String(err))}</div>`;
+  } finally {
+    button.disabled = false;
+    button.textContent = previous;
+  }
+}
+
+searchButton.addEventListener('click', search);
+cacheButton.addEventListener('click', () => loadPrefixCache(true));
+soundCacheButton.addEventListener('click', buildSoundCache);
+detailEl.addEventListener('click', event => {
+  const button = event.target.closest('.sound-play');
+  if (button) playSoundFromButton(button);
+});
+queryInput.addEventListener('keydown', event => {
+  if (event.key === 'Enter') search();
+});
+queryInput.value = new URLSearchParams(location.search).get('q') || '';
+if (queryInput.value) search();
+else loadPrefixCache(false);
+</script>
+</body>
+</html>

@@ -1,0 +1,1942 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JX3 Client Monitor</title>
+<style>
+  * { box-sizing: border-box; }
+  :root {
+    --bg: #071016;
+    --panel: #101923;
+    --panel-2: #0c141d;
+    --border: #243746;
+    --text: #e7eef3;
+    --muted: #90a8b8;
+    --green: #7de09a;
+    --green-bg: rgba(125, 224, 154, 0.14);
+    --amber: #e8c36a;
+    --amber-bg: rgba(232, 195, 106, 0.14);
+    --red: #f07e7e;
+    --red-bg: rgba(240, 126, 126, 0.14);
+    --blue: #8ec9f3;
+    --blue-bg: rgba(142, 201, 243, 0.12);
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 13px/1.45 "Segoe UI", system-ui, sans-serif; }
+  button, input { font: inherit; }
+  .app { height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+  .topbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+    padding: 10px 12px; border-bottom: 1px solid var(--border); background: #09131b;
+  }
+  .brand { font-weight: 800; letter-spacing: 0.04em; color: #f3f9fc; min-width: 150px; }
+  .nav { display: flex; gap: 6px; flex-wrap: wrap; }
+  .nav a {
+    color: #dce9ef; text-decoration: none; padding: 5px 10px; border: 1px solid #2b4050;
+    border-radius: 7px; background: #111d27; font-size: 12px;
+  }
+  .nav a:hover { border-color: #52748b; background: #172836; }
+  .nav a.active { border-color: #71bde5; background: #17314a; color: #fff; }
+  .top-spacer { flex: 1; min-width: 20px; }
+  .clock { color: var(--muted); font: 12px Consolas, monospace; }
+  .main {
+    display: grid; grid-template-columns: 320px minmax(0, 1fr) 390px; gap: 10px;
+    min-height: 0; padding: 10px;
+  }
+  .panel {
+    min-height: 0; background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .panel-head {
+    min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 10px 12px; border-bottom: 1px solid #1e303d; background: #0d1720;
+  }
+  .panel-head h2 { margin: 0; font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase; }
+  .panel-body { min-height: 0; overflow: auto; padding: 10px; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tabs { display: inline-flex; gap: 4px; padding: 3px; border: 1px solid #263b4b; border-radius: 8px; background: #09131b; }
+  .tab-btn {
+    min-height: 28px; padding: 4px 10px; border: 0; border-radius: 6px; color: #bcd0dc;
+    background: transparent; cursor: pointer; font-weight: 800; font-size: 12px;
+  }
+  .tab-btn:hover { background: #132434; color: #eef8ff; }
+  .tab-btn.active { background: #1a3a52; color: #fff; }
+  .btn {
+    border: 1px solid #3e5d70; color: #f3fbff; background: #173044; border-radius: 7px;
+    padding: 7px 12px; cursor: pointer; font-weight: 700;
+  }
+  .btn:hover { border-color: #75b9df; background: #1d3b54; }
+  .btn.secondary { background: #17232d; color: #d8e7ef; }
+  .btn.danger { border-color: #754047; background: #3a2025; color: #ffd7d7; }
+  .btn.compact { padding: 4px 9px; font-size: 12px; }
+  .btn:disabled { opacity: 0.52; cursor: default; }
+  .lights { display: flex; flex-direction: column; gap: 8px; }
+  .light {
+    display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; align-items: start;
+    padding: 9px 10px; border: 1px solid #233541; border-radius: 8px; background: var(--panel-2);
+  }
+  .dot { width: 12px; height: 12px; border-radius: 50%; margin-top: 3px; background: #506270; box-shadow: 0 0 0 3px rgba(80, 98, 112, 0.13); }
+  .light.ok .dot { background: var(--green); box-shadow: 0 0 0 3px var(--green-bg); }
+  .light.wait .dot { background: var(--amber); box-shadow: 0 0 0 3px var(--amber-bg); }
+  .light.fail .dot { background: var(--red); box-shadow: 0 0 0 3px var(--red-bg); }
+  .light .name { font-weight: 800; color: #f3f8fb; }
+  .light .detail { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .cast-banner {
+    display: grid; gap: 4px; padding: 16px 18px; border: 1px solid #365368; border-radius: 8px;
+    background: var(--blue-bg); margin-bottom: 10px;
+  }
+  .cast-banner.ready { border-color: rgba(125, 224, 154, 0.68); background: var(--green-bg); animation: pulse 1.2s ease-in-out infinite; }
+  .cast-main { font-size: 26px; line-height: 1.1; font-weight: 900; letter-spacing: 0.04em; }
+  .cast-sub { color: #cfe0e8; }
+  .story {
+    display: grid; gap: 8px; padding: 11px 12px; border: 1px solid #294154; border-radius: 8px;
+    background: #0c1721; margin-bottom: 10px;
+  }
+  .story-title { font-weight: 900; color: #f5fbff; }
+  .story-verdict { color: #c9dbe4; }
+  .story-bullets { display: grid; gap: 5px; color: #dceaf0; }
+  .story-bullet { display: grid; grid-template-columns: 12px minmax(0, 1fr); gap: 7px; align-items: start; }
+  .story-bullet::before { content: ''; width: 6px; height: 6px; margin-top: 7px; border-radius: 50%; background: var(--blue); }
+  .story-clusters { display: grid; gap: 6px; }
+  .story-cluster { border-top: 1px solid #203543; padding-top: 6px; color: var(--muted); font: 11px Consolas, monospace; overflow-wrap: anywhere; }
+  @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 rgba(125, 224, 154, 0); } 50% { box-shadow: 0 0 28px rgba(125, 224, 154, 0.16); } }
+  .capture-list { display: flex; flex-direction: column; gap: 8px; }
+  .capture {
+    border: 1px solid #263946; border-radius: 8px; background: #0d1720; padding: 10px; cursor: pointer;
+  }
+  .capture:hover { border-color: #557a91; background: #101f2a; }
+  .capture:focus-visible { border-color: #85c8ef; outline: none; box-shadow: 0 0 0 2px rgba(142, 201, 243, 0.22); }
+  .capture.selected { border-color: #85c8ef; background: #12283a; }
+  .capture-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: start; }
+  .event-name { font-weight: 800; overflow-wrap: anywhere; }
+  .event-meta { color: var(--muted); font: 11px Consolas, monospace; margin-top: 2px; }
+  .tag { display: inline-flex; align-items: center; min-height: 20px; padding: 1px 7px; border-radius: 999px; border: 1px solid #38586e; background: var(--blue-bg); color: #cfefff; font-size: 11px; white-space: nowrap; }
+  .tag.green { border-color: #427a55; background: var(--green-bg); color: #d8ffe2; }
+  .tag.amber { border-color: #796536; background: var(--amber-bg); color: #fff0c6; }
+  .wems { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .wem {
+    display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    max-width: 100%; padding: 5px 6px; border: 1px solid #375365; border-radius: 7px; background: #0a131b;
+  }
+  .wem-id { font: 11px Consolas, monospace; color: #d8edf7; overflow-wrap: anywhere; }
+  .play, .copy {
+    min-width: 44px; height: 24px; padding: 0 8px; border: 1px solid #4e8060; border-radius: 6px;
+    cursor: pointer; font-size: 11px; font-weight: 800;
+  }
+  .play { background: #143522; color: #dfffe7; }
+  .play:hover { border-color: #86d99d; }
+  .copy { min-width: 58px; border-color: #4a6273; background: #142532; color: #dfeffc; }
+  .copy:hover { border-color: #8abfdd; }
+  .copy.active { border-color: #86d99d; background: #143522; color: #dfffe7; }
+  .link-button {
+    display: inline-flex; align-items: center; min-height: 24px; padding: 3px 8px; border: 1px solid #4a6273;
+    border-radius: 6px; background: #142532; color: #dfeffc; text-decoration: none; font-size: 11px; font-weight: 800;
+  }
+  .link-button:hover { border-color: #8abfdd; background: #183044; }
+  .asset-path { margin-top: 6px; color: #bdd5e2; font: 11px Consolas, monospace; overflow-wrap: anywhere; }
+  .asset-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .asset-chip { display: inline-flex; align-items: center; min-height: 20px; padding: 1px 7px; border-radius: 999px; border: 1px solid #375365; background: #0a131b; color: #d8edf7; font-size: 11px; }
+  .cdn-match { border-top: 1px solid #203543; padding: 8px 0; }
+  .hidden { display: none !important; }
+  .empty { color: var(--muted); padding: 24px 8px; text-align: center; }
+  .kv { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 6px 10px; align-items: start; font-size: 12px; }
+  .kv .k { color: var(--muted); }
+  .kv .v { color: #eef7fb; overflow-wrap: anywhere; font-family: Consolas, monospace; }
+  .value-actions { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  pre {
+    margin: 0; padding: 9px 10px; border: 1px solid #223541; border-radius: 8px; background: #09131b;
+    color: #bdd3df; font: 11px/1.45 Consolas, monospace; white-space: pre-wrap; overflow: auto;
+  }
+  .stack { margin-top: 10px; max-height: 220px; }
+  .audio-shell { border-top: 1px solid #1e303d; padding: 10px; background: #0d1720; }
+  audio { width: 100%; height: 34px; }
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .mini-title { margin: 12px 0 6px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+  .strict-player {
+    display: grid; gap: 8px; margin-top: 10px; padding: 10px;
+    border: 1px solid #294154; border-radius: 8px; background: #0a141d;
+  }
+  .strict-player-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+  .strict-player-title { font-weight: 900; color: #f5fbff; }
+  .strict-player-sub { color: var(--muted); font: 11px Consolas, monospace; overflow-wrap: anywhere; }
+  .strict-frame-wrap { min-height: 360px; border: 1px solid #263b4b; border-radius: 7px; overflow: hidden; background: #03070a; }
+  .strict-frame-wrap.blocked { min-height: auto; }
+  .strict-frame { display: block; width: 100%; height: 520px; border: 0; background: #03070a; }
+  .pss-inline-player .strict-frame-wrap { min-height: 460px; }
+  .pss-frame { height: 620px; }
+  .pss-player-buttons { max-height: 92px; overflow: auto; }
+  .strict-list { display: grid; gap: 5px; }
+  .strict-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 7px; padding: 6px 8px; border: 1px solid #263b4b; border-radius: 6px; background: #08111a; font-size: 12px; }
+  .strict-row.ok { border-color: #315f40; background: rgba(125, 224, 154, 0.08); }
+  .strict-row.warn { border-color: #6b5d32; background: rgba(232, 195, 106, 0.09); }
+  .strict-row.block { border-color: #73414a; background: rgba(240, 126, 126, 0.09); }
+  .strict-row .strict-label { color: var(--muted); font-weight: 800; text-transform: uppercase; font-size: 10px; }
+  .strict-row .strict-text { color: #e7eef3; overflow-wrap: anywhere; }
+  .client-flow { display: grid; gap: 8px; padding: 10px; border: 1px solid #294154; border-radius: 8px; background: #0a141d; }
+  .client-flow-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; }
+  .client-flow-title { font-weight: 900; color: #f5fbff; overflow-wrap: anywhere; }
+  .client-flow-sub { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .client-flow-list { display: grid; gap: 8px; }
+  .client-flow-card { display: grid; gap: 7px; padding: 8px; border: 1px solid #263b4b; border-radius: 7px; background: #08111a; }
+  .client-flow-card.partial { border-color: #6b5d32; background: rgba(232, 195, 106, 0.08); }
+  .client-flow-card.strong { border-color: #315f40; background: rgba(125, 224, 154, 0.08); }
+  .client-flow-card.path-only { border-color: #73414a; background: rgba(240, 126, 126, 0.08); }
+  .client-flow-stage { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 7px; padding: 6px 8px; border: 1px solid #223541; border-radius: 6px; background: rgba(6, 12, 18, 0.65); }
+  .client-flow-stage.ok { border-color: #315f40; }
+  .client-flow-stage.missing { border-color: #73414a; }
+  .client-flow-stage .stage-status { color: var(--muted); font-weight: 800; text-transform: uppercase; font-size: 10px; }
+  .client-flow-row { margin-top: 6px; border: 1px solid #223541; border-radius: 6px; background: #061018; }
+  .client-flow-row summary { cursor: pointer; padding: 6px 8px; font-size: 12px; overflow-wrap: anywhere; }
+  .client-flow-row-body { display: grid; gap: 6px; padding: 8px; border-top: 1px solid #223541; }
+  .pss-proof { display: grid; gap: 8px; padding: 10px; border: 1px solid #294154; border-radius: 8px; background: #0a141d; }
+  .pss-proof-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; }
+  .pss-proof-title { font-weight: 900; color: #f5fbff; overflow-wrap: anywhere; }
+  .pss-proof-sub { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .pss-proof-card { display: grid; gap: 8px; padding: 9px; border: 1px solid #263b4b; border-radius: 7px; background: #08111a; }
+  .pss-proof-card.ok { border-color: #315f40; background: rgba(125, 224, 154, 0.08); }
+  .pss-proof-card.blocked { border-color: #73414a; background: rgba(240, 126, 126, 0.08); }
+  .pss-proof-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+  .pss-proof-gate { min-height: 76px; padding: 7px; border: 1px solid #263b4b; border-radius: 6px; background: rgba(6, 12, 18, 0.72); }
+  .pss-proof-gate-top { display: flex; justify-content: space-between; gap: 6px; align-items: start; }
+  .pss-proof-gate-label { color: #f2f7fb; font-weight: 800; font-size: 12px; }
+  .pss-proof-gate-detail { margin-top: 5px; color: var(--muted); font: 11px Consolas, monospace; overflow-wrap: anywhere; }
+  .proof-badge { display: inline-flex; align-items: center; min-height: 19px; padding: 1px 7px; border-radius: 999px; border: 1px solid #38586e; color: var(--muted); font-size: 10px; white-space: nowrap; }
+  .proof-badge.proved { color: var(--green); border-color: #427a55; background: var(--green-bg); }
+  .proof-badge.missing { color: var(--red); border-color: #754047; background: var(--red-bg); }
+  .proof-badge.nearby, .proof-badge.adjacent { color: var(--amber); border-color: #796536; background: var(--amber-bg); }
+  .pss-texture-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 7px; }
+  .pss-texture-tile { min-height: 146px; border: 1px solid #263b4b; border-radius: 7px; background: #071018; overflow: hidden; display: grid; grid-template-rows: 74px auto; }
+  .pss-texture-preview { display: grid; place-items: center; background: #04090e; border-bottom: 1px solid #263b4b; }
+  .pss-texture-preview img { max-width: 100%; max-height: 74px; object-fit: contain; }
+  .pss-texture-body { display: grid; gap: 5px; padding: 6px; }
+  .pss-texture-name { color: #e7eef3; font: 11px Consolas, monospace; overflow-wrap: anywhere; }
+  .pss-proof-rows { max-height: 300px; overflow: auto; display: grid; gap: 6px; }
+  @media (max-width: 1100px) {
+    .main { grid-template-columns: 1fr; overflow: auto; }
+    .app { overflow: auto; }
+    .panel { min-height: 320px; }
+    .strict-frame { height: 420px; }
+    .pss-proof-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">JX3 Client Monitor</div>
+    <nav class="nav">
+      <a href="editor.html">Editor</a>
+      <a href="wwise-soundbanks.html">Wwise</a>
+      <a href="ability-tani-sound.html">TANI-SOUND</a>
+      <a class="active" href="client-monitor.html" aria-current="page">Client Monitor</a>
+    </nav>
+    <div class="top-spacer"></div>
+    <div id="clock" class="clock">--</div>
+  </header>
+
+  <main class="main">
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Checklist</h2>
+        <span id="poll-state" class="tag">polling</span>
+      </div>
+      <div class="panel-body">
+        <div class="actions" style="margin-bottom:10px;">
+          <button id="start-btn" class="btn" type="button">Start PSS Trace</button>
+          <button id="stop-btn" class="btn secondary" type="button">Stop</button>
+          <button id="pause-btn" class="btn secondary" type="button">Pause Capture</button>
+          <button id="clear-btn" class="btn danger" type="button">Clear</button>
+        </div>
+        <div id="lights" class="lights"></div>
+        <div class="mini-title">Client</div>
+        <pre id="client-box">Loading...</pre>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2 id="capture-title">Animation Capture</h2>
+        <div class="tabs" role="tablist" aria-label="Capture type">
+          <button id="sound-tab" class="tab-btn" type="button" role="tab" aria-selected="false">Sound</button>
+          <button id="animation-tab" class="tab-btn active" type="button" role="tab" aria-selected="true">Animation</button>
+        </div>
+        <div class="actions">
+          <span id="capture-count" class="tag">0</span>
+          <button id="toggle-filter-btn" class="btn secondary compact hidden" type="button">Show hidden</button>
+          <button id="clear-captures-btn" class="btn danger compact" type="button">Clear</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div id="cast-banner" class="cast-banner">
+          <div id="cast-main" class="cast-main">WAIT</div>
+          <div id="cast-sub" class="cast-sub">Connecting to monitor...</div>
+        </div>
+        <div id="story" class="story"></div>
+        <div id="captures" class="capture-list"></div>
+      </div>
+      <div id="audio-shell" class="audio-shell hidden">
+        <audio id="player" controls preload="none"></audio>
+      </div>
+    </section>
+
+    <aside class="panel">
+      <div class="panel-head">
+        <h2>Detail</h2>
+        <span id="detail-kind" class="tag">none</span>
+      </div>
+      <div class="panel-body">
+        <div id="detail"><div class="empty">Select a skill group to inspect its TANI/PSS trace and strict proof.</div></div>
+        <div class="split">
+          <div>
+            <div class="mini-title">Bridge stdout</div>
+            <pre id="stdout-box"></pre>
+          </div>
+          <div>
+            <div class="mini-title">Bridge stderr</div>
+            <pre id="stderr-box"></pre>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<script>
+const state = {
+  status: null,
+  selectedTs: null,
+  selectedAnimationPath: null,
+  selectedAnimationSkillId: null,
+  busy: false,
+  polling: false,
+  showAllCaptures: false,
+  activeTab: 'animation',
+  animationResolveCache: new Map(),
+  animationExtractCache: new Map(),
+  animationPlayerCache: new Map(),
+  animationPlayerLoading: new Set(),
+  clientFlowCache: { status: 'idle', data: null, error: '', loadedAt: 0 },
+  clientFlowLoading: false,
+  strictPssProofCache: new Map(),
+  strictPssProofLoading: new Set(),
+  strictPssProofVersion: 0,
+  selectedPssPlayerPath: '',
+  renderedAnimationSkillSignature: '',
+};
+const copyTimers = new WeakMap();
+const el = (id) => document.getElementById(id);
+
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+}
+
+function statusClass(status) {
+  if (status === 'ok') return 'ok';
+  if (status === 'fail') return 'fail';
+  if (status === 'wait') return 'wait';
+  return 'idle';
+}
+
+function shortTime(value) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return '--:--:--';
+  return date.toLocaleTimeString([], { hour12: false });
+}
+
+async function api(path, options = {}) {
+  const { timeoutMs = 20000, ...fetchOptions } = options;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(path, { cache: 'no-store', ...fetchOptions, signal: fetchOptions.signal || controller.signal });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    return payload;
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error(`Timed out loading ${path}`);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function renderLights(status) {
+  el('lights').innerHTML = (status.checks || []).map((check) => `
+    <div class="light ${statusClass(check.status)}">
+      <div class="dot"></div>
+      <div>
+        <div class="name">${esc(check.label)}</div>
+        <div class="detail">${esc(check.detail || '')}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderCast(status) {
+  const banner = el('cast-banner');
+  banner.classList.toggle('ready', !!status.readyToCast);
+  el('cast-main').textContent = status.readyToCast ? 'CAST NOW' : status.castInstruction || 'WAIT';
+  const pieces = [];
+  if (status.clientProcesses?.length) pieces.push(`${status.clientProcesses[0].name} pid ${status.clientProcesses[0].pid}`);
+  if (status.bridge?.running) pieces.push(`bridge pid ${status.bridge.pid}`);
+  const hookText = !status.bridge?.running ? 'bridge stopped' : status.bridge?.attachStuck ? 'attach stuck' : status.capture?.hooksReady ? (state.activeTab === 'animation' ? 'pss trace hooks armed' : 'hooks armed') : 'hooks pending';
+  pieces.push(hookText);
+  if (status.capture?.paused) pieces.push('capture paused');
+  el('cast-sub').textContent = pieces.join(' | ');
+}
+
+function captureTitle(capture) {
+  if (capture.wwise?.event) return capture.wwise.event;
+  if (capture.eventName) return capture.eventName;
+  if (capture.controlName) return capture.controlName;
+  if (capture.soundName) return capture.soundName;
+  if (capture.storyTitle) return capture.storyTitle;
+  return capture.type || 'capture';
+}
+
+function captureMeta(capture) {
+  const meta = [];
+  meta.push(shortTime(capture.ts));
+  if (capture.eventId) meta.push(`event ${capture.eventId}`);
+  if (capture.playingId) meta.push(`playing ${capture.playingId}`);
+  if (capture.gameObject) meta.push(`obj ${capture.gameObject}`);
+  return meta.join(' | ');
+}
+
+function wemKey(wem) {
+  const id = String(wem?.id || '').trim();
+  if (id) return `id:${id}`;
+  const file = String(wem?.file || '').trim().toLowerCase();
+  if (file) return `file:${file}`;
+  const url = String(wem?.playbackUrl || '').trim().toLowerCase();
+  return url ? `url:${url}` : '';
+}
+
+function uniqueWems(wems = []) {
+  const rows = [];
+  const seen = new Set();
+  for (const wem of Array.isArray(wems) ? wems : []) {
+    const key = wemKey(wem);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    rows.push(wem);
+  }
+  return rows;
+}
+
+function captureHasSound(capture) {
+  if (uniqueWems(capture?.wwise?.wems || []).length) return true;
+  if (String(capture?.wwise?.event || '').trim()) return true;
+  if (String(capture?.soundName || capture?.sound || '').trim()) return true;
+  const type = String(capture?.type || '');
+  if (type === 'wwise-post-event' || type === 'animtag-audio-callsite' || /^fmod/i.test(type)) {
+    return !!String(capture?.eventName || '').trim();
+  }
+  return false;
+}
+
+function captureSoundKey(capture) {
+  const wemKeys = uniqueWems(capture?.wwise?.wems || []).map(wemKey).filter(Boolean).sort();
+  if (wemKeys.length) return `wems:${wemKeys.join('|')}`;
+  const event = String(capture?.wwise?.event || capture?.eventName || capture?.soundName || capture?.controlName || '').trim().toLowerCase();
+  if (event) return `event:${capture?.type || ''}:${event}`;
+  const eventId = String(capture?.eventId || capture?.wwise?.eventId || capture?.raw?.eventIdLike || '').trim();
+  if (eventId) return `event-id:${capture?.type || ''}:${eventId}`;
+  return `capture:${capture?.type || ''}:${capture?.ts || captureTitle(capture)}`;
+}
+
+function uniqueSoundCaptures(captures = []) {
+  const rows = [];
+  const seen = new Set();
+  for (const capture of Array.isArray(captures) ? captures : []) {
+    const key = captureSoundKey(capture);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push(capture);
+  }
+  return rows;
+}
+
+function renderStory(status) {
+  const story = status.capture?.story;
+  renderStoryContent(story, 'No monitor story yet');
+}
+
+function renderAnimationStory(status) {
+  const story = status.capture?.animation?.story;
+  renderStoryContent(story, 'No animation capture yet');
+}
+
+function renderStoryContent(story, emptyTitle) {
+  if (!story) {
+    el('story').innerHTML = `<div class="story-title">${esc(emptyTitle)}</div>`;
+    return;
+  }
+  const bullets = (story.bullets || []).map((line) => `<div class="story-bullet"><span>${esc(line)}</span></div>`).join('');
+  const clusters = (story.clusters || []).slice(0, 3).map((cluster) => {
+    const ids = (cluster.playingIds || []).length ? `playing ${cluster.playingIds.join(', ')}` : 'no playing id';
+    return `<div class="story-cluster">cluster ${esc(cluster.id)} | ${esc(shortTime(cluster.startTs))}-${esc(shortTime(cluster.endTs))} | ${esc(cluster.summary)} | ${esc(ids)}</div>`;
+  }).join('');
+  el('story').innerHTML = `
+    <div class="story-title">${esc(story.headline || '')}</div>
+    <div class="story-verdict">${esc(story.verdict || '')}</div>
+    ${bullets ? `<div class="story-bullets">${bullets}</div>` : ''}
+    ${clusters ? `<div class="story-clusters">${clusters}</div>` : ''}
+  `;
+}
+
+function animationStatusLabel(asset) {
+  if (asset?.status === 'cache-hit') return 'Cache hit';
+  return 'CDN lookup';
+}
+
+function animationStatusTone(asset) {
+  return asset?.status === 'cache-hit' ? 'green' : 'amber';
+}
+
+function renderAnimationAssetActions(asset) {
+  const actions = [];
+  if (asset?.cache?.rawUrl) actions.push(`<a class="link-button" href="${esc(asset.cache.rawUrl)}" target="_blank" rel="noopener">Raw</a>`);
+  if (asset?.cache?.previewUrl) actions.push(`<a class="link-button" href="${esc(asset.cache.previewUrl)}" target="_blank" rel="noopener">Preview</a>`);
+  if (asset?.cdn?.searchUrl) actions.push(`<a class="link-button" href="${esc(asset.cdn.searchUrl)}" target="_blank" rel="noopener">CDN</a>`);
+  actions.push(`<button class="copy copy-asset" type="button" data-copy="${esc(asset?.logicalPath || '')}">Copy Path</button>`);
+  return actions.length ? `<div class="asset-actions">${actions.join('')}</div>` : '';
+}
+
+function getSelectedAnimationAsset(status) {
+  const assets = status.capture?.animation?.assets || [];
+  if (!assets.length) return null;
+  let asset = assets.find((item) => item.logicalPath === state.selectedAnimationPath);
+  if (!asset) {
+    asset = assets[0];
+    state.selectedAnimationPath = asset.logicalPath;
+  }
+  return asset;
+}
+
+function getSelectedAnimationSkill(status) {
+  const skills = status.capture?.animation?.skills || [];
+  if (!skills.length) return null;
+  let skill = skills.find((item) => item.id === state.selectedAnimationSkillId);
+  if (!skill) {
+    skill = skills[0];
+    state.selectedAnimationSkillId = skill.id;
+  }
+  return skill;
+}
+
+function allAnimationSkillAssets(status) {
+  const animation = status.capture?.animation || {};
+  const fromSkills = (animation.skills || []).flatMap((skill) => [
+    ...(skill.tani || []),
+    ...(skill.pss || []),
+    ...(skill.actions || []),
+    ...(skill.legacyEffects || []),
+    ...(skill.assets || []),
+  ]);
+  return [...fromSkills, ...(animation.assets || []), ...(animation.allAssets || [])];
+}
+
+function findAnimationAsset(path) {
+  const assetPath = String(path || '');
+  return allAnimationSkillAssets(state.status || {}).find((item) => item.logicalPath === assetPath) || { logicalPath: assetPath };
+}
+
+function resolvedAnimationAsset(asset) {
+  const resolvedEntry = state.animationResolveCache.get(asset.logicalPath);
+  return resolvedEntry?.asset
+    ? { ...asset, ...resolvedEntry.asset, count: asset.count, groupSources: asset.groupSources, parentTani: asset.parentTani }
+    : asset;
+}
+
+function renderAnimationAssetRow(asset) {
+  const activeAsset = resolvedAnimationAsset(asset);
+  const extractResult = state.animationExtractCache.get(activeAsset.logicalPath);
+  const best = activeAsset.cdn?.bestMatch || null;
+  const sourceText = (activeAsset.groupSources || activeAsset.sources || []).join(', ');
+  const parentText = (activeAsset.parentTani || []).join(', ');
+  return `
+    <div class="cdn-match">
+      <div class="kv">
+        <div class="k">Name</div><div class="v">${esc(activeAsset.name || '')}</div>
+        <div class="k">Path</div><div class="v">${esc(activeAsset.logicalPath || '')}</div>
+        <div class="k">Source</div><div class="v">${esc(sourceText)}</div>
+        ${parentText ? `<div class="k">TANI</div><div class="v">${esc(parentText)}</div>` : ''}
+        ${extractResult ? `<div class="k">Extracted</div><div class="v">${esc(extractResult.extractedFile?.relativePath || extractResult.extractedFile?.path || extractResult.error || '')}</div>` : ''}
+      </div>
+      <div class="asset-actions">
+        ${activeAsset.cache?.rawUrl ? `<a class="link-button" href="${esc(activeAsset.cache.rawUrl)}" target="_blank" rel="noopener">Raw</a>` : ''}
+        ${activeAsset.cache?.previewUrl ? `<a class="link-button" href="${esc(activeAsset.cache.previewUrl)}" target="_blank" rel="noopener">Preview</a>` : ''}
+        ${activeAsset.cdn?.searchUrl ? `<a class="link-button" href="${esc(activeAsset.cdn.searchUrl)}" target="_blank" rel="noopener">CDN</a>` : ''}
+        <button class="copy resolve-animation" type="button" data-asset-path="${esc(activeAsset.logicalPath)}">Resolve CDN</button>
+        ${best ? `<button class="copy extract-animation" type="button" data-asset-path="${esc(activeAsset.logicalPath)}" data-package-name="${esc(best.packageName)}" data-package-size="${esc(best.packageSize || 0)}" data-member-path="${esc(best.path)}">Extract Best</button>` : ''}
+        <button class="copy copy-asset" type="button" data-copy="${esc(activeAsset.logicalPath || '')}">Copy Path</button>
+      </div>
+    </div>
+  `;
+}
+
+function normPath(value) {
+  return String(value || '').replace(/\\/g, '/').trim().toLowerCase();
+}
+
+function assetPath(asset) {
+  return String(asset?.logicalPath || asset?.path || '').trim();
+}
+
+function pathName(path) {
+  return String(path || '').replace(/\\/g, '/').split('/').filter(Boolean).pop() || String(path || '');
+}
+
+function pathStem(path) {
+  return pathName(path).replace(/\.[^.]+$/, '').toLowerCase();
+}
+
+function proofBadge(status) {
+  return `<span class="proof-badge ${esc(status)}">${esc(status || 'unknown')}</span>`;
+}
+
+function proofRowPath(row) {
+  return row?.decodedPath || row?.path || row?.rawPath || row?.pssPath || '';
+}
+
+function collectProofPathRows(rows = []) {
+  const byPath = new Map();
+  const byStem = new Map();
+  for (const row of rows) {
+    const normalized = normPath(proofRowPath(row));
+    if (!normalized) continue;
+    if (!byPath.has(normalized)) byPath.set(normalized, []);
+    byPath.get(normalized).push(row);
+    const stem = pathStem(normalized);
+    if (!stem) continue;
+    if (!byStem.has(stem)) byStem.set(stem, []);
+    byStem.get(stem).push(row);
+  }
+  return { byPath, byStem };
+}
+
+function strictPssKey(path) {
+  return normPath(path) || String(path || '').trim();
+}
+
+function strictPssPathsForSkill(skill) {
+  const out = [];
+  const seen = new Set();
+  const add = (value) => {
+    const raw = String(value || '').trim();
+    const key = strictPssKey(raw);
+    if (!key || !/\.pss$/i.test(key) || seen.has(key)) return;
+    seen.add(key);
+    out.push(raw);
+  };
+  for (const asset of skill?.pss || []) add(assetPath(asset));
+  for (const row of skill?.pipeline || []) add(row.path);
+  for (const stage of skill?.clientPipeline?.stages || []) {
+    for (const path of stage?.evidence?.paths || []) add(path);
+  }
+  return out;
+}
+
+function selectPrimaryTani(skill) {
+  const roots = (skill?.tani || []).filter((asset) => /\.tani$/i.test(assetPath(asset)));
+  return roots.find((asset) => asset.status === 'cache-hit') || roots[0] || null;
+}
+
+function inferBodyTypeFromPath(path) {
+  const match = String(path || '').replace(/\\/g, '/').match(/\/player\/(f1|f2|m1|m2)\//i);
+  return match ? match[1].toLowerCase() : '';
+}
+
+function selectedSkillById(skillId) {
+  const skills = state.status?.capture?.animation?.skills || [];
+  return skills.find((skill) => skill.id === skillId) || null;
+}
+
+function renderStrictRows(rows = [], emptyText = 'No strict issues reported.') {
+  if (!rows.length) return `<div class="strict-row ok"><div class="strict-label">OK</div><div class="strict-text">${esc(emptyText)}</div></div>`;
+  return rows.slice(0, 18).map((row) => {
+    const tone = row.tone || row.level || 'warn';
+    const cls = tone === 'ok' ? 'ok' : (tone === 'block' || tone === 'error' ? 'block' : 'warn');
+    const label = row.label || (cls === 'block' ? 'Blocker' : cls === 'ok' ? 'OK' : 'Warning');
+    return `<div class="strict-row ${cls}"><div class="strict-label">${esc(label)}</div><div class="strict-text">${esc(row.text || row.msg || row.message || '')}</div></div>`;
+  }).join('');
+}
+
+function buildStrictPlayerUrl(taniPath, bodyType, skillId) {
+  const params = new URLSearchParams({
+    auto: '1',
+    strict: '1',
+    embed: 'client-monitor',
+    autoTani: taniPath,
+    monitorSkillId: skillId || '',
+  });
+  if (bodyType) params.set('bodyType', bodyType);
+  return `client-monitor-animation-player.html?${params.toString()}`;
+}
+
+function buildPssOnlyPlayerUrl(pssPath) {
+  const params = new URLSearchParams({
+    embed: 'client-monitor',
+    pss: pssPath || '',
+  });
+  return `pss.html?${params.toString()}`;
+}
+
+function renderPssOnlyInlinePlayer(skill) {
+  const paths = strictPssPathsForSkill(skill);
+  if (!paths.length) return '';
+  const selectedKey = strictPssKey(state.selectedPssPlayerPath);
+  const selectedPath = paths.find((path) => strictPssKey(path) === selectedKey) || paths[0];
+  const selectedUrl = buildPssOnlyPlayerUrl(selectedPath);
+  const buttons = paths.slice(0, 24).map((path) => {
+    const active = strictPssKey(path) === strictPssKey(selectedPath);
+    return `<button class="copy play-pss-inline ${active ? 'active' : ''}" type="button" data-pss-path="${esc(path)}">${esc(pathName(path).replace(/\.pss$/i, '') || path)}</button>`;
+  }).join('');
+  return `
+    <div class="mini-title">PSS player</div>
+    <div class="strict-player pss-inline-player">
+      <div class="strict-player-top">
+        <div>
+          <div class="strict-player-title">${esc(pathName(selectedPath) || selectedPath)}</div>
+          <div class="strict-player-sub">${esc(selectedPath)}</div>
+        </div>
+        <a class="link-button" href="${esc(selectedUrl)}" target="_blank" rel="noopener">Open PSS</a>
+      </div>
+      <div class="actions pss-player-buttons">${buttons}</div>
+      <div class="strict-frame-wrap"><iframe id="pss-only-player-frame" class="strict-frame pss-frame" title="PSS player" src="${esc(selectedUrl)}"></iframe></div>
+    </div>
+  `;
+}
+
+function summarizeRuntimeReport(report) {
+  if (!report) return [];
+  const rows = [];
+  const blockers = report.blockers || [];
+  const warnings = report.warnings || [];
+  if (blockers.length) {
+    rows.push(...blockers.slice(0, 10).map((item) => ({ tone: 'block', label: item.category || 'Runtime', text: item.text || item.msg || item.message || String(item) })));
+  }
+  if (warnings.length) {
+    rows.push(...warnings.slice(0, 8).map((item) => ({ tone: 'warn', label: item.category || 'Runtime', text: item.text || item.msg || item.message || String(item) })));
+  }
+  if (!rows.length && report.status) rows.push({ tone: 'ok', label: 'Runtime', text: `Strict renderer status: ${report.status}` });
+  return rows;
+}
+
+function renderStrictAnimationPlayer(skill) {
+  const cache = state.animationPlayerCache.get(skill?.id || '') || { status: 'idle' };
+  const primaryTani = selectPrimaryTani(skill);
+  const runtimeRows = summarizeRuntimeReport(cache.runtimeReport);
+  const readinessRows = [
+    ...(cache.readiness?.blockers || []).map((text) => ({ tone: 'block', label: 'Blocker', text })),
+    ...(cache.readiness?.warnings || []).map((text) => ({ tone: 'warn', label: 'Warning', text })),
+    ...(cache.readiness?.checks || []).map((text) => ({ tone: 'ok', label: 'Check', text })),
+  ];
+  const statusTone = cache.status === 'ready' ? 'green' : cache.status === 'blocked' || cache.status === 'error' ? 'amber' : '';
+  const statusText = cache.status === 'checking'
+    ? 'checking'
+    : cache.status === 'ready'
+      ? 'new player ready'
+      : cache.status === 'blocked'
+        ? 'blocked'
+        : cache.status === 'error'
+          ? 'error'
+          : 'idle';
+  const bodyType = cache.bodyType || inferBodyTypeFromPath(assetPath(primaryTani));
+  const frame = cache.iframeSrc && cache.status === 'ready'
+    ? `<div class="strict-frame-wrap"><iframe id="strict-animation-player-frame" class="strict-frame" title="New animation player" src="${esc(cache.iframeSrc)}"></iframe></div>`
+    : `<div class="strict-frame-wrap blocked"><div class="empty" style="padding:12px;">${esc(cache.status === 'checking' ? 'Checking render chain...' : primaryTani ? 'New player waits for a clean TANI/PSS chain.' : 'No TANI root captured for this skill.')}</div></div>`;
+  return `
+    <div class="mini-title">New animation player</div>
+    <div class="strict-player" data-strict-skill-id="${esc(skill?.id || '')}">
+      <div class="strict-player-top">
+        <div>
+          <div class="strict-player-title">${esc(primaryTani ? (primaryTani.name || primaryTani.logicalPath) : 'No TANI root')}</div>
+          <div class="strict-player-sub">${esc(primaryTani ? `${assetPath(primaryTani)}${bodyType ? ` | ${bodyType.toUpperCase()}` : ''}` : 'Capture another skill window with a TANI root.')}</div>
+        </div>
+        <span class="tag ${statusTone} strict-status-tag">${esc(statusText)}</span>
+      </div>
+      <div class="actions">
+        <button class="btn compact load-strict-player" type="button" data-skill-id="${esc(skill?.id || '')}">${cache.status === 'ready' ? 'Reload New Player' : 'Load New Player'}</button>
+        ${primaryTani ? `<a class="link-button" href="${esc(buildStrictPlayerUrl(assetPath(primaryTani), bodyType, skill?.id || ''))}" target="_blank" rel="noopener">Open Page</a>` : ''}
+      </div>
+      ${frame}
+      <div class="strict-list">${renderStrictRows(readinessRows)}</div>
+      <div class="strict-runtime-report">${runtimeRows.length ? `<div class="mini-title" style="margin-top:2px;">Runtime strict report</div><div class="strict-list">${renderStrictRows(runtimeRows)}</div>` : ''}</div>
+    </div>
+  `;
+}
+
+function updateStrictRuntimeReportPanel(skillId) {
+  const cache = state.animationPlayerCache.get(skillId);
+  const panel = Array.from(document.querySelectorAll('[data-strict-skill-id]')).find((node) => node.dataset.strictSkillId === skillId);
+  if (!cache || !panel) return false;
+  const statusTag = panel.querySelector('.strict-status-tag');
+  if (statusTag && cache.runtimeReport?.status) {
+    const blocked = cache.runtimeReport.status === 'blocked';
+    statusTag.textContent = blocked ? 'runtime blocked' : 'runtime ok';
+    statusTag.className = blocked ? 'tag amber strict-status-tag' : 'tag green strict-status-tag';
+  }
+  const runtimeEl = panel.querySelector('.strict-runtime-report');
+  if (runtimeEl) {
+    const runtimeRows = summarizeRuntimeReport(cache.runtimeReport);
+    runtimeEl.innerHTML = runtimeRows.length ? `<div class="mini-title" style="margin-top:2px;">Runtime strict report</div><div class="strict-list">${renderStrictRows(runtimeRows)}</div>` : '';
+  }
+  return true;
+}
+
+async function fetchStrictTexture(url, texturePath) {
+  const response = await fetch(url, { cache: 'no-store' });
+  if (response.status === 204) return { ok: false, reason: `Texture missing: ${texturePath || url}` };
+  if (!response.ok) return { ok: false, reason: `Texture HTTP ${response.status}: ${texturePath || url}` };
+  const buf = await response.arrayBuffer();
+  if (buf.byteLength < 8) return { ok: false, reason: `Texture returned ${buf.byteLength} bytes: ${texturePath || url}` };
+  return { ok: true, bytes: buf.byteLength };
+}
+
+async function buildStrictReadiness(skill) {
+  const blockers = [];
+  const warnings = [];
+  const checks = [];
+  const primaryTani = selectPrimaryTani(skill);
+  const taniPath = assetPath(primaryTani);
+  if (!taniPath) return { blockers: ['No TANI root captured for this skill.'], warnings, checks, taniPath: '' };
+
+  let tani;
+  try {
+    tani = await api(`/api/player-anim/tani-parse?path=${encodeURIComponent(taniPath)}`, { timeoutMs: 30000 });
+    checks.push(`TANI parsed: ${taniPath}`);
+  } catch (error) {
+    blockers.push(`TANI parse failed: ${error.message}`);
+    return { blockers, warnings, checks, taniPath };
+  }
+
+  const pssEntries = Array.isArray(tani.pssEntries) && tani.pssEntries.length
+    ? tani.pssEntries
+    : (tani.pssPaths || []).map((path) => ({ path, effectiveStartTimeMs: null }));
+  if (!pssEntries.length) blockers.push('TANI contains no PSS entries.');
+  else checks.push(`TANI contains ${pssEntries.length} PSS file(s).`);
+
+  const groupedPss = new Set((skill.pss || []).map((asset) => normPath(assetPath(asset))).filter(Boolean));
+  const taniPss = new Set(pssEntries.map((entry) => normPath(entry.path)).filter(Boolean));
+  for (const pss of taniPss) {
+    if (groupedPss.size && !groupedPss.has(pss)) warnings.push(`TANI PSS not in monitor skill group: ${pss}`);
+  }
+  for (const pss of groupedPss) {
+    if (!taniPss.has(pss)) warnings.push(`Monitor group PSS not in parsed TANI: ${pss}`);
+  }
+
+  if (tani.aniPath) {
+    try {
+      const header = await api(`/api/player-anim/ani-header?path=${encodeURIComponent(tani.aniPath)}`, { timeoutMs: 30000 });
+      checks.push(`Action ANI parsed: ${tani.aniPath} (${Number(header.duration || 0).toFixed(2)}s).`);
+    } catch (error) {
+      warnings.push(`Action ANI header unresolved: ${tani.aniPath} (${error.message})`);
+    }
+  } else {
+    warnings.push('TANI did not expose a base ANI action path.');
+  }
+
+  const textureChecks = new Map();
+  for (const entry of pssEntries) {
+    const pssPath = entry.path;
+    if (!pssPath) continue;
+    if (!Number.isFinite(entry.effectiveStartTimeMs) && !Number.isFinite(entry.startTimeMs)) {
+      blockers.push(`No authoritative start time for ${pssPath}.`);
+    }
+    let analyzed;
+    try {
+      analyzed = await api(`/api/pss/analyze?sourcePath=${encodeURIComponent(pssPath)}`, { timeoutMs: 30000 });
+      if (!analyzed.ok) throw new Error(analyzed.error || 'PSS analyzer returned not-ok');
+      const emitterCount = (analyzed.emitters || []).length;
+      if (!emitterCount) blockers.push(`PSS has no parsed emitters: ${pssPath}`);
+      else checks.push(`PSS analyzed: ${pssPath} (${emitterCount} emitter(s)).`);
+    } catch (error) {
+      blockers.push(`PSS analyze failed for ${pssPath}: ${error.message}`);
+      continue;
+    }
+    try {
+      const dump = await api(`/api/pss/debug-dump?sourcePath=${encodeURIComponent(pssPath)}`, { timeoutMs: 30000 });
+      if (!dump.ok) warnings.push(`PSS debug dump returned not-ok: ${pssPath}`);
+      else checks.push(`PSS debug dump parsed: ${pssPath}.`);
+    } catch (error) {
+      warnings.push(`PSS debug dump failed for ${pssPath}: ${error.message}`);
+    }
+    for (const tex of analyzed.textures || []) {
+      const url = tex.rawUrl;
+      if (!url || textureChecks.has(url)) continue;
+      textureChecks.set(url, tex.texturePath || url);
+    }
+  }
+
+  for (const [url, texturePath] of textureChecks.entries()) {
+    try {
+      const result = await fetchStrictTexture(url, texturePath);
+      if (!result.ok) blockers.push(result.reason);
+    } catch (error) {
+      blockers.push(`Texture fetch failed: ${texturePath} (${error.message})`);
+    }
+  }
+  if (textureChecks.size) checks.push(`Checked ${textureChecks.size} real texture request(s).`);
+
+  return { blockers, warnings, checks, taniPath, tani, pssEntries };
+}
+
+async function loadStrictAnimationPlayer(skillId, refresh = false) {
+  const skill = selectedSkillById(skillId);
+  if (!skill || state.animationPlayerLoading.has(skillId)) return;
+  const primaryTani = selectPrimaryTani(skill);
+  const taniPath = assetPath(primaryTani);
+  if (!taniPath) {
+    state.animationPlayerCache.set(skillId, { status: 'blocked', readiness: { blockers: ['No TANI root captured for this skill.'], warnings: [], checks: [] } });
+    renderAnimationSkillDetail(skill, true);
+    return;
+  }
+  if (!refresh) {
+    const current = state.animationPlayerCache.get(skillId);
+    if (current && current.status !== 'idle' && current.status !== 'error') return;
+  }
+  state.animationPlayerLoading.add(skillId);
+  state.animationPlayerCache.set(skillId, { status: 'checking', readiness: { blockers: [], warnings: [], checks: [] }, bodyType: inferBodyTypeFromPath(taniPath) });
+  renderAnimationSkillDetail(skill, true);
+  try {
+    const readiness = await buildStrictReadiness(skill);
+    const bodyType = inferBodyTypeFromPath(readiness.taniPath || taniPath);
+    const blocked = readiness.blockers.length > 0;
+    state.animationPlayerCache.set(skillId, {
+      status: blocked ? 'blocked' : 'ready',
+      readiness,
+      iframeSrc: blocked ? '' : buildStrictPlayerUrl(readiness.taniPath || taniPath, bodyType, skillId),
+      bodyType,
+      runtimeReport: null,
+    });
+  } catch (error) {
+    state.animationPlayerCache.set(skillId, {
+      status: 'error',
+      readiness: { blockers: [error.message], warnings: [], checks: [] },
+      bodyType: inferBodyTypeFromPath(taniPath),
+    });
+  } finally {
+    state.animationPlayerLoading.delete(skillId);
+    renderAnimationSkillDetail(selectedSkillById(skillId), true);
+  }
+}
+
+function scheduleStrictAnimationPlayer(skill) {
+  if (!skill?.id || state.animationPlayerCache.has(skill.id) || state.animationPlayerLoading.has(skill.id)) return;
+  loadStrictAnimationPlayer(skill.id, false);
+}
+
+function renderPssPipelineRows(rows = []) {
+  if (!rows.length) return '<div class="empty" style="padding:8px;">No runtime PSS read trace captured for this skill yet.</div>';
+  return rows.map((row) => {
+    const methods = (row.methods || []).map((method) => `${method.count}x ${method.name}`).join('\n');
+    const refs = [
+      ...(row.handles || []).map((value) => `handle ${value}`),
+      ...(row.objects || []).map((value) => `object ${value}`),
+    ].join('\n');
+    const stacks = [
+      ...(row.firstReadStack || []).slice(0, 5),
+      ...(row.firstMethodStack || []).slice(0, 5),
+    ].filter(Boolean).join('\n');
+    return `
+      <div class="cdn-match">
+        <div class="kv">
+          <div class="k">PSS</div><div class="v">${esc(row.path || '')}</div>
+          <div class="k">Opened</div><div class="v">${esc((row.opens || 0) + (row.objectOpens || 0))} (${esc((row.openApis || []).join(', '))})</div>
+          <div class="k">Reads</div><div class="v">${esc(row.reads || 0)} / ${esc(row.bytesRead || 0)} bytes (${esc((row.readApis || []).join(', '))})</div>
+          <div class="k">Methods</div><div class="v">${esc(row.methodCalls || 0)}${methods ? `\n${esc(methods)}` : ''}</div>
+          <div class="k">Targets</div><div class="v">${esc(refs)}</div>
+          ${stacks ? `<div class="k">Stack</div><div class="v">${esc(stacks)}</div>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderClientPipelineProof(proof) {
+  if (!proof?.stages?.length) return '<div class="empty" style="padding:8px;">No client pipeline proof calculated for this skill yet.</div>';
+  const rows = proof.stages.map((stage) => {
+    const cls = stage.status === 'ok' ? 'ok' : stage.status === 'fail' ? 'block' : 'warn';
+    const evidence = stage.evidence || {};
+    const evidenceLines = [];
+    if (Array.isArray(evidence.paths) && evidence.paths.length) evidenceLines.push(evidence.paths.join('\n'));
+    if (Array.isArray(evidence.sockets) && evidence.sockets.length) evidenceLines.push(`sockets: ${evidence.sockets.join(', ')}`);
+    if (Array.isArray(evidence.transforms) && evidence.transforms.length) {
+      evidenceLines.push(evidence.transforms.map((item) => {
+        if (item.kind === 'matrix4x4') return `matrix ${item.offset || ''}: ${(item.values || []).slice(0, 4).join(', ')} ...`;
+        return `${item.kind || 'transform'}: ${item.values || ''}`;
+      }).join('\n'));
+    }
+    if (Array.isArray(evidence.labels) && evidence.labels.length) evidenceLines.push(`calls: ${evidence.labels.join(', ')}`);
+    if (Array.isArray(evidence.exports) && evidence.exports.length) evidenceLines.push(`exports: ${evidence.exports.join(', ')}`);
+    if (Array.isArray(evidence.events) && evidence.events.length) evidenceLines.push(`events: ${evidence.events.join(', ')}`);
+    return `
+      <div class="strict-row ${cls}">
+        <div class="strict-label">${esc(stage.status || '')}</div>
+        <div class="strict-text"><b>${esc(stage.label || '')}</b><br>${esc(stage.detail || '')}${evidenceLines.length ? `<pre style="margin-top:6px;">${esc(evidenceLines.join('\n'))}</pre>` : ''}</div>
+      </div>
+    `;
+  }).join('');
+  return `
+    <div class="strict-list">
+      <div class="story-verdict">${esc(proof.verdict || '')}</div>
+      ${rows}
+    </div>
+  `;
+}
+
+function compactJson(value) {
+  if (value == null || value === '' || (Array.isArray(value) && !value.length)) return '';
+  if (typeof value === 'object' && !Array.isArray(value) && !Object.keys(value).length) return '';
+  return JSON.stringify(value, null, 2);
+}
+
+function clientFlowSkillKeys(skill) {
+  const paths = new Set();
+  const names = new Set();
+  const addPath = (value) => {
+    const normalized = normPath(value);
+    if (!normalized || !/\.pss$/i.test(normalized)) return;
+    paths.add(normalized);
+    names.add(pathName(normalized));
+  };
+  for (const asset of skill?.pss || []) addPath(assetPath(asset));
+  for (const row of skill?.pipeline || []) addPath(row.path);
+  for (const stage of skill?.clientPipeline?.stages || []) {
+    for (const path of stage?.evidence?.paths || []) addPath(path);
+  }
+  return { paths, names };
+}
+
+function clientFlowMatchesSkill(flow, keys) {
+  const flowPath = normPath(flow?.path || '');
+  if (!flowPath) return false;
+  return keys.paths.has(flowPath) || keys.names.has(pathName(flowPath));
+}
+
+function renderClientFlowRow(row) {
+  const label = [shortTime(row.time), row.type, row.label || row.exportName || row.api || row.method || row.rva || row.result].filter(Boolean).join(' | ');
+  const details = [
+    ['Path', row.path || row.pssPath],
+    ['API', row.api],
+    ['Result', row.result],
+    ['Trace', row.traceId],
+    ['Handle', row.handle],
+    ['Object', row.object],
+    ['Module', row.module?.name || row.module?.path],
+    ['RVA', [row.rva, row.address].filter(Boolean).join(' / ')],
+    ['Bytes', row.bytesRead != null ? `${row.bytesRead} read, ${row.requested ?? ''} requested` : ''],
+    ['Header', row.headerHex],
+  ].filter((entry) => entry[1]).map(([key, value]) => `<div class="k">${esc(key)}</div><div class="v">${esc(value)}</div>`).join('');
+  const blocks = [
+    ['Args', row.rawArgs || row.argsRaw],
+    ['Strings', row.stringCandidates],
+    ['Registers', row.callRegisters],
+    ['Stack', row.stack],
+  ].map(([labelText, value]) => {
+    const text = compactJson(value);
+    return text ? `<div class="mini-title" style="margin-top:0;">${esc(labelText)}</div><pre>${esc(text)}</pre>` : '';
+  }).join('');
+  return `
+    <details class="client-flow-row">
+      <summary>${esc(label || row.type || 'client row')}</summary>
+      <div class="client-flow-row-body">
+        ${details ? `<div class="kv">${details}</div>` : ''}
+        ${blocks}
+      </div>
+    </details>
+  `;
+}
+
+function renderClientFlowStage(stage) {
+  const rows = (stage.rows || []).slice(0, 8).map(renderClientFlowRow).join('');
+  return `
+    <div class="client-flow-stage ${esc(stage.status || '')}">
+      <div class="stage-status">${esc(stage.status || '')}</div>
+      <div>
+        <b>${esc(stage.label || '')}</b><br>
+        ${esc(stage.detail || '')}
+        ${rows}
+      </div>
+    </div>
+  `;
+}
+
+function renderClientFlowCard(flow) {
+  return `
+    <div class="client-flow-card ${esc(flow.confidence || '')}">
+      <div class="client-flow-top">
+        <div>
+          <div class="client-flow-title">${esc(flow.path || '')}</div>
+          <div class="client-flow-sub">${esc(flow.verdict || '')}</div>
+        </div>
+        <span class="tag ${flow.confidence === 'strong' ? 'green' : 'amber'}">${esc(flow.confidence || '')}</span>
+      </div>
+      <div class="strict-list">${(flow.stages || []).map(renderClientFlowStage).join('')}</div>
+    </div>
+  `;
+}
+
+function renderClientFlowForSkill(skill) {
+  const cache = state.clientFlowCache;
+  if (cache.status === 'loading' || cache.status === 'idle') {
+    return `
+      <div class="client-flow">
+        <div class="client-flow-top">
+          <div><div class="client-flow-title">Loading captured client flow</div><div class="client-flow-sub">Reading PSS open/read/object/particle rows from the monitor log.</div></div>
+          <button class="copy refresh-client-flow" type="button">Refresh</button>
+        </div>
+      </div>
+    `;
+  }
+  if (cache.status === 'error') {
+    return `<div class="client-flow"><div class="client-flow-title">Client flow failed</div><div class="client-flow-sub">${esc(cache.error || '')}</div><button class="copy refresh-client-flow" type="button">Retry</button></div>`;
+  }
+  const data = cache.data || {};
+  const keys = clientFlowSkillKeys(skill);
+  const allFlows = data.flows || [];
+  const matched = allFlows.filter((flow) => clientFlowMatchesSkill(flow, keys));
+  const header = `Tracer saw ${data.counts?.flows || 0} PSS flow(s): ${data.counts?.partial || 0} partial, ${data.counts?.strong || 0} strong, ${data.counts?.pathOnly || 0} path-only.`;
+  if (!keys.paths.size) {
+    const unattached = allFlows.slice(0, 12).map(renderClientFlowCard).join('');
+    return `
+      <div class="client-flow">
+        <div class="client-flow-top">
+          <div><div class="client-flow-title">Captured PSS flow is not attached to this ability yet</div><div class="client-flow-sub">${esc(header)} The selected group has no TANI/PSS list, so these file flows are shown as unattached evidence.</div></div>
+          <button class="copy refresh-client-flow" type="button">Refresh</button>
+        </div>
+        ${unattached ? `<div class="client-flow-list">${unattached}</div>` : ''}
+      </div>
+    `;
+  }
+  if (!matched.length) {
+    const unattached = allFlows.slice(0, 8).map(renderClientFlowCard).join('');
+    return `
+      <div class="client-flow">
+        <div class="client-flow-top">
+          <div><div class="client-flow-title">No matching client flow for this ability PSS list</div><div class="client-flow-sub">${esc(header)} The selected item lists ${keys.paths.size} PSS path(s), but no captured client row matched those exact paths/names.</div></div>
+          <button class="copy refresh-client-flow" type="button">Refresh</button>
+        </div>
+        ${unattached ? `<div class="client-flow-list">${unattached}</div>` : ''}
+      </div>
+    `;
+  }
+  return `
+    <div class="client-flow">
+      <div class="client-flow-top">
+        <div><div class="client-flow-title">Matched client flow for this ability</div><div class="client-flow-sub">${esc(data.verdict || header)}</div></div>
+        <button class="copy refresh-client-flow" type="button">Refresh</button>
+      </div>
+      <div class="client-flow-list">${matched.map(renderClientFlowCard).join('')}</div>
+    </div>
+  `;
+}
+
+async function loadClientFlow(refresh = false) {
+  if (state.clientFlowLoading) return;
+  if (!refresh && state.clientFlowCache.status === 'loaded') return;
+  state.clientFlowLoading = true;
+  state.clientFlowCache = { ...state.clientFlowCache, status: 'loading', error: '' };
+  renderAnimationSkillDetail(selectedSkillById(state.selectedAnimationSkillId), true);
+  try {
+    const data = await api('/api/client-monitor/client-flow', { timeoutMs: 30000 });
+    state.clientFlowCache = { status: 'loaded', data, error: '', loadedAt: Date.now() };
+  } catch (error) {
+    state.clientFlowCache = { status: 'error', data: null, error: error.message, loadedAt: Date.now() };
+  } finally {
+    state.clientFlowLoading = false;
+    renderAnimationSkillDetail(selectedSkillById(state.selectedAnimationSkillId), true);
+  }
+}
+
+function scheduleClientFlowLoad() {
+  if (state.clientFlowCache.status !== 'idle') return;
+  loadClientFlow(false);
+}
+
+function renderStrictPssTextureEvidence(proof, analyze) {
+  if (!analyze?.ok) return '<div class="empty" style="padding:8px;">No parsed texture evidence for this PSS.</div>';
+  const rowIndex = collectProofPathRows(proof?.rows || []);
+  const textures = analyze.textures || [];
+  if (!textures.length) return '<div class="empty" style="padding:8px;">No texture references parsed.</div>';
+  return `<div class="pss-texture-grid">${textures.map((texture) => {
+    const normalized = normPath(texture.texturePath || texture.originalPath || '');
+    const exactRows = rowIndex.byPath.get(normalized) || [];
+    const stemRows = exactRows.length ? [] : (rowIndex.byStem.get(pathStem(normalized)) || []);
+    const status = exactRows.length ? 'proved' : (stemRows.length ? 'nearby' : 'missing');
+    const clientDetail = exactRows.length
+      ? `client row ${exactRows[0].lineNumber || ''}`
+      : (stemRows.length ? `name-only row ${stemRows[0].lineNumber || ''}` : 'no exact client row');
+    const img = texture.rawUrl ? `<img alt="" src="${esc(texture.rawUrl)}" loading="lazy">` : '<div class="empty" style="padding:6px;">no bytes</div>';
+    return `<div class="pss-texture-tile">
+      <div class="pss-texture-preview">${img}</div>
+      <div class="pss-texture-body">
+        <div>${proofBadge(status)}</div>
+        <div class="pss-texture-name">${esc(pathName(texture.texturePath || texture.originalPath || ''))}</div>
+        <div class="detail">${esc(texture.source || 'missing')} | ${esc(clientDetail)}</div>
+      </div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function renderStrictPssProofCard(path, cache) {
+  if (!cache || cache.status === 'loading') {
+    return `<div class="pss-proof-card"><div class="pss-proof-title">${esc(pathName(path) || path)}</div><div class="pss-proof-sub">Loading display proof and parsed PSS data...</div></div>`;
+  }
+  if (cache.status === 'error') {
+    return `<div class="pss-proof-card blocked"><div class="pss-proof-title">${esc(pathName(path) || path)}</div><div class="pss-proof-sub">${esc(cache.error || 'PSS proof load failed')}</div></div>`;
+  }
+  const proof = cache.proof || {};
+  const analyze = cache.analyze || {};
+  const focus = proof.focus || null;
+  const counts = proof.counts || {};
+  const hasRenderHandoff = Number(counts.displayProofMatchedRows || 0) > 0 || Number(counts.representRows || 0) > 0;
+  const gates = [
+    { label: 'PSS path', ok: !!focus?.path, detail: focus?.path || path || 'not captured' },
+    { label: 'KG3D pointer', ok: Number(counts.kg3dPointerRows || 0) > 0, detail: focus?.pointer || 'missing' },
+    { label: 'Runtime object', ok: Number(counts.objectOpenRows || 0) > 0, detail: focus?.object || 'missing' },
+    { label: 'Object methods', ok: Number(counts.methodRows || 0) > 0, detail: `${counts.methodRows || 0} row(s)` },
+    { label: 'Render handoff', ok: hasRenderHandoff, detail: hasRenderHandoff ? 'captured' : 'not captured' },
+  ];
+  const emitterCount = (analyze.emitters || []).length;
+  const spriteCount = (analyze.emitters || []).filter((item) => item.type === 'sprite').length;
+  const meshCount = (analyze.emitters || []).filter((item) => item.type === 'mesh').length;
+  const trackCount = (analyze.emitters || []).filter((item) => item.type === 'track').length;
+  const relatedRows = proof.rows || [];
+  const playerPath = focus?.path || path || '';
+  const playerUrl = buildPssOnlyPlayerUrl(playerPath);
+  const rowDetails = relatedRows.length
+    ? `<details><summary>${esc(relatedRows.length)} captured row(s)</summary><div class="pss-proof-rows">${relatedRows.slice(0, 80).map(renderClientFlowRow).join('')}</div></details>`
+    : '<div class="empty" style="padding:8px;">No related client rows matched this PSS yet.</div>';
+  return `
+    <div class="pss-proof-card ${hasRenderHandoff ? 'ok' : 'blocked'}">
+      <div class="pss-proof-top">
+        <div>
+          <div class="pss-proof-title">${esc(pathName(focus?.path || path) || path)}</div>
+          <div class="pss-proof-sub">${esc(proof.verdict || 'No display proof verdict yet.')}</div>
+        </div>
+        ${proofBadge(hasRenderHandoff ? 'proved' : 'missing')}
+      </div>
+      <div class="strict-list">
+        <div class="strict-row ${hasRenderHandoff ? 'ok' : 'block'}"><div class="strict-label">Result</div><div class="strict-text">${esc(hasRenderHandoff ? 'Full render chain captured.' : 'Full effect playback blocked. No guessed particle motion is drawn.')}</div></div>
+      </div>
+      <div class="actions">
+        <button class="copy play-pss-inline" type="button" data-pss-path="${esc(playerPath)}">Play Here</button>
+        <a class="link-button" href="${esc(playerUrl)}" target="_blank" rel="noopener">Open PSS</a>
+      </div>
+      <div class="pss-proof-grid">${gates.map((gate) => `<div class="pss-proof-gate">
+        <div class="pss-proof-gate-top"><div class="pss-proof-gate-label">${esc(gate.label)}</div>${proofBadge(gate.ok ? 'proved' : 'missing')}</div>
+        <div class="pss-proof-gate-detail">${esc(gate.detail)}</div>
+      </div>`).join('')}</div>
+      <div class="kv">
+        <div class="k">Opened</div><div class="v">${esc(focus?.path || path || '')}</div>
+        <div class="k">Parsed</div><div class="v">${esc(analyze?.ok ? `${analyze.fileSize || 0} bytes, version ${analyze.version || '?'}` : (analyze?.error || 'not parsed'))}</div>
+        <div class="k">Emitters</div><div class="v">${esc(analyze?.ok ? `${emitterCount} total, ${spriteCount} sprite, ${meshCount} mesh, ${trackCount} track` : '')}</div>
+        <div class="k">Textures</div><div class="v">${esc(analyze?.ok ? `${analyze.cachedTextures || 0}/${analyze.totalTextures || 0} resolved real texture byte(s)` : '')}</div>
+      </div>
+      <div class="mini-title" style="margin-top:0;">Texture evidence</div>
+      ${renderStrictPssTextureEvidence(proof, analyze)}
+      <div class="mini-title" style="margin-top:0;">Captured rows</div>
+      ${rowDetails}
+    </div>
+  `;
+}
+
+function renderStrictPssTraceForSkill(skill) {
+  const paths = strictPssPathsForSkill(skill);
+  if (!paths.length) return '<div class="pss-proof"><div class="empty" style="padding:8px;">No PSS file is attached to this selected skill yet.</div></div>';
+  return `
+    <div class="pss-proof">
+      <div class="pss-proof-top">
+        <div><div class="pss-proof-title">PSS trace on this page</div><div class="pss-proof-sub">This panel refreshes from captured client logs and parsed PSS assets without guessed playback.</div></div>
+        <button class="copy refresh-strict-pss" type="button">Refresh</button>
+      </div>
+      ${paths.map((path) => renderStrictPssProofCard(path, state.strictPssProofCache.get(strictPssKey(path)))).join('')}
+    </div>
+  `;
+}
+
+async function fetchStrictPssProof(path) {
+  const query = String(path || '').trim();
+  let proof = await api(`/api/client-monitor/display-proof?q=${encodeURIComponent(query)}`, { timeoutMs: 30000 });
+  if (!proof.focus && pathName(query) && pathName(query) !== query) {
+    proof = await api(`/api/client-monitor/display-proof?q=${encodeURIComponent(pathName(query))}`, { timeoutMs: 30000 });
+  }
+  const analyzePath = proof.focus?.path || query;
+  let analyze = null;
+  if (analyzePath) {
+    try {
+      analyze = await api(`/api/pss/analyze?sourcePath=${encodeURIComponent(analyzePath)}`, { timeoutMs: 30000 });
+    } catch (error) {
+      analyze = { ok: false, error: error.message };
+    }
+  }
+  return { status: 'loaded', path: query, proof, analyze, loadedAt: Date.now() };
+}
+
+function loadStrictPssProofForSkill(skill, refresh = false) {
+  const paths = strictPssPathsForSkill(skill);
+  if (!paths.length) return;
+  let slots = Math.max(0, 2 - state.strictPssProofLoading.size);
+  if (slots <= 0) return;
+  let started = false;
+  for (const path of paths) {
+    if (slots <= 0) break;
+    const key = strictPssKey(path);
+    if (!key || state.strictPssProofLoading.has(key)) continue;
+    const cached = state.strictPssProofCache.get(key);
+    if (!refresh && cached?.status === 'loaded') continue;
+    started = true;
+    slots -= 1;
+    state.strictPssProofLoading.add(key);
+    state.strictPssProofCache.set(key, { status: 'loading', path });
+    fetchStrictPssProof(path)
+      .then((result) => state.strictPssProofCache.set(key, result))
+      .catch((error) => state.strictPssProofCache.set(key, { status: 'error', path, error: error.message || String(error) }))
+      .finally(() => {
+        state.strictPssProofLoading.delete(key);
+        state.strictPssProofVersion += 1;
+        const selected = selectedSkillById(state.selectedAnimationSkillId);
+        if (selected) {
+          loadStrictPssProofForSkill(selected, false);
+          renderAnimationSkillDetail(selected, true);
+        }
+      });
+  }
+  if (started) {
+    state.strictPssProofVersion += 1;
+    renderAnimationSkillDetail(skill, true);
+  }
+}
+
+function scheduleStrictPssProofLoad(skill) {
+  if (!skill?.id) return;
+  loadStrictPssProofForSkill(skill, false);
+}
+
+function renderAnimationSkillDetail(skill, force = false) {
+  if (!skill) {
+    el('detail-kind').textContent = 'animation';
+    el('detail').innerHTML = '<div class="empty">Select a skill group to inspect its TANI and PSS files.</div>';
+    state.renderedAnimationSkillSignature = '';
+    return;
+  }
+  el('detail-kind').textContent = 'skill group';
+  const cache = state.animationPlayerCache.get(skill.id) || { status: 'idle' };
+  const signature = JSON.stringify([
+    skill.id,
+    skill.counts,
+    skill.clientPipeline?.okCount || 0,
+    skill.clientPipeline?.missing?.join(',') || '',
+    cache.status,
+    cache.iframeSrc || '',
+    cache.runtimeReport?.status || '',
+    cache.runtimeReport?.blockers?.length || 0,
+    cache.readiness?.blockers?.length || 0,
+    cache.readiness?.warnings?.length || 0,
+    state.strictPssProofVersion,
+    state.selectedPssPlayerPath,
+    state.clientFlowCache.status,
+    state.clientFlowCache.loadedAt,
+    state.clientFlowCache.error,
+  ]);
+  if (!force && state.renderedAnimationSkillSignature === signature && el('strict-animation-player-frame')) return;
+  state.renderedAnimationSkillSignature = signature;
+  const events = (skill.events || []).join('\n');
+  const taniRows = (skill.tani || []).length ? skill.tani.map(renderAnimationAssetRow).join('') : '<div class="empty" style="padding:8px;">No TANI root captured in this group.</div>';
+  const pssRows = (skill.pss || []).length ? skill.pss.map(renderAnimationAssetRow).join('') : '<div class="empty" style="padding:8px;">No PSS files attached to this group yet.</div>';
+  const clientPipelineProof = renderClientPipelineProof(skill.clientPipeline);
+  const clientFlow = renderClientFlowForSkill(skill);
+  const pipelineRows = renderPssPipelineRows(skill.pipeline || []);
+  const strictPssTrace = renderStrictPssTraceForSkill(skill);
+  const pssPlayer = renderPssOnlyInlinePlayer(skill);
+  const actionRows = (skill.actions || []).length ? skill.actions.map(renderAnimationAssetRow).join('') : '';
+  const legacyRows = (skill.legacyEffects || []).length ? skill.legacyEffects.map(renderAnimationAssetRow).join('') : '';
+  const strictPlayer = renderStrictAnimationPlayer(skill);
+  el('detail').innerHTML = `
+    <div class="kv">
+      <div class="k">Skill</div><div class="v">${esc(skill.title || '')}</div>
+      <div class="k">Time</div><div class="v">${esc(shortTime(skill.startTs))} - ${esc(shortTime(skill.endTs))}</div>
+      <div class="k">Events</div><div class="v">${esc(events)}</div>
+      <div class="k">TANI</div><div class="v">${esc(skill.counts?.tani || 0)}</div>
+      <div class="k">PSS</div><div class="v">${esc(skill.counts?.pss || 0)}</div>
+      <div class="k">Pipeline</div><div class="v">${esc(skill.counts?.clientPipelineOk || 0)} / ${esc(skill.counts?.clientPipelineTotal || 0)} proof, ${esc(skill.counts?.pipeline || 0)} PSS trace</div>
+      <div class="k">Actions</div><div class="v">${esc(skill.counts?.actions || 0)}</div>
+      <div class="k">Other</div><div class="v">${esc(skill.counts?.dependencies || 0)}</div>
+    </div>
+    <div class="mini-title">Client pipeline proof</div>
+    ${clientPipelineProof}
+    <div class="mini-title">Client flow</div>
+    ${clientFlow}
+    <div class="mini-title">PSS runtime trace</div>
+    ${pipelineRows}
+    ${pssPlayer}
+    <div class="mini-title">Strict PSS trace</div>
+    ${strictPssTrace}
+    ${strictPlayer}
+    <div class="mini-title">TANI roots</div>
+    ${taniRows}
+    <div class="mini-title">Contained PSS</div>
+    ${pssRows}
+    ${actionRows ? `<div class="mini-title">Player actions</div>${actionRows}` : ''}
+    ${legacyRows ? `<div class="mini-title">Legacy effects</div>${legacyRows}` : ''}
+  `;
+  scheduleClientFlowLoad();
+  scheduleStrictPssProofLoad(skill);
+  scheduleStrictAnimationPlayer(skill);
+}
+
+function renderAnimationCaptures(status) {
+  const animation = status.capture?.animation || {};
+  if (animation.deferred) {
+    el('capture-count').textContent = 'loading';
+    el('captures').innerHTML = '<div class="empty">Loading animation capture details...</div>';
+    renderAnimationSkillDetail(null);
+    return;
+  }
+  const skills = animation.skills || [];
+  const assets = animation.assets || [];
+  const pssCount = skills.reduce((sum, skill) => sum + Number(skill.counts?.pss || 0), 0);
+  const rows = animation.captures || [];
+  el('capture-count').textContent = skills.length ? `${skills.length} skills / ${pssCount} PSS` : `${assets.length} roots / ${rows.length} rows`;
+  if (!skills.length) {
+    el('captures').innerHTML = '<div class="empty">No skill groups captured yet.</div>';
+    renderAnimationSkillDetail(null);
+    return;
+  }
+  const selected = getSelectedAnimationSkill(status);
+  el('captures').innerHTML = skills.map((skill) => {
+    const active = skill.id === state.selectedAnimationSkillId;
+    const meta = `${shortTime(skill.startTs)} | ${skill.counts?.tani || 0} TANI | ${skill.counts?.pss || 0} PSS | ${skill.counts?.pipeline || 0} trace | ${skill.counts?.actions || 0} action`;
+    const eventPreview = (skill.events || []).slice(0, 2).join(' | ');
+    return `
+      <div class="capture ${active ? 'selected' : ''}" data-skill-id="${esc(skill.id)}" role="button" tabindex="0">
+        <div class="capture-top">
+          <div>
+            <div class="event-name">${esc(skill.title || 'Skill cast')}</div>
+            <div class="event-meta">${esc(meta)}</div>
+          </div>
+          <span class="tag green">Open detail</span>
+        </div>
+        ${eventPreview ? `<div class="asset-path">${esc(eventPreview)}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+  renderAnimationSkillDetail(selected);
+}
+
+function flashCopyButton(button, label) {
+  const baseLabel = button.dataset.baseLabel || button.textContent || 'Copy ID';
+  button.dataset.baseLabel = baseLabel;
+  button.textContent = label;
+  const prior = copyTimers.get(button);
+  if (prior) clearTimeout(prior);
+  copyTimers.set(button, setTimeout(() => {
+    button.textContent = button.dataset.baseLabel || baseLabel;
+  }, 1200));
+}
+
+async function copyText(value) {
+  const text = String(value || '');
+  if (!text) throw new Error('Nothing to copy');
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const probe = document.createElement('textarea');
+  probe.value = text;
+  probe.setAttribute('readonly', 'readonly');
+  probe.style.position = 'fixed';
+  probe.style.opacity = '0';
+  document.body.appendChild(probe);
+  probe.select();
+  const copied = document.execCommand('copy');
+  document.body.removeChild(probe);
+  if (!copied) throw new Error('Copy failed');
+}
+
+async function copyWemId(button) {
+  try {
+    await copyText(button.dataset.copy || '');
+    flashCopyButton(button, 'Copied');
+  } catch {
+    flashCopyButton(button, 'Failed');
+  }
+}
+
+function renderWems(capture) {
+  const wems = uniqueWems(capture.wwise?.wems || []);
+  if (!wems.length) return '';
+  return `<div class="wems">${wems.map((wem) => `
+    <span class="wem" title="${esc(wem.file || wem.bank || '')}">
+      <span class="wem-id">${esc(wem.id)}${wem.bank ? ` / ${esc(wem.bank)}` : ''}</span>
+      <button class="play" type="button" data-playback="${esc(wem.playbackUrl)}" data-wem="${esc(wem.id)}">Play</button>
+      <button class="copy copy-wem" type="button" data-copy="${esc(wem.id)}">Copy ID</button>
+    </span>
+  `).join('')}</div>`;
+}
+
+function getDisplayCaptures(status) {
+  const filteredCaptures = status.capture?.captures || [];
+  const allCaptures = status.capture?.allCaptures || filteredCaptures;
+  const soundCaptures = allCaptures.filter(captureHasSound);
+  return uniqueSoundCaptures(state.showAllCaptures ? soundCaptures : filteredCaptures);
+}
+
+function renderCaptures(status) {
+  const captures = getDisplayCaptures(status);
+  const filteredRaw = status.capture?.captures || [];
+  const allRaw = status.capture?.allCaptures || filteredRaw;
+  const soundRaw = allRaw.filter(captureHasSound);
+  const filteredCount = uniqueSoundCaptures(filteredRaw).length;
+  const totalCount = uniqueSoundCaptures(soundRaw).length;
+  const rawTotalCount = Number(soundRaw.length || captures.length);
+  const hidden = Math.max(0, totalCount - filteredCount);
+  el('capture-count').textContent = state.showAllCaptures
+    ? rawTotalCount > captures.length ? `${captures.length} unique / ${rawTotalCount} with sound` : `${captures.length} with sound`
+    : hidden ? `${filteredCount} current / ${totalCount} with sound` : `${filteredCount} current`;
+  if (!captures.length) {
+    el('captures').innerHTML = hidden && !state.showAllCaptures
+      ? '<div class="empty">Hidden rows are available, but this view only surfaces entries that resolved to sound names or files. Click Show hidden to inspect those sound-backed rows.</div>'
+      : state.showAllCaptures
+        ? '<div class="empty">No hidden rows with sound names or files are available right now.</div>'
+        : '<div class="empty">No sound calls captured yet.</div>';
+    if (!state.selectedTs) renderDetail(null);
+    return;
+  }
+  let selectedCapture = captures.find((capture) => String(capture.ts) === String(state.selectedTs));
+  if (!selectedCapture) {
+    selectedCapture = captures[0];
+    state.selectedTs = selectedCapture.ts;
+  }
+  el('captures').innerHTML = captures.map((capture) => {
+    const selected = String(capture.ts) === String(state.selectedTs);
+    const kindClass = capture.classification?.tone || (capture.type === 'wwise-post-event' ? 'green' : 'amber');
+    const tagText = capture.classification?.label || capture.type;
+    return `
+      <div class="capture ${selected ? 'selected' : ''}" data-ts="${esc(capture.ts)}">
+        <div class="capture-top">
+          <div>
+            <div class="event-name">${esc(captureTitle(capture))}</div>
+            <div class="event-meta">${esc(captureMeta(capture))}</div>
+          </div>
+          <span class="tag ${kindClass}">${esc(tagText)}</span>
+        </div>
+        ${renderWems(capture)}
+      </div>
+    `;
+  }).join('');
+  renderDetail(selectedCapture);
+}
+
+function renderDetail(capture) {
+  if (!capture) {
+    el('detail-kind').textContent = 'none';
+    el('detail').innerHTML = '<div class="empty">Select a capture to inspect the event, WEM files, and call stack.</div>';
+    return;
+  }
+  el('detail-kind').textContent = capture.type || 'capture';
+  const wems = uniqueWems(capture.wwise?.wems || []);
+  const rawArgs = Array.isArray(capture.raw?.argsRaw) ? capture.raw.argsRaw.filter(Boolean).join(' | ') : '';
+  const callRegs = capture.raw?.callContext?.registers ? Object.entries(capture.raw.callContext.registers).map(([key, value]) => `${key}=${value}`).join(' | ') : '';
+  const localStrings = [
+    capture.raw?.stackString,
+    capture.raw?.stackStringUtf16,
+    ...(capture.raw?.localStringProbe?.asciiStrings || []),
+    ...(capture.raw?.localStringProbe?.utf16Strings || []),
+    capture.raw?.localStringProbe?.ansi,
+    capture.raw?.localStringProbe?.utf16,
+  ].filter(Boolean).join(' | ');
+  const wemRows = wems.length ? wems.map((wem) => `
+    <div class="kv" style="margin-bottom:8px;">
+      <div class="k">WEM</div><div class="v"><span class="value-actions"><span>${esc(wem.id)}</span><button class="copy copy-wem" type="button" data-copy="${esc(wem.id)}">Copy ID</button></span></div>
+      <div class="k">Bank</div><div class="v">${esc(wem.bank || '')}</div>
+      <div class="k">File</div><div class="v">${esc(wem.file || (wem.streamed ? '' : 'in-memory bank media'))}</div>
+    </div>
+  `).join('') : '<div class="empty" style="padding:8px;">No WEM mapping in local index for this call.</div>';
+  el('detail').innerHTML = `
+    <div class="kv">
+      <div class="k">Time</div><div class="v">${esc(capture.time || '')}</div>
+      <div class="k">Signal</div><div class="v">${esc(capture.classification?.label || '')}</div>
+      <div class="k">Type</div><div class="v">${esc(capture.type || '')}</div>
+      <div class="k">Event</div><div class="v">${esc(captureTitle(capture))}</div>
+      <div class="k">Event ID</div><div class="v">${esc(capture.eventId || capture.wwise?.eventId || '')}</div>
+      <div class="k">Control</div><div class="v">${esc(capture.controlName || '')}</div>
+      <div class="k">Game obj</div><div class="v">${esc(capture.gameObject || '')}</div>
+      <div class="k">Playing ID</div><div class="v">${esc(capture.playingId || '')}</div>
+      <div class="k">Raw event ptr</div><div class="v">${esc(capture.raw?.arg0 || '')}</div>
+      <div class="k">Pre-Wwise ptr</div><div class="v">${esc(capture.raw?.stackStringPtr || '')}</div>
+      <div class="k">Pre-Wwise text</div><div class="v">${esc(localStrings)}</div>
+      <div class="k">ID-like</div><div class="v">${esc(capture.raw?.eventIdLike || '')}</div>
+      <div class="k">Raw args</div><div class="v">${esc(rawArgs)}</div>
+      <div class="k">Call regs</div><div class="v">${esc(callRegs)}</div>
+      <div class="k">Path</div><div class="v">${esc(capture.classification?.path || '')}</div>
+      <div class="k">Read</div><div class="v">${esc(capture.storyDetail || '')}</div>
+      <div class="k">Unresolved</div><div class="v">${esc(capture.unresolvedReason || '')}</div>
+      <div class="k">Log</div><div class="v">${esc(capture.logFile || '')}</div>
+    </div>
+    <div class="mini-title">Sound files</div>
+    ${wemRows}
+    <div class="mini-title">Call stack</div>
+    <pre class="stack">${esc((capture.stack || []).join('\n') || 'No stack captured.')}</pre>
+  `;
+}
+
+function renderAnimationDetail(asset) {
+  if (!asset) {
+    el('detail-kind').textContent = 'animation';
+    el('detail').innerHTML = '<div class="empty">Select an animation file to inspect cache/CDN resolution.</div>';
+    return;
+  }
+  const resolvedEntry = state.animationResolveCache.get(asset.logicalPath);
+  const resolved = resolvedEntry?.asset;
+  const extractResult = state.animationExtractCache.get(asset.logicalPath);
+  const activeAsset = resolved ? { ...asset, ...resolved, count: asset.count, sources: asset.sources, captureTypes: asset.captureTypes } : asset;
+  const cdnMatches = activeAsset.cdn?.matches || [];
+  const best = activeAsset.cdn?.bestMatch || null;
+  el('detail-kind').textContent = activeAsset.classification?.label || 'animation';
+  const cacheRows = activeAsset.cache ? `
+    <div class="kv" style="margin-top:8px;">
+      <div class="k">Cache</div><div class="v">${esc(activeAsset.cache.resolvedPath || '')}</div>
+      <div class="k">Source</div><div class="v">${esc(activeAsset.cache.source || '')}</div>
+      <div class="k">Actions</div><div class="v"><span class="value-actions">
+        <a class="link-button" href="${esc(activeAsset.cache.rawUrl)}" target="_blank" rel="noopener">Raw</a>
+        <a class="link-button" href="${esc(activeAsset.cache.previewUrl)}" target="_blank" rel="noopener">Preview</a>
+      </span></div>
+    </div>
+  ` : '<div class="empty" style="padding:8px;">No local cache hit yet.</div>';
+  const cdnRows = cdnMatches.length ? cdnMatches.map((match) => `
+    <div class="cdn-match">
+      <div class="kv">
+        <div class="k">Package</div><div class="v">${esc(match.packageName || '')}${match.packageDownloaded ? ' (downloaded)' : ''}</div>
+        <div class="k">Member</div><div class="v">${esc(match.path || '')}</div>
+        <div class="k">Type</div><div class="v">${esc(match.resourceType || match.resourceGroup || '')}</div>
+      </div>
+      ${match.extractable ? `<div class="asset-actions"><button class="copy extract-animation" type="button" data-asset-path="${esc(activeAsset.logicalPath)}" data-package-name="${esc(match.packageName)}" data-package-size="${esc(match.packageSize || 0)}" data-member-path="${esc(match.path)}">Extract</button></div>` : ''}
+    </div>
+  `).join('') : `<div class="empty" style="padding:8px;">${esc(resolvedEntry ? (resolvedEntry.error || 'No CDN matches found.') : 'CDN matches not resolved yet.')}</div>`;
+  const extractedRows = extractResult ? `
+    <div class="kv" style="margin-top:8px;">
+      <div class="k">Extracted</div><div class="v">${esc(extractResult.extractedFile?.relativePath || extractResult.extractedFile?.path || '')}</div>
+      <div class="k">Playback</div><div class="v">${extractResult.playback?.url ? `<a class="link-button" href="${esc(extractResult.playback.url)}" target="_blank" rel="noopener">Open</a>` : ''}</div>
+    </div>
+  ` : '';
+  el('detail').innerHTML = `
+    <div class="kv">
+      <div class="k">Name</div><div class="v">${esc(activeAsset.name || '')}</div>
+      <div class="k">Kind</div><div class="v">${esc(activeAsset.classification?.label || '')}</div>
+      <div class="k">Relevance</div><div class="v">${esc(activeAsset.relevance?.label || '')}</div>
+      <div class="k">Status</div><div class="v">${esc(animationStatusLabel(activeAsset))}</div>
+      <div class="k">Path</div><div class="v">${esc(activeAsset.logicalPath || '')}</div>
+      <div class="k">Hits</div><div class="v">${esc(activeAsset.count || 1)}</div>
+      <div class="k">Ability hits</div><div class="v">${esc(activeAsset.abilityHits || 0)}</div>
+      <div class="k">Sources</div><div class="v">${esc((activeAsset.sources || []).join(', '))}</div>
+      <div class="k">CDN</div><div class="v"><span class="value-actions">
+        <a class="link-button" href="${esc(activeAsset.cdn?.searchUrl || '#')}" target="_blank" rel="noopener">Browser</a>
+        <button class="copy resolve-animation" type="button" data-asset-path="${esc(activeAsset.logicalPath)}">Resolve CDN</button>
+        ${best ? `<button class="copy extract-animation" type="button" data-asset-path="${esc(activeAsset.logicalPath)}" data-package-name="${esc(best.packageName)}" data-package-size="${esc(best.packageSize || 0)}" data-member-path="${esc(best.path)}">Extract Best</button>` : ''}
+      </span></div>
+    </div>
+    <div class="mini-title">Local cache</div>
+    ${cacheRows}
+    <div class="mini-title">CDN matches</div>
+    ${cdnRows}
+    ${extractedRows ? `<div class="mini-title">Extraction</div>${extractedRows}` : ''}
+  `;
+}
+
+function renderBridge(status) {
+  const clients = status.clientProcesses || [];
+  el('client-box').textContent = clients.length
+    ? clients.map((proc) => `${proc.name} pid=${proc.pid}\n${proc.path || ''}`).join('\n\n')
+    : `Waiting for: ${(status.targetProcessNames || []).join(', ')}`;
+  el('stdout-box').textContent = (status.bridge?.stdoutTail || []).join('\n');
+  el('stderr-box').textContent = (status.bridge?.stderrTail || []).join('\n');
+}
+
+function renderStatus(status) {
+  state.status = status;
+  el('clock').textContent = shortTime(status.now);
+  el('poll-state').textContent = status.capture?.paused ? 'paused' : 'live';
+  el('poll-state').className = status.capture?.paused ? 'tag amber' : 'tag green';
+  const animationMode = state.activeTab === 'animation';
+  el('capture-title').textContent = animationMode ? 'Animation Capture' : 'Live Captures';
+  el('sound-tab').classList.toggle('active', !animationMode);
+  el('animation-tab').classList.toggle('active', animationMode);
+  el('sound-tab').setAttribute('aria-selected', animationMode ? 'false' : 'true');
+  el('animation-tab').setAttribute('aria-selected', animationMode ? 'true' : 'false');
+  el('toggle-filter-btn').textContent = state.showAllCaptures ? 'Hide hidden' : 'Show hidden';
+  el('toggle-filter-btn').className = state.showAllCaptures ? 'btn compact' : 'btn secondary compact';
+  el('toggle-filter-btn').classList.toggle('hidden', animationMode);
+  el('audio-shell').classList.toggle('hidden', animationMode);
+  el('pause-btn').textContent = status.capture?.paused ? 'Resume Capture' : 'Pause Capture';
+  el('pause-btn').className = status.capture?.paused ? 'btn compact' : 'btn secondary';
+  renderLights(status);
+  renderCast(status);
+  if (animationMode) {
+    renderAnimationStory(status);
+    renderAnimationCaptures(status);
+  } else {
+    renderStory(status);
+    renderCaptures(status);
+  }
+  renderBridge(status);
+  const attachDisabled = status.attachEnabled === false;
+  el('start-btn').textContent = attachDisabled ? (animationMode ? 'PSS Trace Disabled' : 'Bridge Disabled') : (animationMode ? 'Start PSS Trace' : 'Start Bridge');
+  el('start-btn').disabled = state.busy || status.bridge?.running || attachDisabled;
+  el('stop-btn').disabled = state.busy || !status.bridge?.running || !status.bridge?.managed;
+  el('pause-btn').disabled = state.busy || !status.bridge?.running;
+  el('clear-btn').disabled = state.busy;
+  el('clear-captures-btn').disabled = state.busy;
+  el('toggle-filter-btn').disabled = state.busy;
+}
+
+function currentMonitorView() {
+  return state.activeTab === 'animation' ? 'animation' : 'sound';
+}
+
+function monitorUrl(path) {
+  const url = new URL(path, window.location.origin);
+  const view = currentMonitorView();
+  url.searchParams.set('view', view);
+  if (view === 'animation') url.searchParams.set('kg3dDisplayProofHooks', '1');
+  return `${url.pathname}${url.search}`;
+}
+
+async function poll() {
+  if (state.polling) return;
+  state.polling = true;
+  try {
+    const status = await api(monitorUrl('/api/client-monitor/status'), { timeoutMs: 45000 });
+    renderStatus(status);
+  } catch (error) {
+    const hasLiveStatus = !!state.status?.ok;
+    el('poll-state').textContent = hasLiveStatus ? 'stale' : 'offline';
+    el('poll-state').className = 'tag amber';
+    if (!hasLiveStatus) {
+      el('cast-main').textContent = 'SERVER OFFLINE';
+      el('cast-sub').textContent = error.message;
+    }
+  } finally {
+    state.polling = false;
+  }
+}
+
+async function runAction(path) {
+  if (state.busy) return;
+  state.busy = true;
+  try {
+    const result = await api(monitorUrl(path), { method: 'POST' });
+    renderStatus(result.status || await api(monitorUrl('/api/client-monitor/status')));
+  } catch (error) {
+    await poll();
+    el('cast-main').textContent = 'ACTION FAILED';
+    el('cast-sub').textContent = error.message;
+  } finally {
+    state.busy = false;
+  }
+}
+
+function setActiveTab(tab) {
+  state.activeTab = tab === 'animation' ? 'animation' : 'sound';
+  renderStatus(state.status || { capture: {} });
+  poll();
+}
+
+async function resolveAnimationAsset(path) {
+  const assetPath = String(path || '');
+  if (!assetPath) return;
+  try {
+    const result = await api(`/api/client-monitor/animation-resource?path=${encodeURIComponent(assetPath)}`);
+    state.animationResolveCache.set(assetPath, result);
+  } catch (error) {
+    state.animationResolveCache.set(assetPath, { ok: false, error: error.message, asset: { logicalPath: assetPath } });
+  }
+  renderAnimationCaptures(state.status || {});
+}
+
+async function extractAnimationAsset(button) {
+  const assetPath = button.dataset.assetPath || '';
+  const packageName = button.dataset.packageName || '';
+  const memberPath = button.dataset.memberPath || '';
+  const packageSize = Number(button.dataset.packageSize || 0) || 0;
+  if (!assetPath || !packageName || !memberPath) return;
+  button.disabled = true;
+  const baseLabel = button.textContent;
+  button.textContent = 'Extracting';
+  try {
+    const result = await api('/api/cdn/hpkg/extract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({ packageName, packageSize, memberPath, download: true, convertToOgg: false }),
+    });
+    state.animationExtractCache.set(assetPath, result);
+    button.textContent = 'Extracted';
+  } catch (error) {
+    state.animationExtractCache.set(assetPath, { error: error.message });
+    button.textContent = 'Failed';
+  } finally {
+    setTimeout(() => { button.textContent = baseLabel; button.disabled = false; }, 1200);
+    renderAnimationCaptures(state.status || {});
+  }
+}
+
+async function startBridgeFromUi() {
+  if (state.status?.attachRequiresConfirmation) {
+    const ok = window.confirm('Start live Frida capture now? This attaches to the running JX3 client and can crash an unstable client process.');
+    if (!ok) return;
+    await runAction('/api/client-monitor/start?confirmAttach=1');
+    return;
+  }
+  await runAction('/api/client-monitor/start');
+}
+
+el('sound-tab').addEventListener('click', () => setActiveTab('sound'));
+el('animation-tab').addEventListener('click', () => setActiveTab('animation'));
+el('start-btn').addEventListener('click', startBridgeFromUi);
+el('stop-btn').addEventListener('click', () => runAction('/api/client-monitor/stop'));
+el('pause-btn').addEventListener('click', () => runAction(state.status?.capture?.paused ? '/api/client-monitor/resume' : '/api/client-monitor/pause'));
+async function clearCaptures() {
+  state.selectedTs = null;
+  state.selectedAnimationPath = null;
+  state.selectedAnimationSkillId = null;
+  state.selectedPssPlayerPath = '';
+  state.animationResolveCache.clear();
+  state.animationExtractCache.clear();
+  state.clientFlowCache = { status: 'idle', data: null, error: '', loadedAt: 0 };
+  state.strictPssProofCache.clear();
+  state.strictPssProofLoading.clear();
+  state.strictPssProofVersion += 1;
+  const player = el('player');
+  player.removeAttribute('src');
+  player.load();
+  await runAction('/api/client-monitor/clear');
+}
+
+el('clear-btn').addEventListener('click', clearCaptures);
+el('clear-captures-btn').addEventListener('click', clearCaptures);
+el('toggle-filter-btn').addEventListener('click', () => {
+  state.showAllCaptures = !state.showAllCaptures;
+  renderStatus(state.status || { capture: {} });
+});
+
+el('captures').addEventListener('click', (event) => {
+  if (state.activeTab === 'animation') {
+    const copyButton = event.target.closest('.copy-asset');
+    if (copyButton) {
+      event.stopPropagation();
+      copyWemId(copyButton);
+      return;
+    }
+    const skillRow = event.target.closest('[data-skill-id]');
+    if (!skillRow) return;
+    if (state.selectedAnimationSkillId !== skillRow.dataset.skillId) state.selectedPssPlayerPath = '';
+    state.selectedAnimationSkillId = skillRow.dataset.skillId;
+    state.renderedAnimationSkillSignature = '';
+    renderAnimationCaptures(state.status || {});
+    return;
+  }
+  const copyButton = event.target.closest('.copy-wem');
+  if (copyButton) {
+    event.stopPropagation();
+    copyWemId(copyButton);
+    return;
+  }
+  const playButton = event.target.closest('.play');
+  if (playButton) {
+    event.stopPropagation();
+    const player = el('player');
+    player.src = playButton.dataset.playback || '';
+    player.play().catch(() => {});
+    return;
+  }
+  const capture = event.target.closest('.capture');
+  if (!capture) return;
+  state.selectedTs = capture.dataset.ts;
+  renderCaptures(state.status || {});
+});
+
+el('captures').addEventListener('keydown', (event) => {
+  if (state.activeTab !== 'animation') return;
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  const skillRow = event.target.closest('[data-skill-id]');
+  if (!skillRow) return;
+  event.preventDefault();
+  state.selectedAnimationSkillId = skillRow.dataset.skillId;
+  state.renderedAnimationSkillSignature = '';
+  renderAnimationCaptures(state.status || {});
+});
+
+el('detail').addEventListener('click', (event) => {
+  const refreshStrictPssButton = event.target.closest('.refresh-strict-pss');
+  if (refreshStrictPssButton) {
+    event.stopPropagation();
+    loadStrictPssProofForSkill(selectedSkillById(state.selectedAnimationSkillId), true);
+    return;
+  }
+  const refreshClientFlowButton = event.target.closest('.refresh-client-flow');
+  if (refreshClientFlowButton) {
+    event.stopPropagation();
+    loadClientFlow(true);
+    return;
+  }
+  const playPssButton = event.target.closest('.play-pss-inline');
+  if (playPssButton) {
+    event.stopPropagation();
+    state.selectedPssPlayerPath = playPssButton.dataset.pssPath || '';
+    state.renderedAnimationSkillSignature = '';
+    renderAnimationSkillDetail(selectedSkillById(state.selectedAnimationSkillId), true);
+    return;
+  }
+  const resolveButton = event.target.closest('.resolve-animation');
+  if (resolveButton) {
+    event.stopPropagation();
+    resolveAnimationAsset(resolveButton.dataset.assetPath || '');
+    return;
+  }
+  const extractButton = event.target.closest('.extract-animation');
+  if (extractButton) {
+    event.stopPropagation();
+    extractAnimationAsset(extractButton);
+    return;
+  }
+  const loadStrictButton = event.target.closest('.load-strict-player');
+  if (loadStrictButton) {
+    event.stopPropagation();
+    loadStrictAnimationPlayer(loadStrictButton.dataset.skillId || state.selectedAnimationSkillId, true);
+    return;
+  }
+  const assetCopyButton = event.target.closest('.copy-asset');
+  if (assetCopyButton) {
+    event.stopPropagation();
+    copyWemId(assetCopyButton);
+    return;
+  }
+  const copyButton = event.target.closest('.copy-wem');
+  if (!copyButton) return;
+  event.stopPropagation();
+  copyWemId(copyButton);
+});
+
+window.addEventListener('message', (event) => {
+  if (event.origin !== window.location.origin) return;
+  const payload = event.data || {};
+  if (payload.source !== 'jx3-client-monitor-animation-player' || payload.type !== 'strict-render-report') return;
+  const report = payload.report || {};
+  const skillId = report.monitorSkillId || payload.monitorSkillId || state.selectedAnimationSkillId;
+  if (!skillId) return;
+  const cache = state.animationPlayerCache.get(skillId) || { status: 'ready', readiness: { blockers: [], warnings: [], checks: [] } };
+  state.animationPlayerCache.set(skillId, { ...cache, runtimeReport: report });
+  if (!updateStrictRuntimeReportPanel(skillId)) {
+    const skill = selectedSkillById(skillId);
+    if (skill) renderAnimationSkillDetail(skill, true);
+  }
+});
+
+poll();
+setInterval(poll, 3000);
+</script>
+</body>
+</html>

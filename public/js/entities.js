@@ -4,6 +4,7 @@
  */
 import * as THREE from 'three';
 import { GLTFLoader } from '../lib/GLTFLoader.js';
+import { DDSLoader } from './jx3-dds-loader.js';
 
 export class EntitySystem {
   constructor(scene, dataPath = 'map-data', options = {}) {
@@ -31,6 +32,7 @@ export class EntitySystem {
     this.officialSet = new Set();    // GLB filenames that have companion files
     this.textureMap = null;          // GLB name -> { albedo, mre, normal }
     this.textureLoader = new THREE.TextureLoader();
+    this.ddsLoader = new DDSLoader();
     this.textureCache = new Map();   // png filename -> THREE.Texture
     this.drawDistance = 80000;       // render distance in world units
     this.maxVisibleInstances = 2500;  // show at least half the map
@@ -288,12 +290,12 @@ export class EntitySystem {
     }
 
     // Corrupted meshes can contain absurd coordinates and produce giant screen shards.
-    if (maxAbs > 50000) return false;
+    if (maxAbs > 250000) return false;
 
     try {
       geometry.computeBoundingSphere();
       const r = geometry.boundingSphere?.radius ?? 0;
-      if (!Number.isFinite(r) || r <= 0 || r > 50000) return false;
+      if (!Number.isFinite(r) || r <= 0 || r > 250000) return false;
     } catch {
       return false;
     }
@@ -301,22 +303,29 @@ export class EntitySystem {
     return true;
   }
 
+  isDDSTexture(textureName) {
+    return /\.dds$/i.test(String(textureName || ''));
+  }
+
   loadTextureCached(pngName) {
-    if (!this.textureCache.has(pngName)) {
-      const tex = this.textureLoader.load(`${this.dataPath}/textures/` + encodeURIComponent(pngName));
+    const key = pngName + '_srgb';
+    if (!this.textureCache.has(key)) {
+      const loader = this.isDDSTexture(pngName) ? this.ddsLoader : this.textureLoader;
+      const tex = loader.load(`${this.dataPath}/textures/` + encodeURIComponent(pngName));
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.flipY = false; // glTF UVs: origin at upper-left, must not flip
       tex.wrapS = THREE.RepeatWrapping;
       tex.wrapT = THREE.RepeatWrapping;
-      this.textureCache.set(pngName, tex);
+      this.textureCache.set(key, tex);
     }
-    return this.textureCache.get(pngName);
+    return this.textureCache.get(key);
   }
 
   loadTextureCachedLinear(pngName) {
     const key = pngName + '_linear';
     if (!this.textureCache.has(key)) {
-      const tex = this.textureLoader.load(`${this.dataPath}/textures/` + encodeURIComponent(pngName));
+      const loader = this.isDDSTexture(pngName) ? this.ddsLoader : this.textureLoader;
+      const tex = loader.load(`${this.dataPath}/textures/` + encodeURIComponent(pngName));
       tex.colorSpace = THREE.LinearSRGBColorSpace;
       tex.flipY = false; // glTF UVs: origin at upper-left, must not flip
       tex.wrapS = THREE.RepeatWrapping;
@@ -330,6 +339,10 @@ export class EntitySystem {
   loadMRECached(pngName) {
     const key = pngName + '_mre';
     if (!this.textureCache.has(key)) {
+      if (this.isDDSTexture(pngName)) {
+        this.textureCache.set(key, this.loadTextureCachedLinear(pngName));
+        return this.textureCache.get(key);
+      }
       const tex = this.textureLoader.load(
         `${this.dataPath}/textures/` + encodeURIComponent(pngName),
         (t) => {

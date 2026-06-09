@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Mesh Saver — RGBA vs RGB Texture Test Lab</title>
+<link rel="icon" href="data:,">
+<style>
+  * { box-sizing: border-box; }
+  :root { --global-header-height: 78px; }
+  body { margin: 0; background: #222; color: #eee; font-family: monospace; overflow: hidden; display: flex; padding-top: var(--global-header-height); }
+  #global-header { position: fixed; top: 0; left: 0; right: 0; height: var(--global-header-height); display: flex; flex-wrap: wrap; align-content: center; align-items: center; gap: 6px 12px; padding: 0 12px; background: rgba(10,10,12,0.92); border-bottom: 1px solid #444; z-index: 180; backdrop-filter: blur(6px); }
+  #global-header .gh-title { color: #d9e3ef; font-size: 13px; font-weight: 700; white-space: nowrap; }
+  #global-header .gh-links { display: flex; gap: 8px; flex-wrap: wrap; }
+  #global-header .gh-link { text-decoration: none; color: #eee; font-size: 12px; border: 1px solid #666; background: #333; border-radius: 6px; padding: 4px 10px; }
+  #global-header .gh-link:hover { background: #4a4a4a; border-color: #58a6ff; }
+  #global-header .gh-link.current { color: #fff; background: #1f5d98; border-color: #58a6ff; }
+  #sidebar { width: 280px; min-width: 280px; height: calc(100vh - var(--global-header-height)); background: rgba(0,0,0,0.7); padding: 10px; display: flex; flex-direction: column; z-index: 10; overflow-y: auto; }
+  #sidebar h3 { margin: 0 0 8px; font-size: 13px; }
+  #controls { margin-bottom: 6px; font-size: 11px; }
+  #controls label { display: block; margin: 2px 0; }
+  #controls select, #controls input[type=text] { width: 100%; background: #333; color: #eee; border: 1px solid #555; padding: 2px 4px; font-family: monospace; font-size: 11px; }
+  #controls button { padding: 4px 8px; cursor: pointer; background: #444; border: 1px solid #666; color: #eee; border-radius: 3px; font-family: monospace; font-size: 11px; margin-top: 4px; width: 100%; }
+  #controls button:hover { background: #666; }
+  .section { margin: 8px 0; padding: 6px; background: rgba(255,255,255,0.05); border-radius: 4px; }
+  .section h4 { margin: 0 0 4px; font-size: 11px; color: #8ea2ba; }
+  #preview-area { flex: 1; display: grid; grid-template-columns: repeat(2, 1fr); grid-template-rows: 1fr; gap: 4px; padding: 4px; height: calc(100vh - var(--global-header-height)); }
+  .preview-cell { position: relative; background: #333344; border-radius: 4px; overflow: hidden; border: 2px solid transparent; }
+  .preview-cell canvas { width: 100%; height: 100%; display: block; }
+  .preview-label { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.85); padding: 4px 8px; font-size: 11px; text-align: center; }
+  .preview-info { position: absolute; top: 4px; left: 4px; font-size: 9px; color: #aaa; pointer-events: none; }
+  #status { padding: 4px 8px; font-size: 11px; color: #4e4; min-height: 20px; }
+</style>
+</head>
+<body>
+<header id="global-header">
+  <div class="gh-title">JX3 Tool Pages</div>
+  <nav class="gh-links">
+    <a class="gh-link" href="editor.html">Editor</a>
+    <a class="gh-link" href="mesh-inspector.html">Mesh Inspector</a>
+    <a class="gh-link current" href="mesh-saver.html" aria-current="page">Mesh Saver</a>
+    <a class="gh-link" href="cdn-resource-browser.html">CDN Browser</a>
+  </nav>
+</header>
+
+<div id="sidebar">
+  <h3>RGBA vs RGB Test Lab</h3>
+  <div id="status">Ready</div>
+  <div class="section">
+    <h4>Select Mesh</h4>
+    <select id="meshSelect"></select>
+  </div>
+  <div class="section">
+    <h4>Left: Texture</h4>
+    <select id="leftTexSelect">
+      <option value="PROPER" selected>PROPER (DDS decoded correctly)</option>
+      <option value="OLD">OLD (bad DDS->PNG conversion)</option>
+    </select>
+  </div>
+  <div class="section">
+    <h4>Right: Texture</h4>
+    <select id="rightTexSelect">
+      <option value="PROPER">PROPER (DDS decoded correctly)</option>
+      <option value="OLD_RGBA" selected>OLD RGBA (dark + garbage alpha)</option>
+    </select>
+  </div>
+  <div class="section">
+    <h4>Controls</h4>
+    <label><input type="checkbox" id="showTextures" checked> Show textures (uncheck for solid)</label>
+    <label><input type="checkbox" id="showAlpha"> Debug: show alpha channel as red overlay</label>
+  </div>
+  <div class="section" style="font-size:10px;color:#aaa;line-height:1.5;">
+    <b>Test:</b> Compare RGBA (DDS->PNG with fabricated alpha) vs RGB (alpha stripped).<br>
+    The original DDS is DXT1 (no alpha). Our PNG conversion added garbage alpha.<br>
+    <b>塔衔接</b> mesh UV-maps to region with alpha≠255 causing visual artifacts.
+  </div>
+</div>
+<div id="preview-area">
+  <div class="preview-cell" id="cell-left">
+    <canvas></canvas>
+    <div class="preview-label">LEFT: RGB (alpha stripped)</div>
+    <div class="preview-info" id="info-left"></div>
+  </div>
+  <div class="preview-cell" id="cell-right">
+    <canvas></canvas>
+    <div class="preview-label">RIGHT: RGBA (with alpha)</div>
+    <div class="preview-info" id="info-right"></div>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "./lib/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from './lib/GLTFLoader.js';
+
+const GLB_BASE = 'mesh-saver-glbs';
+const TEX_BASE = 'mesh-saver-textures';
+const gltfLoader = new GLTFLoader();
+
+// Hardcoded mesh list
+const glbList = [
+  'pj_玉门风车001_hd.glb',
+  'pj_玉门风车001a_hd.glb',
+];
+
+// Populate select
+const meshSelect = document.getElementById('meshSelect');
+for (const name of glbList) {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name.replace('.glb','');
+    meshSelect.appendChild(opt);
+}
+
+// Texture sets
+const TEX_PROPER =  { albedo: '风车_01h.png', mre: '风车_01h_mre.png', normal: '风车_01h_nor.png' };
+const TEX_OLD =     { albedo: '风车_01h_OLD.png', mre: '风车_01h_mre_OLD.png', normal: '风车_01h_nor_OLD.png' };
+
+const leftTexSelect = document.getElementById('leftTexSelect');
+const rightTexSelect = document.getElementById('rightTexSelect');
+const showTexCheck = document.getElementById('showTextures');
+const showAlphaCheck = document.getElementById('showAlpha');
+
+// Setup two renderers
+function createCell(cellId) {
+    const cell = document.getElementById(cellId);
+    const cvs = cell.querySelector('canvas');
+    const info = cell.querySelector('.preview-info');
+    
+    const rend = new THREE.WebGLRenderer({ canvas: cvs, antialias: true, alpha: false });
+    rend.setClearColor(0x333344);
+    rend.toneMapping = THREE.ACESFilmicToneMapping;
+    rend.toneMappingExposure = 1.35;
+    rend.outputColorSpace = THREE.SRGBColorSpace;
+
+    const scene = new THREE.Scene();
+    scene.add(new THREE.AmbientLight(0xffffff, 0.62));
+    const key = new THREE.DirectionalLight(0xfff2d1, 2.0);
+    key.position.set(160, 260, 140);
+    scene.add(key);
+    const fill = new THREE.DirectionalLight(0xc5dcff, 0.9);
+    fill.position.set(-140, 180, -120);
+    scene.add(fill);
+    scene.add(new THREE.HemisphereLight(0x9ac6ff, 0x6c7856, 0.95));
+
+    const cam = new THREE.PerspectiveCamera(50, 1, 0.1, 100000);
+
+    let oTheta = 0.3, oPhi = 0.8, oRad = 500;
+    let oTgt = new THREE.Vector3();
+    let dragging = false, dpx = 0, dpy = 0;
+
+    function updCam() {
+        cam.position.set(
+            oTgt.x + oRad * Math.sin(oPhi) * Math.cos(oTheta),
+            oTgt.y + oRad * Math.cos(oPhi),
+            oTgt.z + oRad * Math.sin(oPhi) * Math.sin(oTheta)
+        );
+        cam.lookAt(oTgt);
+    }
+
+    cvs.addEventListener('mousedown', (e) => { dragging = true; dpx = e.clientX; dpy = e.clientY; });
+    cvs.addEventListener('mouseup', () => dragging = false);
+    cvs.addEventListener('mouseleave', () => dragging = false);
+    cvs.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        oTheta += (e.clientX - dpx) * 0.01;
+        oPhi = Math.max(0.1, Math.min(Math.PI - 0.1, oPhi - (e.clientY - dpy) * 0.01));
+        dpx = e.clientX; dpy = e.clientY;
+        updCam();
+    });
+    cvs.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        oRad *= e.deltaY > 0 ? 1.15 : 0.87;
+        oRad = Math.max(1, Math.min(50000, oRad));
+        updCam();
+    }, { passive: false });
+
+    return {
+        cell, cvs, renderer: rend, scene, camera: cam, info,
+        meshGroup: null,
+        setOrbit(t, p, r, tgt) { oTheta = t; oPhi = p; oRad = r; oTgt.copy(tgt); updCam(); },
+        syncFrom(other) { oTheta = other.oTheta; oPhi = other.oPhi; oRad = other.oRad; oTgt.copy(other.oTgt); updCam(); },
+        getOrbit() { return { t: oTheta, p: oPhi, r: oRad, tgt: oTgt.clone() }; }
+    };
+}
+
+const leftCell = createCell('cell-left');
+const rightCell = createCell('cell-right');
+
+// Sync camera when either side is dragged
+document.getElementById('cell-left').addEventListener('mousedown', () => { rightCell.syncFrom(leftCell); });
+document.getElementById('cell-left').addEventListener('wheel', () => { rightCell.syncFrom(leftCell); });
+document.getElementById('cell-right').addEventListener('mousedown', () => { leftCell.syncFrom(rightCell); });
+document.getElementById('cell-right').addEventListener('wheel', () => { leftCell.syncFrom(rightCell); });
+
+// Texture loader
+const texLoader = new THREE.TextureLoader();
+const texCache = new Map();
+
+function loadTex(filename, isAlbedo) {
+    const key = filename + '_v2';
+    if (!texCache.has(key)) {
+        const tex = texLoader.load(TEX_BASE + '/' + encodeURIComponent(filename) + '?t=' + Date.now());
+        tex.colorSpace = isAlbedo ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace;
+        tex.flipY = false;
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        texCache.set(key, tex);
+    }
+    return texCache.get(key);
+}
+
+function loadMRE(filename) {
+    const key = filename + '_mre_v2';
+    if (!texCache.has(key)) {
+        const tex = texLoader.load(
+            TEX_BASE + '/' + encodeURIComponent(filename) + '?t=' + Date.now(),
+            (t) => {
+                const canv = document.createElement('canvas');
+                const img = t.image;
+                canv.width = img.width; canv.height = img.height;
+                const ctx = canv.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                const d = ctx.getImageData(0, 0, canv.width, canv.height);
+                const px = d.data;
+                for (let i = 0; i < px.length; i += 4) {
+                    const r = px[i]; px[i] = px[i + 2]; px[i + 2] = r; // swap R<->B
+                }
+                ctx.putImageData(d, 0, 0);
+                t.image = canv; t.needsUpdate = true;
+            }
+        );
+        tex.colorSpace = THREE.LinearSRGBColorSpace;
+        tex.flipY = false;
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        texCache.set(key, tex);
+    }
+    return texCache.get(key);
+}
+
+function loadMesh(cell, texSet, label) {
+    const glbFile = meshSelect.value;
+    if (!glbFile) return;
+
+    // Clear old
+    if (cell.meshGroup) { cell.scene.remove(cell.meshGroup); cell.meshGroup = null; }
+    cell.info.textContent = 'Loading...';
+    
+    const status = document.getElementById('status');
+    status.textContent = 'Loading ' + glbFile + ' with ' + label;
+    status.style.color = '#8ea2ba';
+
+    gltfLoader.load(GLB_BASE + '/' + encodeURIComponent(glbFile), (gltf) => {
+        const group = gltf.scene;
+        let totalVerts = 0, totalFaces = 0;
+
+        const showTex = showTexCheck.checked;
+        const showAlpha = showAlphaCheck.checked;
+
+        group.traverse((child) => {
+            if (!child.isMesh) return;
+            const g = child.geometry;
+            totalVerts += g.getAttribute('position').count;
+            totalFaces += g.index ? g.index.count / 3 : g.getAttribute('position').count / 3;
+
+            if (showTex && texSet.albedo) {
+                const tex = loadTex(texSet.albedo, true);
+                
+                if (showAlpha) {
+                    // Debug: show alpha channel as red overlay
+                    child.material = new THREE.MeshBasicMaterial({
+                        map: tex,
+                        side: THREE.DoubleSide,
+                    });
+                } else {
+                    child.material = new THREE.MeshStandardMaterial({
+                        color: 0xffffff, roughness: 0.78, metalness: 0.18,
+                        map: tex,
+                        side: THREE.DoubleSide,
+                    });
+                    if (texSet.mre) {
+                        const mre = loadMRE(texSet.mre);
+                        child.material.roughnessMap = mre;
+                        child.material.metalnessMap = mre;
+                    }
+                    if (texSet.normal) {
+                        child.material.normalMap = loadTex(texSet.normal, false);
+                    }
+                }
+            } else {
+                child.material = new THREE.MeshPhongMaterial({
+                    color: 0xccbbaa, shininess: 8,
+                    side: THREE.DoubleSide,
+                });
+            }
+        });
+
+        const box = new THREE.Box3().setFromObject(group);
+        const center = new THREE.Vector3(), size = new THREE.Vector3();
+        box.getCenter(center); box.getSize(size);
+
+        cell.scene.add(group);
+        cell.meshGroup = group;
+        cell.setOrbit(0.3, 0.8, Math.max(size.x, size.y, size.z) * 1.5, center);
+
+        cell.info.textContent = 'V:' + totalVerts + ' F:' + Math.round(totalFaces) + ' B:' + size.x.toFixed(0) + 'x' + size.y.toFixed(0) + 'x' + size.z.toFixed(0);
+        status.textContent = label + ' loaded';
+        status.style.color = '#4e4';
+    }, undefined, () => {
+        cell.info.textContent = 'Load failed';
+        status.textContent = 'ERROR loading ' + glbFile;
+        status.style.color = '#e44';
+    });
+}
+
+function reloadAll() {
+    texCache.clear();
+    const leftTex = leftTexSelect.value === 'PROPER' ? TEX_PROPER : TEX_OLD;
+    const rightTex = rightTexSelect.value === 'PROPER' ? TEX_PROPER : TEX_OLD;
+    loadMesh(leftCell, leftTex, leftTexSelect.value);
+    loadMesh(rightCell, rightTex, rightTexSelect.value);
+    
+    document.getElementById('cell-left').querySelector('.preview-label').textContent = 'LEFT: ' + leftTexSelect.value;
+    document.getElementById('cell-right').querySelector('.preview-label').textContent = 'RIGHT: ' + rightTexSelect.value;
+}
+
+// Events
+meshSelect.addEventListener('change', reloadAll);
+leftTexSelect.addEventListener('change', reloadAll);
+rightTexSelect.addEventListener('change', reloadAll);
+showTexCheck.addEventListener('change', reloadAll);
+showAlphaCheck.addEventListener('change', reloadAll);
+
+// Render loop
+function animate() {
+    requestAnimationFrame(animate);
+    for (const cell of [leftCell, rightCell]) {
+        if (!cell.meshGroup) continue;
+        const rect = cell.cvs.getBoundingClientRect();
+        const w = Math.floor(rect.width * devicePixelRatio);
+        const h = Math.floor(rect.height * devicePixelRatio);
+        if (w < 1 || h < 1) continue;
+        if (cell.cvs.width !== w || cell.cvs.height !== h) {
+            cell.renderer.setSize(w, h, false);
+            cell.cvs.style.width = rect.width + 'px';
+            cell.cvs.style.height = rect.height + 'px';
+            cell.camera.aspect = w / h;
+            cell.camera.updateProjectionMatrix();
+        }
+        cell.renderer.render(cell.scene, cell.camera);
+    }
+}
+animate();
+
+// Initial load
+reloadAll();
+</script>
+</body>
+</html>
