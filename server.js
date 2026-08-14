@@ -4808,7 +4808,7 @@ function readClientMonitorSnapshot(activeSince = '', pausedAt = '', options = {}
     hooks,
     errors,
     captures,
-    allCaptures: [],
+    allCaptures: allCaptures.slice(-500).reverse(),
     hiddenCaptures: Math.max(0, allCaptures.length - captures.length),
     story: summarizeClientMonitorFindings(allCaptures),
     wwiseHooksReady,
@@ -13445,6 +13445,38 @@ server = createServer(async (req, res) => {
       });
       if (method === 'HEAD') res.end();
       else res.end(decoded.oggBuffer);
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err?.message || String(err) });
+    }
+    return;
+  }
+
+  // API: export a single resolved WEM to OGG on the Desktop.
+  if (method === 'POST' && urlPath === '/api/ability-matcher/wwise-export') {
+    try {
+      const payload = await readBodyJson(req);
+      const wemId = String(payload?.wem || '').trim();
+      if (!/^\d+$/.test(wemId)) {
+        sendJson(res, 400, { ok: false, error: 'wem id required' });
+        return;
+      }
+      const decoded = await resolveWwiseAudioOgg(wemId);
+      if (decoded.error || !decoded.oggBuffer) {
+        sendJson(res, 404, { ok: false, error: decoded.error || 'audio-not-found', detail: decoded.detail || decoded.path || '' });
+        return;
+      }
+      const baseName = String(payload?.name || payload?.event || '').trim()
+        .replace(/[^a-zA-Z0-9\u4e00-\u9fff_-]+/g, '_').replace(/^_+|_+$/g, '');
+      const fileName = baseName ? `${baseName}_${wemId}.ogg` : `${wemId}.ogg`;
+      const root = resolve(join(os.homedir(), 'Desktop', 'JX3SoundExports'));
+      ensureDir(root);
+      const outPath = join(root, fileName);
+      writeFileSync(outPath, decoded.oggBuffer);
+      if (payload?.openFolder !== false) {
+        const child = spawn('explorer.exe', [`/select,${outPath}`], { detached: true, stdio: 'ignore' });
+        child.unref();
+      }
+      sendJson(res, 200, { ok: true, wem: wemId, file: fileName, path: outPath, folder: root });
     } catch (err) {
       sendJson(res, 500, { ok: false, error: err?.message || String(err) });
     }

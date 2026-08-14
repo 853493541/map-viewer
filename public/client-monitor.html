@@ -262,7 +262,7 @@
         </div>
         <div class="actions">
           <span id="capture-count" class="tag">0</span>
-          <button id="toggle-filter-btn" class="btn secondary compact hidden" type="button">Show hidden</button>
+          <button id="toggle-filter-btn" class="btn secondary compact hidden" type="button">Show all</button>
           <button id="clear-captures-btn" class="btn danger compact" type="button">Clear</button>
         </div>
       </div>
@@ -1466,6 +1466,20 @@ async function copyWemId(button) {
   }
 }
 
+async function exportWem(button) {
+  try {
+    await api('/api/ability-matcher/wwise-export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wem: button.dataset.exportWem || '', name: button.dataset.exportName || '' }),
+    });
+    flashCopyButton(button, 'Saved');
+  } catch (error) {
+    flashCopyButton(button, 'Failed');
+    console.error(error);
+  }
+}
+
 function renderWems(capture) {
   const wems = uniqueWems(capture.wwise?.wems || []);
   if (!wems.length) return '';
@@ -1474,6 +1488,7 @@ function renderWems(capture) {
       <span class="wem-id">${esc(wem.id)}${wem.bank ? ` / ${esc(wem.bank)}` : ''}</span>
       <button class="play" type="button" data-playback="${esc(wem.playbackUrl)}" data-wem="${esc(wem.id)}">Play</button>
       <button class="copy copy-wem" type="button" data-copy="${esc(wem.id)}">Copy ID</button>
+      <button class="copy export-wem" type="button" data-export-wem="${esc(wem.id)}" data-export-name="${esc(capture.wwise?.event || capture.eventName || '')}">Export</button>
     </span>
   `).join('')}</div>`;
 }
@@ -1499,9 +1514,9 @@ function renderCaptures(status) {
     : hidden ? `${filteredCount} current / ${totalCount} with sound` : `${filteredCount} current`;
   if (!captures.length) {
     el('captures').innerHTML = hidden && !state.showAllCaptures
-      ? '<div class="empty">Hidden rows are available, but this view only surfaces entries that resolved to sound names or files. Click Show hidden to inspect those sound-backed rows.</div>'
+      ? '<div class="empty">Hidden rows are available. Click Show all to inspect every captured sound, including movement, UI, and scene audio.</div>'
       : state.showAllCaptures
-        ? '<div class="empty">No hidden rows with sound names or files are available right now.</div>'
+        ? '<div class="empty">No captured sounds are available right now.</div>'
         : '<div class="empty">No sound calls captured yet.</div>';
     if (!state.selectedTs) renderDetail(null);
     return;
@@ -1667,7 +1682,7 @@ function renderStatus(status) {
   el('animation-tab').classList.toggle('active', animationMode);
   el('sound-tab').setAttribute('aria-selected', animationMode ? 'false' : 'true');
   el('animation-tab').setAttribute('aria-selected', animationMode ? 'true' : 'false');
-  el('toggle-filter-btn').textContent = state.showAllCaptures ? 'Hide hidden' : 'Show hidden';
+  el('toggle-filter-btn').textContent = state.showAllCaptures ? 'Show leads only' : 'Show all';
   el('toggle-filter-btn').className = state.showAllCaptures ? 'btn compact' : 'btn secondary compact';
   el('toggle-filter-btn').classList.toggle('hidden', animationMode);
   el('audio-shell').classList.toggle('hidden', animationMode);
@@ -1842,6 +1857,12 @@ el('captures').addEventListener('click', (event) => {
   if (copyButton) {
     event.stopPropagation();
     copyWemId(copyButton);
+    return;
+  }
+  const exportButton = event.target.closest('.export-wem');
+  if (exportButton) {
+    event.stopPropagation();
+    exportWem(exportButton);
     return;
   }
   const playButton = event.target.closest('.play');
