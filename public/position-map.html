@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JX3 Positioning Map — 龙门寻宝</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; height: 100vh; overflow: hidden;
+      background: #0a1017; color: #e5edf6;
+      font-family: "Segoe UI", Arial, sans-serif;
+    }
+    #app { display: flex; flex-direction: column; height: 100vh; }
+
+    #topbar {
+      display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+      padding: 8px 14px; border-bottom: 1px solid rgba(148,163,184,0.2);
+      background: #0f1822; z-index: 20;
+    }
+    #topbar h1 { font-size: 15px; margin: 0 6px 0 0; color: #c9e7ff; }
+    .layer { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;
+             font-size: 12px; padding: 4px 8px; border: 1px solid rgba(148,163,184,0.25);
+             border-radius: 5px; background: rgba(16,24,34,0.9); }
+    .layer:hover { border-color: rgba(125,211,252,0.8); }
+    .layer input { accent-color: #38bdf8; }
+    .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+    .layer .count { color: #7e90a5; }
+    .mode-btn {
+      font-size: 12px; padding: 4px 10px; border-radius: 5px; cursor: pointer;
+      border: 1px solid rgba(148,163,184,0.25); background: #141f2c; color: #cdd9e6;
+    }
+    .mode-btn.active { background: #1d4ed8; border-color: #60a5fa; color: #fff; }
+    #spacer { flex: 1; }
+    #hint { font-size: 11px; color: #7e90a5; }
+    #coords { font-size: 11px; color: #9fb2c8; font-variant-numeric: tabular-nums; min-width: 210px; }
+
+    #map-wrap { flex: 1; position: relative; overflow: hidden; background: #05080c; }
+    #map-canvas { position: absolute; top: 0; left: 0; }
+
+    #tooltip {
+      position: absolute; pointer-events: none; display: none; z-index: 30;
+      background: rgba(10,18,26,0.95); border: 1px solid #33465c; border-radius: 6px;
+      padding: 7px 10px; font-size: 12px; max-width: 340px; line-height: 1.45;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    }
+    #tooltip .t-name { color: #ffd24a; font-weight: 600; }
+    #tooltip .t-row { color: #a8b7c9; }
+
+    #mark-panel {
+      position: absolute; right: 12px; top: 12px; z-index: 25; width: 230px;
+      background: rgba(14,22,32,0.95); border: 1px solid #2b3c50; border-radius: 8px;
+      padding: 10px; font-size: 12px; max-height: 60vh; display: flex; flex-direction: column;
+    }
+    #mark-panel h2 { margin: 0 0 8px; font-size: 13px; color: #c9e7ff; }
+    #mark-list { overflow-y: auto; flex: 1; }
+    .mark-row { display: flex; align-items: center; gap: 6px; padding: 4px 2px;
+                border-bottom: 1px solid rgba(148,163,184,0.12); }
+    .mark-row .m-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mark-row .m-pos { color: #7e90a5; font-size: 10px; }
+    .mark-row button { background: none; border: none; color: #f87171; cursor: pointer; font-size: 12px; }
+    .mark-row:hover { background: rgba(56,189,248,0.08); }
+    #mark-empty { color: #7e90a5; text-align: center; padding: 12px 0; }
+    #clear-marks { margin-top: 8px; font-size: 11px; padding: 4px; cursor: pointer;
+                   border: 1px solid rgba(248,113,113,0.4); color: #f87171;
+                   background: rgba(248,113,113,0.08); border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="topbar">
+      <h1>龙门寻宝 — Positioning Map</h1>
+      <label class="layer"><input type="checkbox" id="ly-entities" checked /><span class="swatch" style="background:#4aa3ff"></span>Entities <span class="count" id="c-entities"></span></label>
+      <label class="layer"><input type="checkbox" id="ly-npcs" checked /><span class="swatch" style="background:#ff4a4a"></span>NPCs <span class="count" id="c-npcs"></span></label>
+      <label class="layer"><input type="checkbox" id="ly-containers" checked /><span class="swatch" style="background:#ffd24a"></span>Containers <span class="count" id="c-containers"></span></label>
+      <label class="layer"><input type="checkbox" id="ly-doodads" checked /><span class="swatch" style="background:#4aff7c"></span>Doodads <span class="count" id="c-doodads"></span></label>
+      <label class="layer"><input type="checkbox" id="ly-doodadpos" checked /><span class="swatch" style="background:#c04aff"></span>Doodad Pos <span class="count" id="c-doodadpos"></span></label>
+      <label class="layer"><input type="checkbox" id="ly-marks" checked /><span class="swatch" style="background:#ff8800"></span>Marks <span class="count" id="c-marks"></span></label>
+      <button class="mode-btn active" id="mode-pan">Pan</button>
+      <button class="mode-btn" id="mode-mark">Mark</button>
+      <div id="spacer"></div>
+      <span id="hint">scroll=zoom · drag=pan · Mark mode: click map to drop a mark · click point=info</span>
+      <span id="coords"></span>
+    </div>
+    <div id="map-wrap">
+      <canvas id="map-canvas"></canvas>
+      <div id="tooltip"></div>
+      <div id="mark-panel">
+        <h2>Marks</h2>
+        <div id="mark-list"><div id="mark-empty">No marks yet. Switch to Mark mode and click the map.</div></div>
+        <button id="clear-marks">Clear all marks</button>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="js/position-map.js"></script>
+</body>
+</html>
