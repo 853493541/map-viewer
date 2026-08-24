@@ -1,0 +1,450 @@
+{
+  "fontStrings": [],
+  "fontPaths": [
+    {
+      "rva": "0x5b9228",
+      "text": "GetFontOffset"
+    },
+    {
+      "rva": "0x5b9288",
+      "text": "GetFontScale"
+    },
+    {
+      "rva": "0x5bb1c0",
+      "text": "FontSpacing"
+    },
+    {
+      "rva": "0x5bb220",
+      "text": "FontScheme"
+    },
+    {
+      "rva": "0x5bb230",
+      "text": "FontColor"
+    },
+    {
+      "rva": "0x5bd5a8",
+      "text": "NormalFont"
+    },
+    {
+      "rva": "0x5bd5b8",
+      "text": "MouseOverFont"
+    },
+    {
+      "rva": "0x5bd5c8",
+      "text": "MouseDownFont"
+    },
+    {
+      "rva": "0x5bd5d8",
+      "text": "DisableFont"
+    },
+    {
+      "rva": "0x5bd708",
+      "text": "CheckFont"
+    },
+    {
+      "rva": "0x5bd718",
+      "text": "UncheckFont"
+    },
+    {
+      "rva": "0x5bda88",
+      "text": "SelFontScheme"
+    },
+    {
+      "rva": "0x5bda98",
+      "text": "CaretFontScheme"
+    },
+    {
+      "rva": "0x5bdb70",
+      "text": "PlaceholderFontScheme"
+    },
+    {
+      "rva": "0x5bdbf0",
+      "text": "PlaceholderFontColor"
+    },
+    {
+      "rva": "0x5bedc8",
+      "text": "UI::BindSetFontScheme"
+    },
+    {
+      "rva": "0x5bede0",
+      "text": "UI::BindSetFontColor"
+    },
+    {
+      "rva": "0x5bf0f0",
+      "text": "GrayFontColor"
+    },
+    {
+      "rva": "0x5c1e08",
+      "text": "pFontScheme"
+    },
+    {
+      "rva": "0x5c2ee8",
+      "text": "font-size"
+    },
+    {
+      "rva": "0x5c4288",
+      "text": "UI::KItemText::SetFontScheme"
+    },
+    {
+      "rva": "0x5c6010",
+      "text": "UI::KWndEdit::SetPlaceholderFontScheme"
+    },
+    {
+      "rva": "0x5c6060",
+      "text": "UI::KWndEdit::SetPlaceholderFontColor"
+    },
+    {
+      "rva": "0x5c6088",
+      "text": "UI::KWndEdit::GetPlaceholderFontScheme"
+    },
+    {
+      "rva": "0x5c60d8",
+      "text": "UI::KWndEdit::GetPlaceholderFontColor"
+    },
+    {
+      "rva": "0x5c6478",
+      "text": "UI::KWndEdit::GetFontHeight"
+    },
+    {
+      "rva": "0x5d97a8",
+      "text": "GetFontScheme"
+    },
+    {
+      "rva": "0x5d97b8",
+      "text": "SetFontScheme"
+    },
+    {
+      "rva": "0x5d98f8",
+      "text": "GetFontSpacing"
+    },
+    {
+      "rva": "0x5d9908",
+      "text": "SetFontSpacing"
+    },
+    {
+      "rva": "0x5d9918",
+      "text": "SetFontColor"
+    },
+    {
+      "rva": "0x5d9928",
+      "text": "SetFontID"
+    },
+    {
+      "rva": "0x5d9938",
+      "text": "SetFontScale"
+    },
+    {
+      "rva": "0x5d9948",
+      "text": "GetFontScale"
+    },
+    {
+      "rva": "0x5d9958",
+      "text": "GetFontColor"
+    },
+    {
+      "rva": "0x5d9968",
+      "text": "GetFontID"
+    },
+    {
+      "rva": "0x5d9978",
+      "text": "SetFontShadow"
+    },
+    {
+      "rva": "0x5d9988",
+      "text": "SetFontBorder"
+    },
+    {
+      "rva": "0x5d99c0",
+      "text": "GetFontProjection"
+    },
+    {
+      "rva": "0x5d99d8",
+      "text": "GetFontBoder"
+    },
+    {
+      "rva": "0x5da0d0",
+      "text": "GetOverTextFontScheme"
+    },
+    {
+      "rva": "0x5da0e8",
+      "text": "SetOverTextFontScheme"
+    },
+    {
+      "rva": "0x5dbfe0",
+      "text": "UI::KItemHandleClassScriptTable::LuaItemText_GetFontScheme"
+    },
+    {
+      "rva": "0x5dc020",
+      "text": "UI::KItemHandleClassScriptTable::LuaItemText_SetFontScheme"
+    },
+    {
+      "rva": "0x5dc6e0",
+      "text": "UI::KItemHandleClassScriptTable::LuaItemText_GetFontSpacing"
+    },
+    {
+      "rva": "0x5dc720",
+      "text": "UI::KItemHandleClassScriptTable::LuaItemText_SetFontSpacing"
+    },
+    {
+      "rva": "0x5dc760",
+      "text": "UI::KItemHandleClassScriptTable::LuaItemText_GetFontScale"
+    },
+    {
+      "rva": "0x5dc7a0",
+      "text": "UI::KItemHandleClassScriptTable::LuaItemText_SetFontScale"
+    },
+    {
+      "rva": "0x5dc7e0",
+      "text": "UI::KItemHandleClassScriptTable::LuaItemText_SetFontColor"
+    },
+    {
+      "rva": "0x5dc820",
+      "text": "UI::KItemHandleClassScriptTable::LuaItemText_SetFontID"
+    },
+    {
+      "rva": "0x5dc8d0",
+      "text": "UI::KItemHandleClassScriptTable::LuaItemText_GetFontColor"
+    },
+    {
+      "rva": "0x5dc910",
+      "text": "UI::KItemHandleClassScriptTable::LuaItemText_GetFontID"
+    },
+    {
+      "rva": "0x5dc948",
+      "text": "UI::KItemHandleClassScriptTable::LuaItemText_SetFontShadow"
+    },
+    {
+      "rva": "0x5dc988",
+      "text": "UI::KItemHandleClassScriptTable::LuaItemText_SetFontBoder"
+    },
+    {
+      "rva": "0x5dca48",
+      "text": "UI::KItemHandleClassScriptTable::LuaItemText_GetFontProjection"
+    },
+    {
+      "rva": "0x5dca88",
+      "text": "UI::KItemHandleClassScriptTable::LuaItemText_GetFontBoder"
+    },
+    {
+      "rva": "0x5de720",
+      "text": "UI::KItemHandleClassScriptTable::LuaItemBox_GetOverTextFontScheme"
+    },
+    {
+      "rva": "0x5de770",
+      "text": "UI::KItemHandleClassScriptTable::LuaItemBox_SetOverTextFontScheme"
+    },
+    {
+      "rva": "0x5e21d0",
+      "text": "LoadFontList"
+    },
+    {
+      "rva": "0x5e21e0",
+      "text": "LoadDefaultFontList"
+    },
+    {
+      "rva": "0x5e21f8",
+      "text": "GetChatFontID"
+    },
+    {
+      "rva": "0x5e2218",
+      "text": "ReloadFont"
+    },
+    {
+      "rva": "0x5e2228",
+      "text": "GetFontPathList"
+    },
+    {
+      "rva": "0x5e2238",
+      "text": "GetFont"
+    },
+    {
+      "rva": "0x5e2240",
+      "text": "SetFont"
+    },
+    {
+      "rva": "0x5e23b4",
+      "text": "Font"
+    },
+    {
+      "rva": "0x5e23d8",
+      "text": "UI::KSchemeScriptTable::LuaFont_SetFont"
+    },
+    {
+      "rva": "0x5e2400",
+      "text": "UI::KSchemeScriptTable::LuaFont_LoadFontList"
+    },
+    {
+      "rva": "0x5e2438",
+      "text": "UI::KSchemeScriptTable::LuaFont_GetFont"
+    },
+    {
+      "rva": "0x5e2478",
+      "text": "UI::KSchemeScriptTable::LuaFont_ReloadFont"
+    },
+    {
+      "rva": "0x5e24a8",
+      "text": "pFontPath"
+    },
+    {
+      "rva": "0x5e24b8",
+      "text": "UI::KSchemeScriptTable::LuaFont_GetFontPathList"
+    },
+    {
+      "rva": "0x62fef8",
+      "text": "SetSelectFontScheme"
+    },
+    {
+      "rva": "0x62ff80",
+      "text": "SetPlaceholderFontScheme"
+    },
+    {
+      "rva": "0x630000",
+      "text": "GetPlaceholderFontColor"
+    },
+    {
+      "rva": "0x630018",
+      "text": "SetPlaceholderFontColor"
+    },
+    {
+      "rva": "0x630030",
+      "text": "GetPlaceholderFontScheme"
+    },
+    {
+      "rva": "0x6330d0",
+      "text": "UI::KWndClassScriptTable::LuaEdit_SetFontColor"
+    },
+    {
+      "rva": "0x633100",
+      "text": "UI::KWndClassScriptTable::LuaEdit_GetFontScheme"
+    },
+    {
+      "rva": "0x633130",
+      "text": "UI::KWndClassScriptTable::LuaEdit_SetFontScheme"
+    },
+    {
+      "rva": "0x633370",
+      "text": "UI::KWndClassScriptTable::LuaEdit_SetFontSpacing"
+    },
+    {
+      "rva": "0x633408",
+      "text": "UI::KWndClassScriptTable::LuaEdit_SetSelectFontScheme"
+    },
+    {
+      "rva": "0x633600",
+      "text": "UI::KWndClassScriptTable::LuaEdit_SetPlaceholderFontColor"
+    },
+    {
+      "rva": "0x633640",
+      "text": "UI::KWndClassScriptTable::LuaEdit_GetPlaceholderFontScheme"
+    },
+    {
+      "rva": "0x633680",
+      "text": "UI::KWndClassScriptTable::LuaEdit_SetPlaceholderFontScheme"
+    },
+    {
+      "rva": "0x6337a0",
+      "text": "UI::KWndClassScriptTable::LuaEdit_GetPlaceholderFontColor"
+    },
+    {
+      "rva": "0x63a818",
+      "text": "UI::GetLocaleFontListPath"
+    },
+    {
+      "rva": "0x63a850",
+      "text": "FontList"
+    },
+    {
+      "rva": "0x63a860",
+      "text": "UI::KFontSchemeMgr::LoadDefaultFontList"
+    },
+    {
+      "rva": "0x63a888",
+      "text": "UI::KFontSchemeMgr::Init"
+    },
+    {
+      "rva": "0x63a8a8",
+      "text": "UI::KFontSchemeMgr::UnloadAllFont"
+    },
+    {
+      "rva": "0x63a8d0",
+      "text": "UI::KFontSchemeMgr::LoadFont"
+    },
+    {
+      "rva": "0x63a8f0",
+      "text": "pFontInfoList"
+    },
+    {
+      "rva": "0x63a938",
+      "text": "UI::KFontSchemeMgr::LoadFontList"
+    },
+    {
+      "rva": "0x63a960",
+      "text": "pcszFontList"
+    },
+    {
+      "rva": "0x63a970",
+      "text": "dwFontID < RS2_MAX_FONT_ITEM_NUM"
+    },
+    {
+      "rva": "0x63a9a0",
+      "text": "[KGUI] KFontSchemeMgr::LoadFont(%u, %s)"
+    },
+    {
+      "rva": "0x63a9d0",
+      "text": "UI::KFontSchemeMgr::SetFontScale"
+    },
+    {
+      "rva": "0x63a9f8",
+      "text": "UI::KFontSchemeMgr::IsFontVertical"
+    },
+    {
+      "rva": "0x63aa20",
+      "text": "SchemeElemFont"
+    },
+    {
+      "rva": "0x63aa54",
+      "text": "FontID"
+    },
+    {
+      "rva": "0x63aa80",
+      "text": "FontScale"
+    },
+    {
+      "rva": "0x63aa90",
+      "text": "UI::KFontSchemeMgr::LoadScheme"
+    },
+    {
+      "rva": "0x63aad8",
+      "text": "[UI] FontScehemeMgr %u"
+    },
+    {
+      "rva": "0x63aaf0",
+      "text": "UI::KFontSchemeMgr::LoadFontPathList"
+    },
+    {
+      "rva": "0x63ab28",
+      "text": "FontPathList"
+    },
+    {
+      "rva": "0x63ab38",
+      "text": "UI::KFontSchemeMgr::SetFont"
+    },
+    {
+      "rva": "0x63ab58",
+      "text": "dwID < RS2_MAX_FONT_ITEM_NUM"
+    },
+    {
+      "rva": "0x63ab78",
+      "text": "UI::KFontSchemeMgr::UpdateCodePage"
+    },
+    {
+      "rva": "0x63aba0",
+      "text": "m_pFontInfoList"
+    },
+    {
+      "rva": "0x63abb0",
+      "text": "UI::KFontSchemeMgr::ReloadFont"
+    }
+  ],
+  "dataFontStrings": []
+}

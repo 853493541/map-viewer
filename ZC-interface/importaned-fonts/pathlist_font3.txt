@@ -1,0 +1,12 @@
+tex_base_0\FontScheme.Dir
+tex_base_0\Font.Dir
+common_menpai\FontScheme.Dir
+tex_base_128\FontScheme.Dir
+ui\Default\Font.Dir
+ui\Default\FontScheme.Dir
+ui\Scheme\Default\Font.Dir
+ui\Scheme\Default\FontScheme.Dir
+ui\Font.Dir
+ui\FontScheme.Dir
+ui\Config\Font.Dir
+ui\Config\FontScheme.Dir

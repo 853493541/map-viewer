@@ -1,0 +1,11 @@
+ui\config\FontScheme.tab
+config\FontScheme.tab
+ui\FontScheme.tab
+ui\Scheme\Case\string_JXPlugin.txt
+config\Font.tab
+data\config\FontScheme.tab
+ui\Font\fzht_GBK.ttf
+ui\Font\fzxk.ttf
+ui\Font\fzjz.ttf
+ui\Font\FangZhengKaiTi-GBK.ttf
+ui\Font\MSJH.ttf

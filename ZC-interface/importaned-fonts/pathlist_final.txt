@@ -1,0 +1,8 @@
+ui/config/default/font.dir
+ui/config/default/fontscheme.dir
+ui/scheme/default/font.dir
+ui/scheme/default/fontscheme.dir
+ui/scheme/font.dir
+ui/scheme/fontscheme.dir
+config/ui/font.dir
+config/ui/fontscheme.dir

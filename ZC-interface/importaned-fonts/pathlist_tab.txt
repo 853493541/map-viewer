@@ -1,0 +1,17 @@
+config\FontScheme.tab
+config\FontScheme.Dir
+config\Font.Dir
+config\font.Dir
+ui\config\FontScheme.tab
+ui\config\Font.tab
+ui\config\font.tab
+ui\Scheme\Font.tab
+ui\Scheme\font.tab
+ui\Scheme\FontScheme.tab
+data\config\FontScheme.tab
+data\ui\FontScheme.tab
+resource\FontScheme.tab
+settings\FontScheme.tab
+ui\FontScheme.tab
+ui\font.tab
+ui\Font.tab

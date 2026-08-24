@@ -1,0 +1,14 @@
+[
+  {
+    "sec": ".rdata",
+    "offset": 801040,
+    "rva": 6007056,
+    "text": "fontspacing"
+  },
+  {
+    "sec": ".rdata",
+    "offset": 801040,
+    "rva": 6007056,
+    "text": "font"
+  }
+]

@@ -1,0 +1,10 @@
+settings\FontScheme.tab
+Settings\FontScheme.tab
+scripts\ui\fontscheme.lua
+Scripts\ui\fontscheme.lua
+data\settings\fontscheme.tab
+data\Settings\FontScheme.tab
+ui\Scheme\DefaultFont.lua
+ui\Scheme\DefaultFont.ini
+ui\Scheme\FontColor.lua
+ui\Scheme\FontColor.ini
