@@ -13,7 +13,7 @@ Build a reader that:
 ## 2. Package Location
 
 By default exports are written to:
-- Desktop/JX3FullExports/<packageName>/
+- Desktop/MapViewerExports/full-exports/<packageName>/
 
 Packages are served by:
 - /full-exports/<packageName>/...

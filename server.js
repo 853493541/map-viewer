@@ -25,6 +25,8 @@ import {
   copyFileSync,
   readdirSync,
   unlinkSync,
+  renameSync,
+  rmdirSync,
 } from 'fs';
 import { spawn, execFileSync } from 'child_process';
 import { join, extname, dirname, resolve, basename, relative } from 'path';
@@ -55,8 +57,10 @@ const NODE_MODULES_DIR = resolve(join(__dirname, 'node_modules'));
 const PORT = Number(process.env.PORT) || 3015;
 const LAUNCH_PARENT_PID = Number(process.ppid) || 0;
 const PARENT_WATCH_INTERVAL_MS = 3000;
-const DESKTOP_EXPORT_ROOT = resolve(join(os.homedir(), 'Desktop', 'JX3FullExports'));
-const ABILITY_SOUND_EXPORT_ROOT = resolve(join(os.homedir(), 'Desktop', 'JX3AbilitySoundPackages'));
+const EXPORT_ROOT = resolve(join(os.homedir(), 'Desktop', 'MapViewerExports'));
+const DESKTOP_EXPORT_ROOT = join(EXPORT_ROOT, 'full-exports');
+const ABILITY_SOUND_EXPORT_ROOT = join(EXPORT_ROOT, 'ability-sound-packages');
+const SINGLE_SOUND_EXPORT_ROOT = join(EXPORT_ROOT, 'single-sounds');
 const MOVIE_EDITOR_ROOT = resolve('C:/SeasunGame/MovieEditor');
 const MOVIE_EDITOR_SOURCE_ROOT = join(MOVIE_EDITOR_ROOT, 'source');
 const MOVIE_EDITOR_EXPORT_ROOT = join(MOVIE_EDITOR_SOURCE_ROOT, 'fbx');
@@ -13468,7 +13472,7 @@ server = createServer(async (req, res) => {
       const baseName = String(payload?.name || payload?.event || '').trim()
         .replace(/[^a-zA-Z0-9\u4e00-\u9fff_-]+/g, '_').replace(/^_+|_+$/g, '');
       const fileName = baseName ? `${baseName}_${wemId}.ogg` : `${wemId}.ogg`;
-      const root = resolve(join(os.homedir(), 'Desktop', 'JX3SoundExports'));
+      const root = SINGLE_SOUND_EXPORT_ROOT;
       ensureDir(root);
       const outPath = join(root, fileName);
       writeFileSync(outPath, decoded.oggBuffer);
@@ -16512,10 +16516,65 @@ server = createServer(async (req, res) => {
   sendText(res, 405, 'Method not allowed');
 });
 
+function migrateLegacyExportFolders() {
+  const desktopRoot = resolve(join(os.homedir(), 'Desktop'));
+  const legacyRoot = join(desktopRoot, 'JX3Exports');
+  try {
+    if (existsSync(legacyRoot) && !existsSync(EXPORT_ROOT)) {
+      renameSync(legacyRoot, EXPORT_ROOT);
+      console.log(`[exports] migrated ${legacyRoot} -> ${EXPORT_ROOT}`);
+    } else if (existsSync(legacyRoot) && existsSync(EXPORT_ROOT)) {
+      for (const name of ['full-exports', 'ability-sound-packages', 'single-sounds']) {
+        const from = join(legacyRoot, name);
+        const to = join(EXPORT_ROOT, name);
+        if (!existsSync(from)) continue;
+        if (existsSync(to)) {
+          console.log(`[exports] legacy subfolder ${from} left in place (target already exists: ${to})`);
+          continue;
+        }
+        renameSync(from, to);
+        console.log(`[exports] migrated ${from} -> ${to}`);
+      }
+      const remaining = readdirSync(legacyRoot);
+      if (remaining.length === 0) {
+        rmdirSync(legacyRoot);
+        console.log(`[exports] removed empty legacy root ${legacyRoot}`);
+      }
+    }
+  } catch (err) {
+    console.error(`[exports] failed to migrate legacy root ${legacyRoot}: ${err?.message || err}`);
+  }
+
+  ensureDir(EXPORT_ROOT);
+  const migrations = [
+    ['JX3FullExports', DESKTOP_EXPORT_ROOT],
+    ['JX3AbilitySoundPackages', ABILITY_SOUND_EXPORT_ROOT],
+    ['JX3SoundExports', SINGLE_SOUND_EXPORT_ROOT],
+  ];
+  for (const [legacyName, targetDir] of migrations) {
+    const legacyPath = join(desktopRoot, legacyName);
+    try {
+      if (!existsSync(legacyPath)) continue;
+      if (existsSync(targetDir)) {
+        console.log(`[exports] legacy folder ${legacyPath} left in place (target already exists: ${targetDir})`);
+        continue;
+      }
+      renameSync(legacyPath, targetDir);
+      console.log(`[exports] migrated ${legacyPath} -> ${targetDir}`);
+    } catch (err) {
+      console.error(`[exports] failed to migrate ${legacyPath}: ${err?.message || err}`);
+    }
+  }
+}
+
 server.listen(PORT, () => {
+  migrateLegacyExportFolders();
   ensureDir(DESKTOP_EXPORT_ROOT);
   console.log(`JX3 Map Viewer running at http://localhost:${PORT}`);
-  console.log(`Full exports Desktop root: ${DESKTOP_EXPORT_ROOT}`);
+  console.log(`Exports Desktop root: ${EXPORT_ROOT}`);
+  console.log(`  full-exports: ${DESKTOP_EXPORT_ROOT}`);
+  console.log(`  ability-sound-packages: ${ABILITY_SOUND_EXPORT_ROOT}`);
+  console.log(`  single-sounds: ${SINGLE_SOUND_EXPORT_ROOT}`);
   if (process.env.JX3_SERVER_PERSIST !== '1' && LAUNCH_PARENT_PID > 1) {
     console.log(`Watching launch parent PID ${LAUNCH_PARENT_PID} for exit`);
   }
